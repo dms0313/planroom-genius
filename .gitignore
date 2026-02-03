@@ -111,7 +111,11 @@ nul
 ############################
 # Large Files & Build Artifacts
 ############################
-pi5_build/
+# pi5_build/  <-- KEEPING THE FOLDER (contains scripts), BUT IGNORING CONTENTS BELOW
+**/planroom_agent_storage*/
+**/chrome_agent_profile*/
+**/venv/
+**/node_modules/
 *.zip
 *.tar
 *.gz
