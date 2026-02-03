@@ -16,11 +16,18 @@ class ScraperConfig:
     """Base configuration for all scrapers"""
 
     # Chrome Profile Settings
-    CHROME_USER_DATA_DIR = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "planroom_agent_storage_browser-use-user-data-dir-persistent"
-    )
-    CHROME_PROFILE_NAME = os.getenv("CHROME_PROFILE_NAME", "Profile 2")
+    import platform
+    if platform.system() == 'Linux':
+        # Raspberry Pi specific path
+        CHROME_USER_DATA_DIR = "/home/pi/.config/chromium"
+        CHROME_PROFILE_NAME = "Profile 1"
+    else:
+        # Development/Local default
+        CHROME_USER_DATA_DIR = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "planroom_agent_storage_browser-use-user-data-dir-persistent"
+        )
+        CHROME_PROFILE_NAME = os.getenv("CHROME_PROFILE_NAME", "Profile 2")
 
     # Browser Settings
     # Default to HEADLESS=True on Linux (Pi), False on Windows unless override

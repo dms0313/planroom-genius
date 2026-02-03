@@ -61,3 +61,5 @@ echo -e "${BLUE}=========================================${NC}"
 echo -e "${GREEN}  Setup Complete! ${NC}"
 echo -e "${BLUE}=========================================${NC}"
 echo -e "You can now run: ${GREEN}./start_pi.sh${NC}"
+echo -e "For manual login (VNC): ${GREEN}./manual_login.sh${NC}"
+chmod +x start_pi.sh manual_login.sh
