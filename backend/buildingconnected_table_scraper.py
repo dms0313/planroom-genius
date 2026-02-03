@@ -72,7 +72,9 @@ class BuildingConnectedTableScraper:
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-blink-features=AutomationControlled'
+                '--disable-blink-features=AutomationControlled',
+                '--disable-gpu',
+                '--disable-software-rasterizer',
             ],
         }
 
