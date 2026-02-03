@@ -107,3 +107,27 @@ bc-recording.json
 nul
 *.tmp
 *.temp
+
+############################
+# Large Files & Build Artifacts
+############################
+pi5_build/
+*.zip
+*.tar
+*.gz
+*.rar
+*.7z
+*.iso
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.exe
+*.dll
+*.so
+*.dylib
+*.csv
+*.xls
+*.xlsx
+*.pdf
