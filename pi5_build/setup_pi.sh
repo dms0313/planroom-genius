@@ -19,7 +19,7 @@ cd "$SCRIPT_DIR"
 # 1. Update System & Install Dependencies
 echo -e "${YELLOW}[INFO] Updating system packages...${NC}"
 sudo apt-get update
-sudo apt-get install -y python3-full python3-pip python3-venv nodejs npm libasound2
+sudo apt-get install -y python3-full python3-pip python3-venv nodejs npm libasound2 chromium-browser chromium-codecs-ffmpeg
 
 # 2. Setup Backend
 echo -e "${YELLOW}[INFO] Setting up Backend...${NC}"

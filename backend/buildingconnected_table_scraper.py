@@ -38,7 +38,7 @@ class BuildingConnectedTableScraper:
         elif system == 'Darwin':
             possible_paths = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
         elif system == 'Linux':
-            possible_paths = ['/usr/bin/google-chrome', '/usr/bin/chromium']
+            possible_paths = ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome']
 
         for path in possible_paths:
             if os.path.exists(path):
@@ -65,7 +65,7 @@ class BuildingConnectedTableScraper:
         print("=======================================\n")
 
         launch_options = {
-            'headless': False,
+            'headless': True,  # Default to True for stability, or use config
             'userDataDir': chrome_user_data,
             'args': [
                 f'--profile-directory={profile_name}',
