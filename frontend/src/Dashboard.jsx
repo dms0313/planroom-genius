@@ -11,6 +11,9 @@ export default function LeadDashboard() {
   const [companyPopup, setCompanyPopup] = useState(null);
 
   // Initial load
+  // Dynamic API Base URL to allow access from other devices
+  const API_BASE = `http://${window.location.hostname}:8000`;
+
   useEffect(() => {
     fetchLeads();
   }, []);
@@ -18,7 +21,7 @@ export default function LeadDashboard() {
   const fetchLeads = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/leads');
+      const res = await fetch(`${API_BASE}/leads`);
       const data = await res.json();
       setLeads(data.leads || []);
     } catch (e) {
@@ -33,7 +36,7 @@ export default function LeadDashboard() {
     setSyncing(true);
     try {
       // Trigger background sync
-      const res = await fetch('http://localhost:8000/sync-leads', {
+      const res = await fetch(`${API_BASE}/sync-leads`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -68,7 +71,7 @@ export default function LeadDashboard() {
 
     setClearing(true);
     try {
-      const res = await fetch('http://localhost:8000/clear-leads', {
+      const res = await fetch(`${API_BASE}/clear-leads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -92,7 +95,7 @@ export default function LeadDashboard() {
 
     setRefreshing(true);
     try {
-      const res = await fetch('http://localhost:8000/refresh-leads', {
+      const res = await fetch(`${API_BASE}/refresh-leads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -130,7 +133,7 @@ export default function LeadDashboard() {
 
     setDeduplicating(true);
     try {
-      const res = await fetch('http://localhost:8000/deduplicate-leads', {
+      const res = await fetch(`${API_BASE}/deduplicate-leads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -286,7 +289,7 @@ export default function LeadDashboard() {
                         {/* Local downloaded file (highest priority) */}
                         {lead.local_file_path ? (
                           <a
-                            href={`http://localhost:8000${lead.local_file_path}`}
+                            href={`${API_BASE}${lead.local_file_path}`}
                             download
                             className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors"
                             title="Download Local File"
