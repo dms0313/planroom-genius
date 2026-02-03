@@ -262,6 +262,13 @@ class BaseScraper(ABC):
             return True
         except Exception as e:
             print(f"   Selector not found: {selector} ({e})")
+            # Take debug screenshot
+            try:
+                debug_path = os.path.join(self.download_dir, 'debug_selector_fail.png')
+                await self.page.screenshot({'path': debug_path, 'fullPage': True})
+                print(f"   Saved debug screenshot to: {debug_path}")
+            except:
+                pass
             return False
 
     def parse_date(self, date_str):
@@ -388,6 +395,14 @@ class BaseScraper(ABC):
             print(f" Fatal error: {e}")
             import traceback
             traceback.print_exc()
+            # Take critical error screenshot
+            if self.page:
+                try:
+                    debug_path = os.path.join(self.download_dir, 'fatal_error.png')
+                    await self.page.screenshot({'path': debug_path, 'fullPage': True})
+                    print(f"   Saved fatal error screenshot to: {debug_path}")
+                except:
+                    pass
             return []
         finally:
             await self.close_browser()

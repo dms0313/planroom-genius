@@ -720,8 +720,15 @@ class BuildingConnectedTableScraper:
             await self.scrape_all_projects(max_projects, include_details, download_files)
             await self.save_results()
             return self.leads
-        except Exception as e:
             print(f" Fatal error: {e}")
+            if self.page:
+                try:
+                    print(f" Current URL at crash: {self.page.url}")
+                    debug_path = os.path.join(self.download_dir, 'bc_fatal_error.png')
+                    await self.page.screenshot({'path': debug_path, 'fullPage': True})
+                    print(f" Saved validation screenshot to: {debug_path}")
+                except:
+                    pass
             import traceback
             traceback.print_exc()
             return []

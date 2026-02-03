@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Get script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCRIPT_DIR="$( cd "$( dirname "$0" )" && pwd )"
 cd "$SCRIPT_DIR"
 
 echo -e "${BLUE}=========================================${NC}"
@@ -40,7 +40,7 @@ echo -e "${YELLOW}[INFO] Logs streaming to: $LOG_DIR/ ...${NC}"
 # ----------------------
 echo -e "${YELLOW}[INFO] Starting Backend...${NC}"
 cd "$BACKEND_DIR"
-source venv/bin/activate
+. venv/bin/activate
 # Point logs back to pi5_build/logs
 python3 api.py > "../pi5_build/$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
