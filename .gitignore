@@ -1,0 +1,79 @@
+# Environment variables
+.env
+.env.local
+
+# Python
+backend/venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.Python
+pip-log.txt
+*.egg-info/
+dist/
+build/
+
+# Browser profiles and cache
+backend/chrome_agent_profile/
+backend/planroom_agent_profile/
+backend/planroom_agent_data/
+backend/planroom_agent_storage*/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+node_modules/
+*.log
+npm-debug.log*
+
+# IDEs
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright
+test-results/
+playwright-report/
+.playwright/
+
+# browser automation persistent profiles / user data
+backend/planroom_agent_storage_browser-use-user-data-dir-persistent/
+**/Local Storage/
+**/IndexedDB/
+**/Service Worker/
+**/Session Storage/
+**/WebStorage/
+
+# Application data
+backend/leads_db.json
+backend/leads_db_backup*.json
+backend/leads_db_before_dedup*.json
+backend/downloads/
+backend/*.json
+
+# Build directories
+pi5_build/
+
+# Deprecated and test files
+backend/deprecated/
+**/test_*.py
+**/debug_*.py
+**/manual_*.py
+**/*_test.py
+
+# Recording files
+*.recording.json
+bc-recording.json
+
+# Temporary files
+nul
+*.tmp
+*.temp

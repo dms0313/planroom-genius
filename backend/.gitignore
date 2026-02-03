@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Agent profile directory (contains login sessions)
+planroom_agent_profile/
+chrome_agent_profile/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# browser automation persistent profiles / user data
+backend/planroom_agent_storage_browser-use-user-data-dir-persistent/
+**/Local Storage/
+**/IndexedDB/
+**/Service Worker/
+**/Session Storage/
+**/WebStorage/
