@@ -16,33 +16,49 @@ echo -e "${BLUE}=========================================${NC}"
 echo -e "${BLUE}     Planroom Genius - Startup           ${NC}"
 echo -e "${BLUE}=========================================${NC}"
 
+# Define paths relative to this script (which is in pi5_build)
+BACKEND_DIR="../backend"
+FRONTEND_DIR="../frontend"
+LOG_DIR="logs"
+
 # Prerequisite Checks
-if [ ! -d "backend/venv" ]; then
-    echo -e "${RED}[ERROR] Virtual environment not found (backend/venv).${NC}"
+if [ ! -d "$BACKEND_DIR/venv" ]; then
+    echo -e "${RED}[ERROR] Virtual environment not found ($BACKEND_DIR/venv).${NC}"
     echo "Please run: ./setup_pi.sh"
     exit 1
 fi
 
 # Logging Setup
-LOG_DIR="logs"
 mkdir -p "$LOG_DIR"
+# Clear logs
 echo "" > "$LOG_DIR/backend.log"
 echo "" > "$LOG_DIR/frontend.log"
 
+echo -e "${YELLOW}[INFO] Logs streaming to: $LOG_DIR/ ...${NC}"
+
 # Start Services
+# ----------------------
 echo -e "${YELLOW}[INFO] Starting Backend...${NC}"
-cd backend
+cd "$BACKEND_DIR"
 source venv/bin/activate
-python3 api.py > "../$LOG_DIR/backend.log" 2>&1 &
+# Point logs back to pi5_build/logs
+python3 api.py > "../pi5_build/$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo -e "${GREEN}[OK] Backend started (PID: $BACKEND_PID)${NC}"
 
-cd ../frontend
+# Return to script dir to be safe (optional, but good practice)
+cd "$SCRIPT_DIR"
+
+# ----------------------
 echo -e "${YELLOW}[INFO] Starting Frontend...${NC}"
-npm run dev -- --host 0.0.0.0 > "../$LOG_DIR/frontend.log" 2>&1 &
+cd "$FRONTEND_DIR"
+# Point logs back to pi5_build/logs
+npm run dev -- --host 0.0.0.0 > "../pi5_build/$LOG_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!
 echo -e "${GREEN}[OK] Frontend started (PID: $FRONTEND_PID)${NC}"
-cd ..
+
+# Return to script dir
+cd "$SCRIPT_DIR"
 
 # Access Info
 IP=$(hostname -I | awk '{print $1}')

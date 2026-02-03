@@ -23,7 +23,8 @@ sudo apt-get install -y python3-full python3-pip python3-venv nodejs npm libasou
 
 # 2. Setup Backend
 echo -e "${YELLOW}[INFO] Setting up Backend...${NC}"
-cd backend
+# Use the backend in the root folder, not in pi5_build
+cd ../backend
 
 # Create virtual environment if it doesn't exist
 if [ ! -d "venv" ]; then
@@ -40,18 +41,21 @@ echo -e "${YELLOW}[INFO] Installing Python requirements...${NC}"
 echo -e "${YELLOW}[INFO] Installing Playwright browsers...${NC}"
 ./venv/bin/playwright install chromium
 
-cd ..
+# Return to script dir
+cd "$SCRIPT_DIR"
 
 # 3. Setup Frontend
 echo -e "${YELLOW}[INFO] Setting up Frontend...${NC}"
-cd frontend
+cd ../frontend
 if [ ! -d "node_modules" ]; then
     echo -e "${YELLOW}[INFO] Installing Node modules...${NC}"
     npm install
 else
     echo -e "${GREEN}[OK] Node modules already installed.${NC}"
 fi
-cd ..
+
+# Return to script dir
+cd "$SCRIPT_DIR"
 
 echo -e "${BLUE}=========================================${NC}"
 echo -e "${GREEN}  Setup Complete! ${NC}"
