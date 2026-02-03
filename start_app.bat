@@ -1,22 +1,24 @@
 @echo off
-echo ===================================================
-echo 🚀 STARTING PLANROOM GENIUS SYSTEM
-echo ===================================================
+REM Planroom Genius - Windows startup script
+REM This calls the cross-platform Python startup script
 
-:: Start Backend (API + Scheduler)
-echo.
-echo [1/2] Launching Backend Server...
-start "Planroom Backend" cmd /k "cd /d %~dp0 && call backend\venv\Scripts\activate && python backend\run.py"
+REM Check if Python is available
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo Error: Python is not installed or not in PATH
+    echo Please install Python from python.org
+    pause
+    exit /b 1
+)
 
-:: Start Frontend
-echo.
-echo [2/2] Launching Frontend Dashboard...
-start "Planroom Frontend" cmd /k "cd /d %~dp0\frontend && npm run dev"
+REM Check if setup was run
+if not exist "backend\venv" (
+    echo Error: Virtual environment not found
+    echo Please run setup first: python setup.py
+    pause
+    exit /b 1
+)
 
-echo.
-echo ✅ System started! 
-echo    - Backend API: http://localhost:8000
-echo    - Dashboard:   http://localhost:3000
-echo.
-echo To stop, close the opened terminal windows.
+REM Run the cross-platform Python startup script
+python start.py
 pause

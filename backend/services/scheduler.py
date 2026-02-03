@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from buildingconnected_table_scraper import BuildingConnectedTableScraper
 from scrapers.planhub import PlanHubScraper
-from services.storage import save_leads
+from services.storage import save_leads, deduplicate_database
 
 logger = logging.getLogger(__name__)
 

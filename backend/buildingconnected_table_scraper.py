@@ -81,7 +81,8 @@ class BuildingConnectedTableScraper:
 
         self.browser = await launch(**launch_options)
         self.page = await self.browser.newPage()
-        await self.page.setViewport({'width': 1280, 'height': 720})
+        # Increased viewport width to ensure company column is visible
+        await self.page.setViewport({'width': 1920, 'height': 1080})
 
         print(" Browser initialized")
 
@@ -268,16 +269,31 @@ class BuildingConnectedTableScraper:
                             city = location
 
             if len(columns) > 4:
-                # Column 4 (index 4) - Company and Contact (might be stacked)
-                company_text = await self.page.evaluate('(el) => el.textContent', columns[4])
-                if company_text:
-                    # Might have multiple lines: Company\nContact Name
-                    lines = company_text.strip().split('\n')
-                    if len(lines) >= 2:
-                        company = lines[0].strip()
-                        contact_name = lines[1].strip()
-                    else:
-                        company = company_text.strip()
+                # Column 4 (index 4) - Company and Contact (in nested divs)
+                # Structure: column > div[class*="right-"] > div:nth-child(1/2) > span
+                try:
+                    # Try specific selector structure first
+                    company_elem = await row.querySelector('div:nth-child(5) div[class*="right-"] div:nth-child(1) span')
+                    if company_elem:
+                        company_text = await self.page.evaluate('(el) => el.textContent', company_elem)
+                        if company_text:
+                            company = company_text.strip()
+
+                    contact_elem = await row.querySelector('div:nth-child(5) div[class*="right-"] div:nth-child(2) span')
+                    if contact_elem:
+                        contact_text = await self.page.evaluate('(el) => el.textContent', contact_elem)
+                        if contact_text:
+                            contact_name = contact_text.strip()
+                except:
+                    # Fallback to old method
+                    company_text = await self.page.evaluate('(el) => el.textContent', columns[4])
+                    if company_text:
+                        lines = company_text.strip().split('\n')
+                        if len(lines) >= 2:
+                            company = lines[0].strip()
+                            contact_name = lines[1].strip()
+                        else:
+                            company = company_text.strip()
 
             if len(columns) > 5:
                 # Column 5 (index 5) - Expected Start
@@ -657,7 +673,7 @@ class BuildingConnectedTableScraper:
         return self.leads
 
     async def save_results(self):
-        """Save leads to JSON"""
+        """Save leads to JSON and automatically remove duplicates"""
         output_file = os.path.join(os.path.dirname(__file__), 'leads_db.json')
 
         existing_leads = []
@@ -678,6 +694,15 @@ class BuildingConnectedTableScraper:
 
         print(f"\n Saved {len(new_leads)} new leads to {output_file}")
         print(f" Total leads in database: {len(all_leads)}")
+
+        # Automatically remove duplicates
+        print("\n Removing duplicates...")
+        try:
+            from services.storage import deduplicate_database
+            removed_count = deduplicate_database()
+            print(f" Removed {removed_count} duplicate leads")
+        except Exception as e:
+            print(f" Warning: Could not deduplicate: {e}")
 
     async def run(self, max_projects=None, include_details=False, download_files=False):
         """

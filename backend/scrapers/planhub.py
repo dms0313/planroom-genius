@@ -19,10 +19,10 @@ class PlanHubScraper(BaseScraper):
 
     Features:
     - Login handling with credentials from environment
-    - Filter application: ZIP 64030, 100 mile radius, Fire Alarm trade
+    - Uses saved search "Daniel's Filter" for filtering
     - Past-due filtering using date comparison
     - Sprinkler keyword detection in project descriptions
-    - Max 5 projects per run (configurable)
+    - Two-pass extraction: metadata first, then file downloads
     - Deduplication using processed_ids set
     """
 
@@ -133,135 +133,57 @@ class PlanHubScraper(BaseScraper):
 
     async def apply_filters(self):
         """
-        Apply location, radius, region, and trade filters.
+        Load saved search filter "Daniel's Filter" instead of manually setting filters.
 
         Returns:
             bool: True if successful, False otherwise
         """
-        print(" Applying filters...")
+        print(" Loading saved search filter...")
 
         try:
             # Wait for page to load
             await asyncio.sleep(2)
 
-            # Apply Location/ZIP filter
-            print(f"   Setting location: {self.config.LOCATION_ZIP}")
+            # Click "Saved searches" button
+            print("   Clicking 'Saved searches' button...")
+            saved_searches_btn_selector = '#cdk-accordion-child-1 > div > div > planhub-persist-filters-actions > section > div > planhub-button:nth-child(4) > button'
+
             try:
-                # Try to find and fill location input
-                location_input = await self.page.querySelector(self.config.LOCATION_INPUT_SELECTOR)
-                if location_input:
-                    await self.page.evaluate(
-                        f'(el) => el.value = "{self.config.LOCATION_ZIP}"',
-                        location_input
-                    )
-                    await self.page.type(self.config.LOCATION_INPUT_SELECTOR, '')  # Trigger change event
-                    print(f"     Location set to {self.config.LOCATION_ZIP}")
+                saved_searches_btn = await self.page.querySelector(saved_searches_btn_selector)
+                if saved_searches_btn:
+                    await saved_searches_btn.click()
+                    print("     Saved searches button clicked")
+                    await asyncio.sleep(1.5)
+                else:
+                    print("     Saved searches button not found")
+                    return False
+            except Exception as e:
+                print(f"     Could not click saved searches button: {e}")
+                return False
+
+            # Select "Daniel's Filter"
+            print("   Selecting 'Daniel's Filter'...")
+            daniels_filter_selector = '#modal-content > planhub-project-manage-filters-modal > div.table-container > table > tbody > tr > td.mat-cell.cdk-cell.cdk-column-name.mat-column-name.ng-star-inserted'
+
+            try:
+                daniels_filter = await self.page.querySelector(daniels_filter_selector)
+                if daniels_filter:
+                    await daniels_filter.click()
+                    print("     Daniel's Filter selected")
+                    await asyncio.sleep(2)
 
                     # Click outside to trigger auto-refresh
                     await self.page.evaluate('() => document.body.click()')
-                    await asyncio.sleep(2)  # Wait for page to refresh
+                    print("     Waiting for page to auto-refresh with saved filter...")
+                    await asyncio.sleep(3)
                 else:
-                    print("     Location input not found (may need selector update)")
+                    print("     Daniel's Filter not found in saved searches")
+                    return False
             except Exception as e:
-                print(f"     Could not set location: {e}")
+                print(f"     Could not select Daniel's Filter: {e}")
+                return False
 
-            await asyncio.sleep(1)
-
-            # Apply Distance filter (125 miles)
-            print(f"   Setting distance: {self.config.LOCATION_RADIUS} miles")
-            try:
-                # Click distance dropdown
-                distance_dropdown = await self.page.querySelector(self.config.DISTANCE_FILTER_DROPDOWN)
-                if distance_dropdown:
-                    await distance_dropdown.click()
-                    await asyncio.sleep(1)
-
-                    # Click 125 miles option
-                    distance_option = await self.page.querySelector(self.config.DISTANCE_125MI_SELECTOR)
-                    if distance_option:
-                        await distance_option.click()
-                        print(f"     Distance set to {self.config.LOCATION_RADIUS} miles")
-
-                        # Click outside to trigger auto-refresh
-                        await asyncio.sleep(0.5)
-                        await self.page.evaluate('() => document.body.click()')
-                        print("     Waiting for page to auto-refresh...")
-                        await asyncio.sleep(3)  # Wait for page to refresh
-                    else:
-                        print("     125 miles option not found")
-                else:
-                    print("     Distance dropdown not found")
-            except Exception as e:
-                print(f"     Could not set distance: {e}")
-
-            await asyncio.sleep(1)
-
-            # Apply Region filters (Missouri and Kansas)
-            print(f"   Setting regions: {', '.join(self.config.REGIONS)}")
-            try:
-                # Click region filter dropdown
-                region_dropdown = await self.page.querySelector(self.config.REGION_FILTER_DROPDOWN)
-                if region_dropdown:
-                    await region_dropdown.click()
-                    await asyncio.sleep(1)
-
-                    # Select Missouri
-                    missouri_checkbox = await self.page.querySelector(self.config.MISSOURI_CHECKBOX)
-                    if missouri_checkbox:
-                        await missouri_checkbox.click()
-                        print("     Missouri selected")
-                    else:
-                        print("     Missouri checkbox not found")
-
-                    await asyncio.sleep(0.5)
-
-                    # Select Iowa/Kansas/Nebraska (which includes Kansas)
-                    kansas_checkbox = await self.page.querySelector(self.config.IOWA_KANSAS_NEBRASKA_CHECKBOX)
-                    if kansas_checkbox:
-                        await kansas_checkbox.click()
-                        print("     Iowa/Kansas/Nebraska selected")
-                    else:
-                        print("     Iowa/Kansas/Nebraska checkbox not found")
-
-                    await asyncio.sleep(0.5)
-
-                    # Click outside dropdown to close it and trigger auto-refresh
-                    await self.page.evaluate('() => document.body.click()')
-                    print("     Waiting for page to auto-refresh...")
-                    await asyncio.sleep(3)  # Wait for page to refresh with new region filters
-                else:
-                    print("     Region dropdown not found")
-            except Exception as e:
-                print(f"     Could not set regions: {e}")
-
-            await asyncio.sleep(1)
-
-            # Apply Trade filter
-            print(f"   Setting trade: {self.config.TRADE_FILTER}")
-            try:
-                trade_input = await self.page.querySelector(self.config.TRADE_INPUT_SELECTOR)
-                if trade_input:
-                    # Check if it's a select or input
-                    tag_name = await self.page.evaluate('(el) => el.tagName', trade_input)
-                    if tag_name.lower() == 'select':
-                        await self.page.select(self.config.TRADE_INPUT_SELECTOR, self.config.TRADE_FILTER)
-                    else:
-                        await self.page.type(self.config.TRADE_INPUT_SELECTOR, self.config.TRADE_FILTER)
-                    print(f"     Trade set to {self.config.TRADE_FILTER}")
-
-                    # Click outside to trigger auto-refresh
-                    await asyncio.sleep(0.5)
-                    await self.page.evaluate('() => document.body.click()')
-                    print("     Waiting for page to auto-refresh...")
-                    await asyncio.sleep(3)  # Wait for page to refresh
-                else:
-                    print("     Trade input not found (may need selector update)")
-            except Exception as e:
-                print(f"     Could not set trade: {e}")
-
-            await asyncio.sleep(2)
-
-            print(" Filters applied successfully - page should be refreshed with new results")
+            print(" Saved search filter applied successfully")
             return True
 
         except Exception as e:
