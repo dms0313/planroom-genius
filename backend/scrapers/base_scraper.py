@@ -74,10 +74,10 @@ class BaseScraper(ABC):
             ]
         elif system == 'Linux':
             possible_paths = [
+                '/usr/bin/chromium-browser',
+                '/usr/bin/chromium',
                 '/usr/bin/google-chrome',
                 '/usr/bin/google-chrome-stable',
-                '/usr/bin/chromium',
-                '/usr/bin/chromium-browser',
             ]
 
         for path in possible_paths:

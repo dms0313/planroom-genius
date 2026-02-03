@@ -23,7 +23,10 @@ class ScraperConfig:
     CHROME_PROFILE_NAME = os.getenv("CHROME_PROFILE_NAME", "Profile 2")
 
     # Browser Settings
-    HEADLESS = os.getenv("HEADLESS", "false").lower() == "true"
+    # Default to HEADLESS=True on Linux (Pi), False on Windows unless override
+    import platform
+    _is_linux = platform.system() == 'Linux'
+    HEADLESS = os.getenv("HEADLESS", str(_is_linux)).lower() == "true"
     VIEWPORT_WIDTH = 1280
     VIEWPORT_HEIGHT = 720
 
