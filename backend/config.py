@@ -194,8 +194,9 @@ class PlanHubConfig(ScraperConfig):
     TRADE_INPUT_SELECTOR = 'input[placeholder*="trade"], input[name*="trade"], select[name*="trade"]'
 
     # Project List Selectors
-    PROJECT_TABLE_SELECTOR = 'table, [role="table"], .project-list'
-    PROJECT_ROW_SELECTOR = 'tr, [role="row"], .project-row'
+    # Project List Selectors
+    PROJECT_TABLE_SELECTOR = 'table, [role="table"], planhub-project-table, mat-table'
+    PROJECT_ROW_SELECTOR = 'tr, [role="row"], mat-row, .project-row'
 
     # Pagination and Sorting Selectors
     NEXT_PAGE_SELECTOR = 'body > planhub-main > div > mat-sidenav-container > mat-sidenav-content > app-root > div > app-projects > div > mat-card:nth-child(2) > planhub-project-list > div > planhub-project-table > div.table-pagination.table-pagination-bottom.flex-row.align-end-center > div > planhub-button:nth-child(4) > button'
