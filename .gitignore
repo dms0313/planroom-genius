@@ -136,4 +136,4 @@ nul
 *.xlsx
 *.pdf
 
-pi5_build/backend/planroom_agent_storage_browser-use-user-data-dir-persistent/component_crx_cache/fc0cbd1c37d8cd70aad55bb61c8988f9d65b884075b59c87099489b70b287344
+**/planroom_agent_storage_browser-use-user-data-dir-persistent/component_crx_cache/fc0cbd1c37d8cd70aad55bb61c8988f9d65b884075b59c87099489b70b287344
