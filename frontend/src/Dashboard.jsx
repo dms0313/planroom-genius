@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle } from 'lucide-react';
+import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description } from 'lucide-react';
 
 export default function LeadDashboard() {
   const [leads, setLeads] = useState([]);
@@ -9,6 +9,30 @@ export default function LeadDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [deduplicating, setDeduplicating] = useState(false);
   const [companyPopup, setCompanyPopup] = useState(null);
+  const [descriptionPopup, setDescriptionPopup] = useState(null);
+  const [editModal, setEditModal] = useState(null);
+  const [addModal, setAddModal] = useState(false);
+  const [showUtilityMenu, setShowUtilityMenu] = useState(false);
+
+  // Form state for add/edit
+  const emptyForm = {
+    name: '',
+    company: '',
+    gc: '',
+    contact_name: '',
+    contact_email: '',
+    contact_phone: '',
+    location: '',
+    full_address: '',
+    bid_date: '',
+    description: '',
+    files_link: '',
+    download_link: '',
+    site: 'Manual Entry',
+    sprinklered: false,
+    has_budget: false
+  };
+  const [formData, setFormData] = useState(emptyForm);
 
   // Initial load
   // Dynamic API Base URL to allow access from other devices
@@ -150,6 +174,96 @@ export default function LeadDashboard() {
     setDeduplicating(false);
   };
 
+  // Add new lead
+  const addLead = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/leads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        await fetchLeads();
+        setAddModal(false);
+        setFormData(emptyForm);
+      } else {
+        alert('Failed to add lead');
+      }
+    } catch (e) {
+      console.error("Failed to add lead", e);
+      alert("Failed to add lead. Check console for details.");
+    }
+  };
+
+  // Update existing lead
+  const updateLead = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/leads/${editModal.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        await fetchLeads();
+        setEditModal(null);
+        setFormData(emptyForm);
+      } else {
+        alert('Failed to update lead');
+      }
+    } catch (e) {
+      console.error("Failed to update lead", e);
+      alert("Failed to update lead. Check console for details.");
+    }
+  };
+
+  // Delete lead
+  const deleteLead = async (lead) => {
+    if (!window.confirm(`Delete "${lead.name}"?`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/leads/${lead.id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        await fetchLeads();
+      } else {
+        alert('Failed to delete lead');
+      }
+    } catch (e) {
+      console.error("Failed to delete lead", e);
+      alert("Failed to delete lead. Check console for details.");
+    }
+  };
+
+  // Open edit modal
+  const openEditModal = (lead) => {
+    setFormData({
+      name: lead.name || '',
+      company: lead.company || '',
+      gc: lead.gc || '',
+      contact_name: lead.contact_name || '',
+      contact_email: lead.contact_email || '',
+      contact_phone: lead.contact_phone || '',
+      location: lead.location || '',
+      full_address: lead.full_address || '',
+      bid_date: lead.bid_date || '',
+      description: lead.description || '',
+      files_link: lead.files_link || '',
+      download_link: lead.download_link || '',
+      site: lead.site || 'Manual Entry',
+      sprinklered: lead.sprinklered || false,
+      has_budget: lead.has_budget || false
+    });
+    setEditModal(lead);
+  };
+
+  // Open add modal
+  const openAddModal = () => {
+    setFormData(emptyForm);
+    setAddModal(true);
+  };
+
   // Helper to check if project is expired
   const isExpired = (bidDate) => {
     if (!bidDate || bidDate === 'N/A' || bidDate === 'TBD') return false;
@@ -229,7 +343,8 @@ export default function LeadDashboard() {
                 <th className="px-4 py-3">Contact</th>
                 <th className="px-4 py-3">Location</th>
                 <th className="px-4 py-3 w-24">Bid Date</th>
-                <th className="px-4 py-3 text-center w-16">Files</th>
+                <th className="px-4 py-3 text-center w-20">Links</th>
+                <th className="px-4 py-3 text-center w-24">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
@@ -238,9 +353,15 @@ export default function LeadDashboard() {
                 return (
                   <tr key={lead.id || i} className={`hover:bg-slate-800/30 transition group ${expired ? 'opacity-40' : ''}`}>
 
-                    {/* Project Name */}
+                    {/* Project Name - Click for Description */}
                     <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors max-w-xs">
-                      <div className="truncate" title={lead.name}>{lead.name}</div>
+                      <button
+                        onClick={() => setDescriptionPopup(lead)}
+                        className="text-left hover:text-orange-400 transition-colors"
+                        title="Click for description"
+                      >
+                        <div className="truncate max-w-[200px]">{lead.name}</div>
+                      </button>
                       <div className="flex items-center gap-2 mt-0.5">
                         {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
                         {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
@@ -284,42 +405,80 @@ export default function LeadDashboard() {
                       {lead.bid_date}
                     </td>
 
-                    {/* Action / Files */}
+                    {/* Links Column */}
                     <td className="px-4 py-2 text-center">
-                      <div className="flex justify-center gap-2">
+                      <div className="flex justify-center gap-1">
                         {/* Local downloaded file (highest priority) */}
-                        {lead.local_file_path ? (
+                        {lead.local_file_path && (
                           <a
                             href={`${API_BASE}${lead.local_file_path}`}
                             download
                             className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors"
                             title="Download Local File"
                           >
-                            <Download size={14} />
+                            <Download size={12} />
                           </a>
-                        ) : lead.download_link ? (
+                        )}
+                        {/* Direct download link */}
+                        {lead.download_link && (
                           <a
                             href={lead.download_link}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 bg-slate-800 hover:bg-green-600 text-slate-400 hover:text-white rounded transition-colors"
+                            className="p-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded transition-colors"
                             title="Direct Download"
                           >
-                            <Download size={14} />
+                            <Download size={12} />
                           </a>
-                        ) : (
-                          lead.files_link && (
-                            <a
-                              href={lead.files_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1.5 bg-slate-800 hover:bg-orange-600 text-slate-400 hover:text-white rounded transition-colors"
-                              title="View Files"
-                            >
-                              <ExternalLink size={14} />
-                            </a>
-                          )
                         )}
+                        {/* Files/external link */}
+                        {lead.files_link && (
+                          <a
+                            href={lead.files_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded transition-colors"
+                            title="View Files"
+                          >
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
+                        {/* Project URL */}
+                        {lead.url && lead.url !== 'N/A' && (
+                          <a
+                            href={lead.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
+                            title="View Project Page"
+                          >
+                            <FileText size={12} />
+                          </a>
+                        )}
+                        {/* No links indicator */}
+                        {!lead.local_file_path && !lead.download_link && !lead.files_link && !lead.url && (
+                          <span className="text-slate-600 text-[10px]">-</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Actions Column */}
+                    <td className="px-4 py-2 text-center">
+                      <div className="flex justify-center gap-1">
+                        <button
+                          onClick={() => openEditModal(lead)}
+                          className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors"
+                          title="Edit"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          onClick={() => deleteLead(lead)}
+                          className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 size={12} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -327,7 +486,7 @@ export default function LeadDashboard() {
               })}
               {data.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-slate-600 italic">
+                  <td colSpan="7" className="px-6 py-12 text-center text-slate-600 italic">
                     No active leads found in this category.
                   </td>
                 </tr>
@@ -376,50 +535,84 @@ export default function LeadDashboard() {
             </h1>
             <p className="text-slate-500 text-lg">AI-Powered Construction Lead Intelligence</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-2 items-center">
+            {/* Add Lead Button */}
+            <button
+              onClick={openAddModal}
+              className="px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-500 transition flex items-center gap-1.5"
+            >
+              <Plus size={16} />
+              Add Lead
+            </button>
+
+            {/* Refresh View */}
             <button
               onClick={fetchLeads}
               disabled={loading}
-              className="px-5 py-3 rounded-xl bg-slate-900 text-slate-400 font-bold hover:bg-slate-800 transition"
+              className="px-3 py-2 rounded-lg bg-slate-800 text-slate-400 text-sm font-semibold hover:bg-slate-700 transition"
             >
-              {loading ? 'LOADING...' : 'REFRESH VIEW'}
+              {loading ? '...' : 'Refresh'}
             </button>
-            <button
-              onClick={deduplicateLeads}
-              disabled={deduplicating}
-              className="px-5 py-3 rounded-xl bg-blue-900 text-blue-200 font-bold hover:bg-blue-800 transition"
-            >
-              {deduplicating ? 'CLEANING...' : 'REMOVE DUPES'}
-            </button>
-            <button
-              onClick={clearAllLeads}
-              disabled={clearing}
-              className="px-5 py-3 rounded-xl bg-yellow-900 text-yellow-200 font-bold hover:bg-yellow-800 transition"
-            >
-              {clearing ? 'CLEARING...' : 'CLEAR ALL'}
-            </button>
-            <button
-              onClick={refreshAllLeads}
-              disabled={refreshing}
-              className="px-5 py-3 rounded-xl bg-purple-900 text-purple-200 font-bold hover:bg-purple-800 transition"
-            >
-              {refreshing ? 'REFRESHING...' : 'REFRESH ALL'}
-            </button>
+
+            {/* Scan Button */}
             <button
               onClick={triggerScan}
               disabled={syncing}
-              className={`bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center gap-2 ${syncing ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-5 rounded-lg transition-all shadow-lg shadow-red-900/20 flex items-center gap-2 text-sm ${syncing ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {syncing ? (
                 <>
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  SCANNING...
+                  Scanning...
                 </>
-              ) : "SCAN PLANROOMS"}
+              ) : "Scan"}
             </button>
+
+            {/* Utility Menu (dropdown) */}
+            <div className="relative">
+              <button
+                onClick={() => setShowUtilityMenu(!showUtilityMenu)}
+                className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition"
+                title="More options"
+              >
+                <Settings size={18} />
+              </button>
+
+              {showUtilityMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setShowUtilityMenu(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                    <button
+                      onClick={() => { deduplicateLeads(); setShowUtilityMenu(false); }}
+                      disabled={deduplicating}
+                      className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-700 transition flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {deduplicating ? 'Cleaning...' : 'Remove Duplicates'}
+                    </button>
+                    <button
+                      onClick={() => { refreshAllLeads(); setShowUtilityMenu(false); }}
+                      disabled={refreshing}
+                      className="w-full px-4 py-2.5 text-left text-sm text-purple-300 hover:bg-slate-700 transition flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {refreshing ? 'Refreshing...' : 'Clear & Rescan'}
+                    </button>
+                    <button
+                      onClick={() => { clearAllLeads(); setShowUtilityMenu(false); }}
+                      disabled={clearing}
+                      className="w-full px-4 py-2.5 text-left text-sm text-yellow-300 hover:bg-slate-700 transition flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {clearing ? 'Clearing...' : 'Clear All Leads'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -520,6 +713,302 @@ export default function LeadDashboard() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Description Popup Modal */}
+        {descriptionPopup && (
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
+            onClick={() => setDescriptionPopup(null)}
+          >
+            <div
+              className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-8 max-w-lg w-full mx-4 shadow-2xl max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-start mb-6">
+                <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                  <Description className="text-orange-500" size={24} />
+                  Project Details
+                </h3>
+                <button
+                  onClick={() => setDescriptionPopup(null)}
+                  className="text-slate-400 hover:text-white transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Project Name */}
+                <div className="bg-slate-800/50 rounded-lg p-4">
+                  <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Project Name</div>
+                  <div className="text-lg font-semibold text-white">{descriptionPopup.name || 'N/A'}</div>
+                </div>
+
+                {/* Description / Full Address */}
+                <div className="bg-slate-800/50 rounded-lg p-4">
+                  <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Description / Full Address</div>
+                  <div className="text-slate-300 whitespace-pre-wrap">
+                    {descriptionPopup.description || descriptionPopup.full_address || 'No description available'}
+                  </div>
+                </div>
+
+                {/* Location */}
+                <div className="bg-slate-800/50 rounded-lg p-4">
+                  <div className="text-xs text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+                    <MapPin size={12} />
+                    Location
+                  </div>
+                  <div className="text-slate-300">{descriptionPopup.location || 'N/A'}</div>
+                </div>
+
+                {/* Source */}
+                <div className="bg-slate-800/50 rounded-lg p-4">
+                  <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Source</div>
+                  <div className="text-slate-300">{descriptionPopup.site || descriptionPopup.source || 'N/A'}</div>
+                </div>
+
+                {/* Flags */}
+                <div className="flex gap-2 flex-wrap">
+                  {descriptionPopup.sprinklered && (
+                    <span className="text-xs bg-red-500/20 text-red-400 px-3 py-1 rounded-full border border-red-500/30">
+                      Sprinklered
+                    </span>
+                  )}
+                  {descriptionPopup.has_budget && (
+                    <span className="text-xs bg-green-500/20 text-green-400 px-3 py-1 rounded-full border border-green-500/30">
+                      Has Budget
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <button
+                onClick={() => setDescriptionPopup(null)}
+                className="mt-6 w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Add/Edit Lead Modal */}
+        {(addModal || editModal) && (
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
+            onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }}
+          >
+            <div
+              className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-6 max-w-2xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-start mb-6">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  {editModal ? (
+                    <>
+                      <Pencil className="text-blue-500" size={20} />
+                      Edit Lead
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="text-green-500" size={20} />
+                      Add New Lead
+                    </>
+                  )}
+                </h3>
+                <button
+                  onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }}
+                  className="text-slate-400 hover:text-white transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Project Name */}
+                <div className="col-span-2">
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Project Name *</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="Enter project name"
+                  />
+                </div>
+
+                {/* Company */}
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Company</label>
+                  <input
+                    type="text"
+                    value={formData.company}
+                    onChange={(e) => setFormData({...formData, company: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="Company name"
+                  />
+                </div>
+
+                {/* GC */}
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">General Contractor</label>
+                  <input
+                    type="text"
+                    value={formData.gc}
+                    onChange={(e) => setFormData({...formData, gc: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="GC name"
+                  />
+                </div>
+
+                {/* Contact Name */}
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Contact Name</label>
+                  <input
+                    type="text"
+                    value={formData.contact_name}
+                    onChange={(e) => setFormData({...formData, contact_name: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="Contact person"
+                  />
+                </div>
+
+                {/* Contact Email */}
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Contact Email</label>
+                  <input
+                    type="email"
+                    value={formData.contact_email}
+                    onChange={(e) => setFormData({...formData, contact_email: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="email@example.com"
+                  />
+                </div>
+
+                {/* Contact Phone */}
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Contact Phone</label>
+                  <input
+                    type="tel"
+                    value={formData.contact_phone}
+                    onChange={(e) => setFormData({...formData, contact_phone: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="(555) 123-4567"
+                  />
+                </div>
+
+                {/* Bid Date */}
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Bid Date</label>
+                  <input
+                    type="text"
+                    value={formData.bid_date}
+                    onChange={(e) => setFormData({...formData, bid_date: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="MM/DD/YYYY or TBD"
+                  />
+                </div>
+
+                {/* Location */}
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Location</label>
+                  <input
+                    type="text"
+                    value={formData.location}
+                    onChange={(e) => setFormData({...formData, location: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="City, State"
+                  />
+                </div>
+
+                {/* Full Address */}
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Full Address</label>
+                  <input
+                    type="text"
+                    value={formData.full_address}
+                    onChange={(e) => setFormData({...formData, full_address: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="123 Main St, City, State ZIP"
+                  />
+                </div>
+
+                {/* Description */}
+                <div className="col-span-2">
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Description</label>
+                  <textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData({...formData, description: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none h-20 resize-none"
+                    placeholder="Project description..."
+                  />
+                </div>
+
+                {/* Files Link */}
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Files Link</label>
+                  <input
+                    type="url"
+                    value={formData.files_link}
+                    onChange={(e) => setFormData({...formData, files_link: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="https://..."
+                  />
+                </div>
+
+                {/* Download Link */}
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Download Link</label>
+                  <input
+                    type="url"
+                    value={formData.download_link}
+                    onChange={(e) => setFormData({...formData, download_link: e.target.value})}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                    placeholder="https://..."
+                  />
+                </div>
+
+                {/* Flags */}
+                <div className="col-span-2 flex gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.sprinklered}
+                      onChange={(e) => setFormData({...formData, sprinklered: e.target.checked})}
+                      className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500"
+                    />
+                    <span className="text-sm text-slate-300">Sprinklered</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.has_budget}
+                      onChange={(e) => setFormData({...formData, has_budget: e.target.checked})}
+                      className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500"
+                    />
+                    <span className="text-sm text-slate-300">Has Budget</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }}
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={editModal ? updateLead : addLead}
+                  disabled={!formData.name}
+                  className="flex-1 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors"
+                >
+                  {editModal ? 'Update Lead' : 'Add Lead'}
+                </button>
+              </div>
             </div>
           </div>
         )}

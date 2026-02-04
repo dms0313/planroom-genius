@@ -118,12 +118,12 @@ class BuildingConnectedTableScraper:
         print(f"[BC] Current URL: {current_url}")
 
         if 'login' in current_url or 'signin' in current_url:
-            print("\n" + "="*50)
-            print("[BC] LOGIN REQUIRED")
-            print("="*50)
-            print("[BC] Please log in to BuildingConnected in the browser window.")
-            print("[BC] After logging in, the scraper will continue automatically.")
-            print("="*50 + "\n")
+            print("\n" + "="*50, flush=True)
+            print("[BC] LOGIN REQUIRED", flush=True)
+            print("="*50, flush=True)
+            print("[BC] Please log in to BuildingConnected in the browser window.", flush=True)
+            print("[BC] After logging in, the scraper will continue automatically.", flush=True)
+            print("="*50 + "\n", flush=True)
 
             # Wait for user to log in (check every 3 seconds for up to 5 minutes)
             max_wait = 300  # 5 minutes
@@ -133,15 +133,15 @@ class BuildingConnectedTableScraper:
                 waited += 3
                 current_url = self.page.url
                 if 'login' not in current_url and 'signin' not in current_url:
-                    print(f"[BC] Login detected! Continuing...")
+                    print(f"[BC] Login detected! Continuing...", flush=True)
                     break
                 if waited % 15 == 0:
-                    print(f"[BC] Still waiting for login... ({waited}s)")
+                    print(f"[BC] Still waiting for login... ({waited}s)", flush=True)
 
             # Check one more time
             current_url = self.page.url
             if 'login' in current_url or 'signin' in current_url:
-                print("[BC] ERROR: Login timeout - please try again")
+                print("[BC] ERROR: Login timeout - please try again", flush=True)
                 raise Exception("Login timeout")
 
         print("[BC] Waiting for virtual table to load...")
@@ -961,7 +961,7 @@ class BuildingConnectedTableScraper:
                 print(f"[BC] Pausing to let virtual table render... (scroll attempt {scroll_attempts})")
                 await asyncio.sleep(2)
 
-        print(f"\n[BC] === PASS 1 Complete. Found {len(self.leads)} projects. ===")
+        print(f"\n[BC] === PASS 1 Complete. Found {len(self.leads)} projects. ===", flush=True)
 
         # ====== PASS 2: Get Details (files link, contact email) ======
         if include_details and self.leads:

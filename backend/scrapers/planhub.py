@@ -439,6 +439,50 @@ class PlanHubScraper(BaseScraper):
             except:
                 pass
 
+            # Extract project description
+            description_selectors = [
+                'app-project-details-overview div.project-description',
+                'app-project-details-overview .description-text',
+                'app-project-details-overview .project-info .description',
+                '.project-details .scope',
+                '.project-details .notes'
+            ]
+            for desc_selector in description_selectors:
+                try:
+                    desc_elem = await self.page.querySelector(desc_selector)
+                    if desc_elem:
+                        desc_text = await self.page.evaluate('(el) => el.textContent', desc_elem)
+                        if desc_text and desc_text.strip():
+                            lead['description'] = desc_text.strip()
+                            print(f"[PH]    Description: {desc_text.strip()[:50]}...")
+                            break
+                except:
+                    continue
+
+            # If no description found, try to get it from the overview section
+            if not lead.get('description'):
+                try:
+                    overview_text = await self.page.evaluate('''() => {
+                        const overview = document.querySelector('app-project-details-overview');
+                        if (!overview) return null;
+                        const wrappers = overview.querySelectorAll('.wrapper, .project-details');
+                        let text = '';
+                        for (const wrapper of wrappers) {
+                            const descriptions = wrapper.querySelectorAll('.description');
+                            for (const desc of descriptions) {
+                                if (desc.textContent.length > 50) {
+                                    text += desc.textContent.trim() + ' ';
+                                }
+                            }
+                        }
+                        return text.trim() || null;
+                    }''')
+                    if overview_text:
+                        lead['description'] = overview_text
+                        print(f"[PH]    Description (from overview): {overview_text[:50]}...")
+                except:
+                    pass
+
             # Click "Project Files" tab
             print("[PH]    Clicking Project Files tab...")
             files_tab_selector = '#mat-button-toggle-2-button'
@@ -499,6 +543,9 @@ class PlanHubScraper(BaseScraper):
             else:
                 print("[PH]    No new files detected")
 
+            # Step 21: Click "General Contractors" tab
+            await self.extract_gc_info(lead)
+
             return True
 
         except Exception as e:
@@ -506,6 +553,166 @@ class PlanHubScraper(BaseScraper):
             import traceback
             traceback.print_exc()
             return False
+
+    async def extract_gc_info(self, lead):
+        """
+        Extract General Contractor information from the project details page.
+
+        Steps 21-26:
+        21. Click "General Contractors" tab
+        22. Find company under "Preferred" badge
+        23. Extract company name
+        24. Extract contact name
+        25. Extract phone number
+        26. Extract email
+        """
+        print("[PH]    Extracting GC information...")
+
+        try:
+            # Step 21: Click "General Contractors" tab
+            gc_tab_selector = '#mat-button-toggle-4-button'
+            try:
+                gc_tab = await self.page.querySelector(gc_tab_selector)
+                if gc_tab:
+                    await gc_tab.click()
+                    await asyncio.sleep(2)
+                    print("[PH]      GC tab opened")
+                else:
+                    # Try alternate selector
+                    clicked = await self.page.evaluate('''() => {
+                        const btns = Array.from(document.querySelectorAll('mat-button-toggle button'));
+                        const btn = btns.find(b => b.textContent.includes('General') || b.textContent.includes('Contractor'));
+                        if (btn) { btn.click(); return true; }
+                        return false;
+                    }''')
+                    if clicked:
+                        await asyncio.sleep(2)
+                    else:
+                        print("[PH]      GC tab not found")
+                        return
+            except Exception as e:
+                print(f"[PH]      Error clicking GC tab: {e}")
+                return
+
+            # Step 22: Check for preferred badge and find GC card
+            gc_card_selector = 'planhub-project-general-contractor-card'
+            try:
+                gc_cards = await self.page.querySelectorAll(gc_card_selector)
+                if not gc_cards:
+                    print("[PH]      No GC cards found")
+                    return
+
+                # Find the preferred GC (first card usually has preferred badge)
+                preferred_card = None
+                for card in gc_cards:
+                    # Check if this card has the preferred badge
+                    has_preferred = await self.page.evaluate('''(card) => {
+                        const badge = card.querySelector('mat-icon');
+                        return badge && (badge.textContent.includes('star') || card.textContent.includes('Preferred'));
+                    }''', card)
+                    if has_preferred:
+                        preferred_card = card
+                        break
+
+                # If no preferred, use first card
+                if not preferred_card and gc_cards:
+                    preferred_card = gc_cards[0]
+
+                if not preferred_card:
+                    print("[PH]      No GC card to extract from")
+                    return
+
+                # Step 23: Extract company name
+                company_name = await self.page.evaluate('''(card) => {
+                    const nameEl = card.querySelector('.company-name') ||
+                                   card.querySelector('mat-card-title') ||
+                                   card.querySelector('.name');
+                    return nameEl ? nameEl.textContent.trim() : null;
+                }''', preferred_card)
+
+                if company_name:
+                    lead['gc'] = company_name
+                    lead['company'] = company_name
+                    print(f"[PH]      Company: {company_name}")
+
+                # Step 24: Extract contact name
+                contact_name = await self.page.evaluate('''(card) => {
+                    const content = card.querySelector('mat-card-content');
+                    if (!content) return null;
+                    const divs = content.querySelectorAll('div.content > div');
+                    for (const div of divs) {
+                        const icon = div.querySelector('mat-icon');
+                        if (icon && (icon.textContent.includes('person') || icon.textContent.includes('account'))) {
+                            const text = div.textContent.replace(icon.textContent, '').trim();
+                            if (text) return text;
+                        }
+                    }
+                    // Fallback: second div often has contact name
+                    if (divs.length >= 2) {
+                        return divs[1].textContent.trim();
+                    }
+                    return null;
+                }''', preferred_card)
+
+                if contact_name:
+                    lead['contact_name'] = contact_name
+                    print(f"[PH]      Contact: {contact_name}")
+
+                # Step 25: Extract phone number
+                phone = await self.page.evaluate('''(card) => {
+                    const anchors = card.querySelectorAll('planhub-anchor a, a[href^="tel:"]');
+                    for (const a of anchors) {
+                        const href = a.getAttribute('href') || '';
+                        if (href.startsWith('tel:')) {
+                            return href.replace('tel:', '').trim();
+                        }
+                        const text = a.textContent.trim();
+                        if (text.match(/[\d\-\(\)\s]{10,}/)) {
+                            return text;
+                        }
+                    }
+                    // Fallback: look for phone pattern in text
+                    const text = card.textContent;
+                    const phoneMatch = text.match(/\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4}/);
+                    return phoneMatch ? phoneMatch[0] : null;
+                }''', preferred_card)
+
+                if phone:
+                    lead['contact_phone'] = phone
+                    print(f"[PH]      Phone: {phone}")
+
+                # Step 26: Extract email
+                email = await self.page.evaluate('''(card) => {
+                    const anchors = card.querySelectorAll('planhub-anchor a, a[href^="mailto:"]');
+                    for (const a of anchors) {
+                        const href = a.getAttribute('href') || '';
+                        if (href.startsWith('mailto:')) {
+                            return href.replace('mailto:', '').trim();
+                        }
+                        const text = a.textContent.trim();
+                        if (text.includes('@')) {
+                            return text;
+                        }
+                    }
+                    // Fallback: look for email pattern
+                    const text = card.textContent;
+                    const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+                    return emailMatch ? emailMatch[0] : null;
+                }''', preferred_card)
+
+                if email:
+                    lead['contact_email'] = email
+                    print(f"[PH]      Email: {email}")
+
+                print("[PH]      GC info extraction complete")
+
+            except Exception as e:
+                print(f"[PH]      Error extracting GC info: {e}")
+                import traceback
+                traceback.print_exc()
+
+        except Exception as e:
+            print(f"[PH]    Error in GC extraction: {e}")
 
     async def scrape_all_projects(self, max_projects=None):
         """

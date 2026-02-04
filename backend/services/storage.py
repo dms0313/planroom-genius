@@ -18,6 +18,27 @@ def load_leads():
         logger.error(f"Failed to load leads db: {e}")
         return []
 
+
+def direct_save_leads(leads):
+    """
+    Directly save leads list to database (overwrites existing).
+    Use this for manual add/update/delete operations.
+
+    Args:
+        leads: Complete list of leads to save
+
+    Returns:
+        bool: True if successful
+    """
+    try:
+        with open(DB_FILE, 'w') as f:
+            json.dump(leads, f, indent=2)
+        logger.info(f"Saved {len(leads)} leads to {DB_FILE}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save leads: {e}")
+        return False
+
 def merge_lead_info(existing_lead, new_lead):
     """
     Merge information from two duplicate leads, keeping the most complete data.

@@ -199,6 +199,123 @@ async def deduplicate_leads():
         logger.error(f"Failed to deduplicate leads: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/leads")
+async def add_lead(lead: dict):
+    """Add a new lead manually."""
+    from backend.services.storage import load_leads, direct_save_leads
+    from datetime import datetime
+    import uuid
+
+    try:
+        leads = load_leads()
+
+        # Generate unique ID
+        new_id = f"manual_{uuid.uuid4().hex[:8]}"
+
+        # Build lead object
+        new_lead = {
+            "id": new_id,
+            "name": lead.get("name", "Untitled"),
+            "company": lead.get("company", "N/A"),
+            "gc": lead.get("gc", "N/A"),
+            "contact_name": lead.get("contact_name", "N/A"),
+            "contact_email": lead.get("contact_email", ""),
+            "contact_phone": lead.get("contact_phone", ""),
+            "location": lead.get("location", "N/A"),
+            "full_address": lead.get("full_address", ""),
+            "bid_date": lead.get("bid_date", "TBD"),
+            "due_date": lead.get("bid_date", "TBD"),
+            "description": lead.get("description", ""),
+            "site": lead.get("site", "Manual Entry"),
+            "source": "Manual Entry",
+            "sprinklered": lead.get("sprinklered", False),
+            "has_budget": lead.get("has_budget", False),
+            "files_link": lead.get("files_link", ""),
+            "download_link": lead.get("download_link", ""),
+            "local_file_path": None,
+            "url": lead.get("url", ""),
+            "extracted_at": datetime.now().isoformat(),
+            "created_manually": True
+        }
+
+        leads.append(new_lead)
+        direct_save_leads(leads)
+
+        return {"status": "success", "lead": new_lead}
+    except Exception as e:
+        logger.error(f"Failed to add lead: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/leads/{lead_id}")
+async def update_lead(lead_id: str, lead_data: dict):
+    """Update an existing lead."""
+    from backend.services.storage import load_leads, direct_save_leads
+
+    try:
+        leads = load_leads()
+
+        # Find the lead
+        lead_index = None
+        for i, lead in enumerate(leads):
+            if lead.get("id") == lead_id:
+                lead_index = i
+                break
+
+        if lead_index is None:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        # Update fields
+        updatable_fields = [
+            "name", "company", "gc", "contact_name", "contact_email",
+            "contact_phone", "location", "full_address", "bid_date",
+            "description", "site", "sprinklered", "has_budget",
+            "files_link", "download_link", "url"
+        ]
+
+        for field in updatable_fields:
+            if field in lead_data:
+                leads[lead_index][field] = lead_data[field]
+
+        # Keep due_date in sync with bid_date
+        if "bid_date" in lead_data:
+            leads[lead_index]["due_date"] = lead_data["bid_date"]
+
+        direct_save_leads(leads)
+
+        return {"status": "success", "lead": leads[lead_index]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update lead: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/leads/{lead_id}")
+async def delete_lead(lead_id: str):
+    """Delete a lead by ID."""
+    from backend.services.storage import load_leads, direct_save_leads
+
+    try:
+        leads = load_leads()
+
+        # Find and remove the lead
+        original_count = len(leads)
+        leads = [lead for lead in leads if lead.get("id") != lead_id]
+
+        if len(leads) == original_count:
+            raise HTTPException(status_code=404, detail="Lead not found")
+
+        direct_save_leads(leads)
+
+        return {"status": "success", "message": "Lead deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete lead: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.on_event("startup")
 def startup_event():
     """Start the scheduler on startup."""
