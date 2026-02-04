@@ -191,14 +191,14 @@ class BuildingConnectedTableScraper:
                 pass
             return []
 
-        # Just get all rows - don't filter
+        # Get rows - they are direct children of the scroll container
         rows = await self.page.query_selector_all('.ReactVirtualized__Table__Grid > div > div')
 
         if not rows or len(rows) == 0:
             print("[BC] WARNING: No row elements found")
             return []
 
-        print(f"[BC] Found {len(rows)} row elements")
+        print(f"[BC] Found {len(rows)} rows")
         return rows
 
     async def scroll_table(self, pixels=400):
@@ -243,10 +243,23 @@ class BuildingConnectedTableScraper:
         except:
             return False
 
-    async def extract_row_data(self, row, index):
-        """Extract data from a single table row using JavaScript (Playwright)"""
+    async def extract_row_data(self, row, index, click_for_url=False):
+        """Extract data from a single table row using JavaScript (Playwright)
+
+        Args:
+            row: The row element
+            index: Row index for logging
+            click_for_url: If True, click the row to reveal details panel and get URL
+        """
         try:
-            # Use JavaScript to extract all data at once - more reliable
+            # Use JavaScript to extract all data at once using positional selectors
+            # Based on BuildingConnected table structure (from user's CSS path):
+            # Row > inner div wrapper > columns (div:nth-child(1), div:nth-child(2), etc.)
+            # - Column 1: Name (with link)
+            # - Column 2: Status/type
+            # - Column 3: Due Date
+            # - Column 4: Location
+            # - Column 5: Company/Contact
             data = await row.evaluate('''(row) => {
                 const result = {
                     name: '',
@@ -256,68 +269,323 @@ class BuildingConnectedTableScraper:
                     city: '',
                     state: '',
                     company: '',
-                    contact: ''
+                    contact: '',
+                    has_budget: false
                 };
 
-                // Get project name from textWrapper
-                const nameEl = row.querySelector('div[class*="textWrapper"]');
-                if (nameEl) result.name = nameEl.textContent.trim();
+                // Row structure: row > div (wrapper) > div columns
+                // Get the inner wrapper first
+                let wrapper = row.querySelector(':scope > div');
+                if (!wrapper) wrapper = row;
 
-                // Get URL from link
-                const linkEl = row.querySelector('a');
-                if (linkEl) result.url = linkEl.href;
+                // Get columns from the wrapper
+                const cols = wrapper.querySelectorAll(':scope > div');
 
-                // Get all rowColumn divs
-                const cols = row.querySelectorAll('div[class*="rowColumn"]');
+                // Column 1: Name and URL (has the link)
+                if (cols.length > 0) {
+                    const nameCol = cols[0];
+                    // Get URL from any link in the row (search whole row, not just name col)
+                    let link = row.querySelector('a[href*="/opportunities/"]');
+                    if (!link) link = nameCol.querySelector('a');
+                    if (link) {
+                        result.url = link.href;
+                        // Name is typically in a span inside the link
+                        const nameSpan = link.querySelector('span');
+                        if (nameSpan) result.name = nameSpan.textContent.trim();
+                    }
+                    // Fallback: get name from textWrapper
+                    if (!result.name) {
+                        const textWrapper = row.querySelector('div[class*="textWrapper"]');
+                        if (textWrapper) result.name = textWrapper.textContent.trim();
+                    }
+                    // Fallback: first span in name column
+                    if (!result.name) {
+                        const firstSpan = nameCol.querySelector('span');
+                        if (firstSpan) result.name = firstSpan.textContent.trim();
+                    }
 
-                // Column index 2 = Due Date (0-indexed after name column which is special)
-                if (cols.length > 1) {
-                    const dateCol = cols[1];
-                    const spans = dateCol.querySelectorAll('span');
-                    if (spans.length > 0) result.bid_date = spans[0].textContent.trim();
-                    if (spans.length > 1) result.bid_time = spans[1].textContent.trim();
+                    // Check for "Budget" badge in the name column
+                    // Selector: span.Badge or span with class containing "badge"
+                    const badges = nameCol.querySelectorAll('span[class*="Badge"], span[class*="badge"]');
+                    for (const badge of badges) {
+                        const badgeText = badge.textContent.trim().toLowerCase();
+                        if (badgeText === 'budget' || badgeText.includes('budget')) {
+                            result.has_budget = true;
+                            break;
+                        }
+                    }
                 }
 
-                // Column index 3 = Location
+                // Fallback for URL: search anywhere in the row
+                if (!result.url) {
+                    const anyLink = row.querySelector('a');
+                    if (anyLink && anyLink.href && anyLink.href.includes('buildingconnected')) {
+                        result.url = anyLink.href;
+                    }
+                }
+
+                // Debug: check what links exist
+                const allLinks = row.querySelectorAll('a');
+                result._linkCount = allLinks.length;
+                if (allLinks.length > 0) {
+                    result._firstLinkHref = allLinks[0].href || allLinks[0].getAttribute('href') || 'no-href';
+                }
+
+                // Column 3: Due Date (index 2)
                 if (cols.length > 2) {
-                    const locCol = cols[2];
-                    const divs = locCol.querySelectorAll('div[class*="EllipsifiedText"], div > div');
-                    if (divs.length > 0) result.city = divs[0].textContent.trim();
-                    if (divs.length > 1) result.state = divs[1].textContent.trim();
+                    const dateCol = cols[2];
+                    const spans = dateCol.querySelectorAll('span');
+                    if (spans.length > 0) {
+                        result.bid_date = spans[0].textContent.trim();
+                        if (spans.length > 1) result.bid_time = spans[1].textContent.trim();
+                    }
                 }
 
-                // Column index 4 = Company/Contact
+                // Column 4: Location (index 3)
                 if (cols.length > 3) {
-                    const compCol = cols[3];
-                    const spans = compCol.querySelectorAll('span');
-                    if (spans.length > 0) result.company = spans[0].textContent.trim();
-                    if (spans.length > 1) result.contact = spans[1].textContent.trim();
+                    const locCol = cols[3];
+                    // Location has city and state - try to find them separately
+                    // First try nested divs
+                    const innerDivs = locCol.querySelectorAll('div');
+                    let foundCity = false;
+                    for (const div of innerDivs) {
+                        const text = div.textContent.trim();
+                        // Skip empty or if it contains other nested content
+                        if (!text || div.querySelector('div')) continue;
+                        if (!foundCity) {
+                            result.city = text;
+                            foundCity = true;
+                        } else {
+                            result.state = text;
+                            break;
+                        }
+                    }
+                    // Fallback: try spans
+                    if (!result.city) {
+                        const spans = locCol.querySelectorAll('span');
+                        if (spans.length >= 2) {
+                            result.city = spans[0].textContent.trim();
+                            result.state = spans[1].textContent.trim();
+                        } else if (spans.length === 1) {
+                            // Try to split "City, State" or "CityState"
+                            const text = spans[0].textContent.trim();
+                            const match = text.match(/^(.+?),?\s*([A-Z]{2}|[A-Z][a-z]+)$/);
+                            if (match) {
+                                result.city = match[1].trim();
+                                result.state = match[2].trim();
+                            } else {
+                                result.city = text;
+                            }
+                        }
+                    }
                 }
+
+                // Column 5: Company/Contact (index 4)
+                // Based on user's selector: div:nth-child(5) > div > div.right-... > div:nth-child(1) > span
+                if (cols.length > 4) {
+                    const compCol = cols[4];
+                    // Company name is in: div > div[class*="right"] > div:nth-child(1) > span
+                    const rightDiv = compCol.querySelector('div[class*="right"]');
+                    if (rightDiv) {
+                        const companySpan = rightDiv.querySelector('div:nth-child(1) > span');
+                        if (companySpan) result.company = companySpan.textContent.trim();
+                        // Contact is in div:nth-child(2) > span
+                        const contactSpan = rightDiv.querySelector('div:nth-child(2) > span');
+                        if (contactSpan) result.contact = contactSpan.textContent.trim();
+                    }
+                    // Fallback: try getting spans directly
+                    if (!result.company) {
+                        const spans = compCol.querySelectorAll('span');
+                        if (spans.length >= 2) {
+                            result.company = spans[0].textContent.trim();
+                            result.contact = spans[1].textContent.trim();
+                        } else if (spans.length === 1) {
+                            result.company = spans[0].textContent.trim();
+                        }
+                    }
+                }
+
+                // Debug: count columns found and show structure
+                result._colCount = cols.length;
+                result._hasWrapper = wrapper !== row;
+                result._rowClasses = row.className || '';
+                result._hasLink = !!row.querySelector('a');
 
                 return result;
             }''')
+
+            # Debug: log first few extractions
+            if index < 3:
+                col_count = data.get('_colCount', 0)
+                link_count = data.get('_linkCount', 0)
+                first_link = data.get('_firstLinkHref', 'none')[:60]
+                print(f"[BC] DEBUG row {index}: cols={col_count}, links={link_count}")
+                print(f"[BC]   first_link: {first_link}")
+                print(f"[BC]   name='{data.get('name', '')[:30]}' url='{data.get('url', '')[:50]}'")
 
             # Check if we got a name
             if not data or not data.get('name'):
                 return None
 
             name = data['name']
-            url = data.get('url', 'N/A')
+            url = data.get('url', '')
             bid_date = data.get('bid_date', 'N/A') or 'N/A'
             bid_time = data.get('bid_time', '')
             city = data.get('city', 'N/A') or 'N/A'
             state = data.get('state', 'N/A') or 'N/A'
             company = data.get('company', 'N/A') or 'N/A'
             contact_name = data.get('contact', 'N/A') or 'N/A'
+            has_budget = data.get('has_budget', False)
+
+            # If we need to click the row to get the URL
+            if click_for_url and not url:
+                clicked_successfully = False
+                try:
+                    # Check if element is still attached before clicking
+                    is_attached = await row.evaluate('(el) => el.isConnected')
+                    if is_attached:
+                        # Click the row to open details panel
+                        await row.click()
+                        await asyncio.sleep(2)  # Wait for panel to open
+                        clicked_successfully = True
+                except Exception as click_err:
+                    # Element detached or other error - continue with basic data
+                    pass
+
+                # Only try to extract URL if we clicked successfully
+                if not clicked_successfully:
+                    pass  # Skip URL extraction, we still have the basic data
+                else:
+                    # Debug: check what's in the DOM after clicking
+                    panel_debug = await self.page.evaluate('''() => {
+                        const result = {
+                            allLinks: [],
+                            panelExists: false,
+                            moreDetailsBtn: null,
+                            panelClasses: '',
+                            panelLinks: []
+                        };
+
+                        // Check for any panel/drawer that appeared - try more selectors
+                        // IMPORTANT: Avoid matching row elements with "sidePanel" in class name
+                        const panelSelectors = [
+                            // Look for actual panel containers (usually have overlay/drawer/panel in class)
+                            'div[class*="PreviewPanel"]',
+                            'div[class*="DetailDrawer"]',
+                            'div[class*="slideOut"]',
+                            'div[class*="rightPanel"]',
+                            'div[class*="detailsPanel"]',
+                            'div[class*="opportunityDetail"]',
+                            'div[class*="quickLinksContainer"]',  // The quick links section
+                            // Try finding by structure - panels typically have fixed/absolute positioning
+                            'div[class*="Overlay"] > div',
+                            'div[class*="Modal"] > div',
+                        ];
+
+                        let panel = null;
+                        for (const selector of panelSelectors) {
+                            panel = document.querySelector(selector);
+                            if (panel) {
+                                result.panelClasses = selector + ' -> ' + (panel.className || '').substring(0, 50);
+                                break;
+                            }
+                        }
+                        result.panelExists = !!panel;
+
+                        if (panel) {
+                            // Get links specifically from the panel
+                            const panelLinks = panel.querySelectorAll('a');
+                            for (const link of panelLinks) {
+                                if (link.href) result.panelLinks.push(link.href.substring(0, 80));
+                            }
+                        }
+
+                        // Find all links with "opportunities" in href (from whole page)
+                        const links = document.querySelectorAll('a[href*="/opportunities/"]');
+                        for (const link of links) {
+                            result.allLinks.push(link.href);
+                        }
+
+                        // Look for "More Project Details" text
+                        const allButtons = document.querySelectorAll('button, a');
+                        for (const btn of allButtons) {
+                            if (btn.textContent && btn.textContent.includes('More Project Details')) {
+                                result.moreDetailsBtn = btn.href || btn.getAttribute('href') || 'found-but-no-href';
+                            }
+                        }
+
+                        return result;
+                    }''')
+
+                    if index < 3:  # Debug first 3 rows
+                        print(f"[BC]   Panel debug: panel={panel_debug.get('panelExists')}, pageLinks={len(panel_debug.get('allLinks', []))}, panelLinks={len(panel_debug.get('panelLinks', []))}")
+                        print(f"[BC]   Panel class: {panel_debug.get('panelClasses', 'none')[:60]}")
+                        if panel_debug.get('panelLinks'):
+                            print(f"[BC]   Panel link[0]: {panel_debug['panelLinks'][0][:60]}...")
+                        elif panel_debug.get('allLinks'):
+                            print(f"[BC]   Page link[0]: {panel_debug['allLinks'][0][:60]}...")
+
+                    # Try to get URL from the PANEL (not the table rows)
+                    # The panel is the side drawer that opens when you click a row
+                    url_info = await self.page.evaluate('''() => {
+                        // Look for the side panel/drawer that contains project details
+                        // It typically has classes like slidePanel, drawer, or similar
+                        const panel = document.querySelector(
+                            'div[class*="slidePanel"], div[class*="drawer"], div[class*="sidePanel"], ' +
+                            'div[class*="DetailPanel"], div[class*="quickView"], div[class*="projectDetail"]'
+                        );
+
+                        if (panel) {
+                            // Find the "More Project Details" button/link in the panel
+                            const moreDetailsBtn = panel.querySelector('a[href*="/opportunities/"][href*="/details"]');
+                            if (moreDetailsBtn) return { url: moreDetailsBtn.href, source: 'panelDetailsLink' };
+
+                            // Try quickLinks in the panel
+                            const quickLink = panel.querySelector('div[class*="quickLinks"] a[href*="/opportunities/"]');
+                            if (quickLink) return { url: quickLink.href, source: 'panelQuickLink' };
+
+                            // Find any opportunity link in the panel
+                            const panelLink = panel.querySelector('a[href*="/opportunities/"]');
+                            if (panelLink) return { url: panelLink.href, source: 'panelOppLink' };
+                        }
+
+                        // Fallback: look for highlighted/selected row link
+                        const selectedRow = document.querySelector('div[class*="selected"], div[class*="highlighted"], div[class*="active"]');
+                        if (selectedRow) {
+                            const rowLink = selectedRow.querySelector('a[href*="/opportunities/"]');
+                            if (rowLink) return { url: rowLink.href, source: 'selectedRowLink' };
+                        }
+
+                        // Last resort: find a link with /details in the path
+                        const detailsLink = document.querySelector('a[href*="/opportunities/"][href*="/details"]');
+                        if (detailsLink) return { url: detailsLink.href, source: 'detailsLink' };
+
+                        return null;
+                    }''')
+
+                    if url_info and url_info.get('url'):
+                        url = url_info['url']
+                        print(f"[BC]   Got URL ({url_info.get('source')}): {url[:50]}...")
 
             # Generate project ID from URL
             project_id = f'project_{index}'
             if url and '/opportunities/' in url:
                 project_id = url.split('/opportunities/')[1].split('/')[0]
 
-            location = f"{city}, {state}" if state != "N/A" else city
+            # Set url to N/A if empty
+            if not url:
+                url = 'N/A'
 
-            print(f"[BC] {name[:35]:35} | {bid_date:12} | {city[:15]:15} | {company[:20]}")
+            # Format location properly (avoid duplication)
+            if city != "N/A" and state != "N/A":
+                location = f"{city}, {state}"
+            elif city != "N/A":
+                location = city
+            else:
+                location = "N/A"
+
+            budget_indicator = " [BUDGET]" if has_budget else ""
+            print(f"[BC] {name[:35]:35} | {bid_date:12} | {city[:15]:15} | {company[:20]}{budget_indicator}")
 
             return {
                 'id': project_id,
@@ -338,6 +606,7 @@ class BuildingConnectedTableScraper:
                 'contact_email': None,
                 'files_count': None,
                 'has_new_files': False,
+                'has_budget': has_budget,
                 'files_link': None,
                 'download_link': None,
             }
@@ -347,7 +616,7 @@ class BuildingConnectedTableScraper:
             return None
 
     async def extract_detail_info(self, project_url):
-        """Extract additional info by clicking on row to open side panel (Playwright)"""
+        """Extract additional info from the project detail page (after navigation)"""
         try:
             detail_info = {
                 'contact_email': None,
@@ -360,13 +629,21 @@ class BuildingConnectedTableScraper:
                 'download_link': None,
             }
 
-            # Wait for side panel to load
-            await asyncio.sleep(1)
+            # Construct files link from project URL
+            # URL format: https://app.buildingconnected.com/opportunities/PROJECT_ID/details
+            # Files URL: https://app.buildingconnected.com/opportunities/PROJECT_ID/files
+            if project_url and '/opportunities/' in project_url:
+                base_url = project_url.split('/opportunities/')[0]
+                project_id = project_url.split('/opportunities/')[1].split('/')[0]
+                files_url = f"{base_url}/opportunities/{project_id}/files"
+                detail_info['files_link'] = files_url
+                detail_info['download_link'] = files_url
 
-            # Extract files count
+            # Extract files count from quick links
             files_count_selectors = [
                 'div[class*="quickLinksContainer"] a:nth-child(2) div[class*="number"]',
                 'div[class*="quickLinksContainer"] div[class*="number"]',
+                'a[href*="/files"] div[class*="number"]',
             ]
             for selector in files_count_selectors:
                 try:
@@ -386,6 +663,7 @@ class BuildingConnectedTableScraper:
             new_badge_selectors = [
                 'div[class*="quickLinksContainer"] a:nth-child(2) span span',
                 'div[class*="quickLinksContainer"] a:nth-child(2) div span',
+                'a[href*="/files"] span span',
             ]
             for selector in new_badge_selectors:
                 try:
@@ -398,22 +676,38 @@ class BuildingConnectedTableScraper:
                 except:
                     continue
 
-            # Get files link
-            files_link_selectors = [
-                'div[class*="quickLinksContainer"] a:nth-child(2)',
-                'a[href*="/files"]',
+            # Get files link from page if we don't have it yet (fallback)
+            if not detail_info['files_link']:
+                files_link_selectors = [
+                    'div[class*="quickLinksContainer"] a:nth-child(2)',
+                    'a[href*="/files"]',
+                ]
+                for selector in files_link_selectors:
+                    try:
+                        link_elem = await self.page.query_selector(selector)
+                        if link_elem:
+                            href = await link_elem.get_attribute('href')
+                            if href:
+                                if href.startswith('/'):
+                                    href = f"https://app.buildingconnected.com{href}"
+                                detail_info['files_link'] = href
+                                detail_info['download_link'] = href
+                            break
+                    except:
+                        continue
+
+            # Extract contact email
+            email_selectors = [
+                'a[href^="mailto:"]',
+                'div[class*="contactInfo"] a[href^="mailto:"]',
             ]
-            for selector in files_link_selectors:
+            for selector in email_selectors:
                 try:
-                    link_elem = await self.page.query_selector(selector)
-                    if link_elem:
-                        href = await link_elem.get_attribute('href')
-                        if href:
-                            if href.startswith('/'):
-                                href = f"https://app.buildingconnected.com{href}"
-                            detail_info['files_link'] = href
-                            detail_info['download_link'] = href
-                            print(f"[BC]     Files link: {href[:50]}...")
+                    email_elem = await self.page.query_selector(selector)
+                    if email_elem:
+                        href = await email_elem.get_attribute('href')
+                        if href and href.startswith('mailto:'):
+                            detail_info['contact_email'] = href.replace('mailto:', '')
                         break
                 except:
                     continue
@@ -422,6 +716,7 @@ class BuildingConnectedTableScraper:
             address_selectors = [
                 'div[class*="scrollY"] div[class*="value"] div span',
                 'div[class*="hoverArea"] div[class*="value"] div span',
+                'div[class*="locationWrapper"] span',
             ]
             for selector in address_selectors:
                 try:
@@ -509,17 +804,17 @@ class BuildingConnectedTableScraper:
                 return False
 
             # Wait for download to complete
-            print("   Waiting for download to complete...")
+            print("[BC]    Waiting for download to complete...")
             await asyncio.sleep(10)
 
             # Check for new files
-            files_after = set(os.listdir(download_dir)) if os.path.exists(download_dir) else set()
+            files_after = set(os.listdir(self.download_dir)) if os.path.exists(self.download_dir) else set()
             new_files = files_after - files_before
 
             if new_files:
                 # Get the most recent file (likely the downloaded zip)
-                new_file = sorted(new_files, key=lambda f: os.path.getmtime(os.path.join(download_dir, f)))[-1]
-                local_path = os.path.join(download_dir, new_file)
+                new_file = sorted(new_files, key=lambda f: os.path.getmtime(os.path.join(self.download_dir, f)))[-1]
+                local_path = os.path.join(self.download_dir, new_file)
 
                 # Create a web-accessible path
                 # Assuming downloads folder is served at /downloads
@@ -528,41 +823,41 @@ class BuildingConnectedTableScraper:
                 # Update project with local file path
                 project['local_file_path'] = web_path
                 project['downloaded_file'] = new_file
-                print(f"   File downloaded: {new_file}")
-                print(f"   Local path: {web_path}")
+                print(f"[BC]    File downloaded: {new_file}")
+                print(f"[BC]    Local path: {web_path}")
             else:
-                print("   Warning: No new files detected in download directory")
+                print("[BC]    Warning: No new files detected in download directory")
 
-            print("   Download complete")
+            print("[BC]    Download complete")
             return True
 
         except Exception as e:
-            print(f"   Error downloading files: {e}")
+            print(f"[BC]    Error downloading files: {e}")
             import traceback
             traceback.print_exc()
             return False
 
     async def scrape_all_projects(self, max_projects=None, include_details=False, download_files=False):
         """
-        Scrape projects from table view using two-pass approach
+        Scrape projects from table view using multi-pass approach
 
         Args:
             max_projects: Max number to process (optional limit)
-            include_details: If True, click into each project for contact email, files info (slower)
-            download_files: If True, perform second pass to download files for all projects
+            include_details: If True, get contact email and files link in a separate pass (slower)
+            download_files: If True, perform another pass to download files for all projects
         """
         print("\n" + "="*50)
         print("[BC] Starting BuildingConnected scrape")
         print("="*50)
         print(f"[BC] Include details: {'Yes' if include_details else 'No'}")
         print(f"[BC] Download files: {'Yes' if download_files else 'No'}")
-        print("[BC] Strategy: Pass 1 - Extract data, Pass 2 - Download files\n")
+        print("[BC] Strategy: Pass 1 - Extract table data, Pass 2 - Get details, Pass 3 - Download files\n")
 
         await self.navigate_to_pipeline()
         await self.sort_by_due_date()
 
-        # ====== PASS 1: Extract Project Data ======
-        print("\n[BC] === PASS 1: Extracting Project Data ===")
+        # ====== PASS 1: Extract ALL Project Data from Table (with row clicks for URL) ======
+        print("\n[BC] === PASS 1: Extracting Table Data (clicking rows for URLs) ===")
 
         seen_ids = set()
         processed_count = 0
@@ -588,8 +883,8 @@ class BuildingConnectedTableScraper:
             # Process each visible row
             for idx, row in enumerate(rows):
                 try:
-                    # Extract row data directly
-                    data = await self.extract_row_data(row, processed_count)
+                    # Extract row data from table (clicking disabled - causes element detachment issues)
+                    data = await self.extract_row_data(row, processed_count, click_for_url=False)
                     if not data:
                         continue
 
@@ -607,22 +902,11 @@ class BuildingConnectedTableScraper:
                     seen_ids.add(data['id'])
                     new_projects_this_batch += 1
 
-                    # Optionally get detail info
-                    if include_details and data['url'] != "N/A":
-                        print(f"[BC] [{processed_count + 1}] Getting details for: {data['name'][:40]}...")
-                        detail_info = await self.extract_detail_info(data['url'])
-                        if detail_info:
-                            data.update(detail_info)
-                        # Navigate back
-                        await self.navigate_to_pipeline()
-                        await self.sort_by_due_date()
-                    else:
-                        print(f"[{processed_count + 1}] {data['name'][:40]}... | {data['bid_date']} | {data['location']}")
+                    # Just log it - NO DETAILS YET (will get in Pass 2)
+                    print(f"[BC] [{processed_count + 1}] {data['name'][:40]}... | {data['bid_date']} | {data['location']}")
 
                     self.leads.append(data)
                     processed_count += 1
-
-                    # Max limit check removed - scrape unlimited projects until expired project found
 
                 except Exception as e:
                     continue
@@ -640,63 +924,85 @@ class BuildingConnectedTableScraper:
                 # Check if we found new projects this batch
                 if new_projects_this_batch == 0:
                     consecutive_no_new += 1
-                    print(f" No new projects in batch (consecutive: {consecutive_no_new}) - Scroll: {int(current_scroll)}/{int(max_scroll)}")
+                    print(f"[BC] No new projects in batch (consecutive: {consecutive_no_new}) - Scroll: {int(current_scroll)}/{int(max_scroll)}")
 
-                    # If no new projects for 20 consecutive batches, we're done (increased from 5 for more thorough scraping)
+                    # If no new projects for 20 consecutive batches, we're done
                     if consecutive_no_new >= 20:
-                        print(" No new projects for 20 batches - end of table reached")
+                        print("[BC] No new projects for 20 batches - end of table reached")
                         break
                 else:
                     consecutive_no_new = 0
-                    print(f" Found {new_projects_this_batch} new projects | Total: {processed_count} | Scroll: {int(current_scroll)}/{int(max_scroll)}")
+                    print(f"[BC] Found {new_projects_this_batch} new projects | Total: {processed_count} | Scroll: {int(current_scroll)}/{int(max_scroll)}")
 
                 # Check if at bottom (with some tolerance)
                 if current_scroll >= max_scroll - 10:
-                    print(f" Reached bottom of table (scroll: {int(current_scroll)}/{int(max_scroll)})")
-                    print(f" Total projects collected: {processed_count}")
+                    print(f"[BC] Reached bottom of table (scroll: {int(current_scroll)}/{int(max_scroll)})")
+                    print(f"[BC] Total projects collected: {processed_count}")
                     break
 
-                # Check if scroll position hasn't changed (wait a few attempts before giving up)
+                # Check if scroll position hasn't changed
                 if current_scroll == last_scroll_top:
                     consecutive_no_scroll += 1
-                    print(f" Scroll position unchanged ({consecutive_no_scroll} times)")
+                    print(f"[BC] Scroll position unchanged ({consecutive_no_scroll} times)")
                     if consecutive_no_scroll >= 10:
-                        print(" Scroll not advancing - likely at end")
-                        print(f" Total projects collected: {processed_count}")
+                        print("[BC] Scroll not advancing - likely at end")
+                        print(f"[BC] Total projects collected: {processed_count}")
                         break
                 else:
-                    consecutive_no_scroll = 0  # Reset counter when scroll advances
+                    consecutive_no_scroll = 0
                     last_scroll_top = current_scroll
 
-            # Scroll down (reduced pixels for better virtual table handling)
+            # Scroll down
             await self.scroll_table(400)
             scroll_attempts += 1
 
-            # Extra wait every 10 scrolls to let virtual table catch up
+            # Extra wait every 10 scrolls
             if scroll_attempts % 10 == 0:
-                print(f" Pausing to let virtual table render... (scroll attempt {scroll_attempts})")
+                print(f"[BC] Pausing to let virtual table render... (scroll attempt {scroll_attempts})")
                 await asyncio.sleep(2)
 
-        print(f"\n[BC] === PASS 1 Complete. Found {len(self.leads)} valid leads. ===")
+        print(f"\n[BC] === PASS 1 Complete. Found {len(self.leads)} projects. ===")
 
-        # ====== PASS 2: Download Files ======
-        if download_files and self.leads:
-            print("\n=== PASS 2: Downloading Files ===")
+        # ====== PASS 2: Get Details (files link, contact email) ======
+        if include_details and self.leads:
+            print(f"\n[BC] === PASS 2: Getting Details for {len(self.leads)} projects ===")
             for i, project in enumerate(self.leads):
-                print(f"\nProcessing download for project {i+1}/{len(self.leads)}...")
+                if project.get('url') and project['url'] != "N/A":
+                    print(f"[BC] [{i+1}/{len(self.leads)}] Getting details for: {project['name'][:40]}...")
+                    try:
+                        # Navigate to project page
+                        await self.page.goto(project['url'], wait_until='domcontentloaded', timeout=30000)
+                        await asyncio.sleep(2)
+
+                        # Extract details from the project page
+                        detail_info = await self.extract_detail_info(project['url'])
+                        if detail_info:
+                            project.update(detail_info)
+                            if detail_info.get('files_link'):
+                                print(f"[BC]     Files link: {detail_info['files_link'][:60]}...")
+                    except Exception as e:
+                        print(f"[BC]     Error getting details: {e}")
+                else:
+                    print(f"[BC] [{i+1}/{len(self.leads)}] Skipping (no URL): {project['name'][:40]}...")
+
+            print(f"\n[BC] === PASS 2 Complete. ===")
+
+        # ====== PASS 3: Download Files ======
+        if download_files and self.leads:
+            print(f"\n[BC] === PASS 3: Downloading Files for {len(self.leads)} projects ===")
+            for i, project in enumerate(self.leads):
+                print(f"\n[BC] [{i+1}/{len(self.leads)}] Downloading files for: {project['name'][:40]}...")
                 success = await self.download_files_for_project(project)
                 if success:
-                    print(" Download completed")
+                    print("[BC]     Download completed")
                 else:
-                    print(" Download failed or skipped")
+                    print("[BC]     Download failed or skipped")
 
-                # Return to pipeline for next project
-                await self.navigate_to_pipeline()
-                await asyncio.sleep(2)
+            print(f"\n[BC] === PASS 3 Complete. ===")
 
-        print(f"\n SCRAPING COMPLETE")
-        print(f" Total leads found: {len(self.leads)}")
-        print(f" Scroll attempts: {scroll_attempts}")
+        print(f"\n[BC] SCRAPING COMPLETE")
+        print(f"[BC] Total leads found: {len(self.leads)}")
+        print(f"[BC] Scroll attempts: {scroll_attempts}")
         return self.leads
 
     async def save_results(self):

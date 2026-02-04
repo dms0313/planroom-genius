@@ -243,6 +243,7 @@ export default function LeadDashboard() {
                       <div className="truncate" title={lead.name}>{lead.name}</div>
                       <div className="flex items-center gap-2 mt-0.5">
                         {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
+                        {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
                         {lead.sprinklered && <span className="text-[10px] bg-red-500/10 text-red-500 px-1.5 py-0.5 rounded border border-red-500/20">SPRINKLERED</span>}
                         <span className="text-[10px] text-slate-600">{lead.site}</span>
                       </div>
