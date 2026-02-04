@@ -1,0 +1,5 @@
+=== Scraper Run Started: 2026-02-04T14:49:30.387403 ===
+[14:49:30] Starting scraper run
+[14:49:30] BuildingConnected: Initializing browser
+[14:49:45] BuildingConnected: Complete - Found 20 leads
+[14:49:45] PlanHub: Initializing browser

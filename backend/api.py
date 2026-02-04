@@ -136,6 +136,25 @@ async def get_scraper_status_endpoint():
         }
     }
 
+@app.get("/console-logs")
+async def get_console_logs_endpoint(lines: int = 100):
+    """Get recent console logs for monitoring scraper progress."""
+    from backend.services.scheduler import get_console_logs
+
+    logs = get_console_logs(lines)
+    return {
+        "logs": logs,
+        "count": len(logs)
+    }
+
+@app.delete("/console-logs")
+async def clear_console_logs_endpoint():
+    """Clear console logs."""
+    from backend.services.scheduler import clear_console_logs
+
+    clear_console_logs()
+    return {"status": "cleared"}
+
 @app.post("/clear-leads")
 async def clear_leads():
     """Clear all leads from the database (creates backup first)."""

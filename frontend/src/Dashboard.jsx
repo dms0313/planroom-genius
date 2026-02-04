@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2 } from 'lucide-react';
 
 export default function LeadDashboard() {
   const [leads, setLeads] = useState([]);
@@ -13,6 +13,13 @@ export default function LeadDashboard() {
   const [editModal, setEditModal] = useState(null);
   const [addModal, setAddModal] = useState(false);
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
+
+  // Console monitor state
+  const [showConsole, setShowConsole] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState([]);
+  const [scraperStatus, setScraperStatus] = useState(null);
+  const [consoleMinimized, setConsoleMinimized] = useState(false);
+  const consoleEndRef = useRef(null);
 
   // Form state for add/edit
   const emptyForm = {
@@ -263,6 +270,63 @@ export default function LeadDashboard() {
     setFormData(emptyForm);
     setAddModal(true);
   };
+
+  // Fetch console logs
+  const fetchConsoleLogs = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/console-logs?lines=200`);
+      const data = await res.json();
+      setConsoleLogs(data.logs || []);
+    } catch (e) {
+      console.error("Failed to fetch logs", e);
+    }
+  };
+
+  // Fetch scraper status
+  const fetchScraperStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/scraper-status`);
+      const data = await res.json();
+      setScraperStatus(data);
+      return data;
+    } catch (e) {
+      console.error("Failed to fetch scraper status", e);
+      return null;
+    }
+  };
+
+  // Clear console logs
+  const clearConsoleLogs = async () => {
+    try {
+      await fetch(`${API_BASE}/console-logs`, { method: 'DELETE' });
+      setConsoleLogs([]);
+    } catch (e) {
+      console.error("Failed to clear logs", e);
+    }
+  };
+
+  // Poll for logs when console is open and syncing
+  useEffect(() => {
+    let interval;
+    if (showConsole || syncing) {
+      fetchConsoleLogs();
+      fetchScraperStatus();
+      interval = setInterval(() => {
+        fetchConsoleLogs();
+        fetchScraperStatus();
+      }, 2000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [showConsole, syncing]);
+
+  // Auto-scroll console to bottom
+  useEffect(() => {
+    if (consoleEndRef.current && !consoleMinimized) {
+      consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [consoleLogs, consoleMinimized]);
 
   // Helper to check if project is expired
   const isExpired = (bidDate) => {
@@ -554,9 +618,19 @@ export default function LeadDashboard() {
               {loading ? '...' : 'Refresh'}
             </button>
 
+            {/* Console Toggle */}
+            <button
+              onClick={() => { setShowConsole(!showConsole); if (!showConsole) fetchConsoleLogs(); }}
+              className={`p-2 rounded-lg transition flex items-center gap-1.5 text-sm ${showConsole ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+              title="Toggle Console"
+            >
+              <Terminal size={16} />
+              {syncing && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>}
+            </button>
+
             {/* Scan Button */}
             <button
-              onClick={triggerScan}
+              onClick={() => { triggerScan(); setShowConsole(true); clearConsoleLogs(); }}
               disabled={syncing}
               className={`bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-5 rounded-lg transition-all shadow-lg shadow-red-900/20 flex items-center gap-2 text-sm ${syncing ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
