@@ -18,14 +18,22 @@ class ScraperConfig:
     # Chrome Profile Settings
     import platform
     if platform.system() == 'Linux':
-        # Raspberry Pi specific path
-        CHROME_USER_DATA_DIR = "/home/pi/.config/chromium"
-        CHROME_PROFILE_NAME = "Profile 1"
+        # Linux / Raspberry Pi - use home directory detection
+        # Supports any username, not just "pi"
+        _home_dir = os.path.expanduser("~")
+        CHROME_USER_DATA_DIR = os.getenv(
+            "CHROME_USER_DATA_DIR",
+            os.path.join(_home_dir, ".config", "chromium")
+        )
+        CHROME_PROFILE_NAME = os.getenv("CHROME_PROFILE_NAME", "Default")
     else:
-        # Development/Local default
-        CHROME_USER_DATA_DIR = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "planroom_agent_storage_browser-use-user-data-dir-persistent"
+        # Development/Local default (Windows/macOS)
+        CHROME_USER_DATA_DIR = os.getenv(
+            "CHROME_USER_DATA_DIR",
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "planroom_agent_storage_browser-use-user-data-dir-persistent"
+            )
         )
         CHROME_PROFILE_NAME = os.getenv("CHROME_PROFILE_NAME", "Profile 2")
 

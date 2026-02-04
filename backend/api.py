@@ -99,7 +99,16 @@ async def sync_leads(background_tasks: BackgroundTasks):
     """
     Triggers the Puppeteer scraper scan in the background.
     """
-    from backend.services.scheduler import run_agents
+    from backend.services.scheduler import run_agents, get_scraper_status
+
+    # Check if already running
+    status = get_scraper_status()
+    if status["running"]:
+        return {
+            "status": "already_running",
+            "message": "Scraper is already running",
+            "current_step": status["current_step"]
+        }
 
     background_tasks.add_task(run_agents)
     return {"status": "accepted", "message": "Scan triggered in background"}
@@ -108,6 +117,24 @@ async def sync_leads(background_tasks: BackgroundTasks):
 async def sync_leads_info():
     """Helper to explain how to use the endpoint if accessed via GET."""
     return {"status": "info", "message": "This endpoint requires a POST request to trigger the scan."}
+
+@app.get("/scraper-status")
+async def get_scraper_status_endpoint():
+    """Get current scraper status - useful for monitoring progress."""
+    from backend.services.scheduler import get_scraper_status
+
+    status = get_scraper_status()
+    return {
+        "running": status["running"],
+        "current_step": status["current_step"],
+        "last_run": status["last_run"],
+        "last_status": status["last_status"],
+        "last_error": status["last_error"],
+        "leads_found": {
+            "buildingconnected": status["bc_leads_found"],
+            "planhub": status["ph_leads_found"]
+        }
+    }
 
 @app.post("/clear-leads")
 async def clear_leads():
