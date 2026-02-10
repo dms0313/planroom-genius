@@ -18,14 +18,22 @@ class ScraperConfig:
     # Chrome Profile Settings
     import platform
     if platform.system() == 'Linux':
-        # Raspberry Pi specific path
-        CHROME_USER_DATA_DIR = "/home/pi/.config/chromium"
-        CHROME_PROFILE_NAME = "Profile 1"
+        # Linux / Raspberry Pi - use home directory detection
+        # Supports any username, not just "pi"
+        _home_dir = os.path.expanduser("~")
+        CHROME_USER_DATA_DIR = os.getenv(
+            "CHROME_USER_DATA_DIR",
+            os.path.join(_home_dir, ".config", "chromium")
+        )
+        CHROME_PROFILE_NAME = os.getenv("CHROME_PROFILE_NAME", "Default")
     else:
-        # Development/Local default
-        CHROME_USER_DATA_DIR = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "planroom_agent_storage_browser-use-user-data-dir-persistent"
+        # Development/Local default (Windows/macOS)
+        CHROME_USER_DATA_DIR = os.getenv(
+            "CHROME_USER_DATA_DIR",
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "planroom_agent_storage_browser-use-user-data-dir-persistent"
+            )
         )
         CHROME_PROFILE_NAME = os.getenv("CHROME_PROFILE_NAME", "Profile 2")
 
@@ -49,10 +57,10 @@ class ScraperConfig:
     MAX_PROJECTS_DEFAULT = None  # None = all projects
     MAX_CONSECUTIVE_ERRORS = 3
 
-    # Delays (in seconds)
-    DELAY_AFTER_CLICK = 1
-    DELAY_BETWEEN_PROJECTS = 1
-    DELAY_AFTER_NAVIGATION = 2
+    # Delays (in seconds) - keep minimal, only rate limit Gemini API calls
+    DELAY_AFTER_CLICK = 0.2
+    DELAY_BETWEEN_PROJECTS = 0.3
+    DELAY_AFTER_NAVIGATION = 0.5
 
     # Database
     DB_FILE = os.path.join(os.path.dirname(__file__), 'leads_db.json')
@@ -235,3 +243,23 @@ DATE_FORMATS = [
     "%d %B %Y",
     "%d %b %Y",
 ]
+
+
+class GoogleDriveConfig:
+    """Google Drive integration configuration"""
+
+    # File paths
+    BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+    CREDENTIALS_FILE = os.path.join(BACKEND_DIR, 'credentials.json')
+    TOKEN_FILE = os.path.join(BACKEND_DIR, 'token.json')
+
+    # OAuth Scopes - only access files created by this app
+    SCOPES = ['https://www.googleapis.com/auth/drive.file']
+
+    # Folder names for organization
+    ROOT_FOLDER_NAME = "Planroom Genius Files"
+    BC_FOLDER_NAME = "BuildingConnected"
+    PH_FOLDER_NAME = "PlanHub"
+
+    # Feature toggle - set via environment variable
+    ENABLED = os.getenv('USE_GOOGLE_DRIVE', 'false').lower() in ('true', '1', 'yes')

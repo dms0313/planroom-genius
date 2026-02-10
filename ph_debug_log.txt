@@ -1,0 +1,70 @@
+Google Drive API libraries not installed. Run: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
+[PH] Google Drive module loaded. Available: True
+DEBUG: Initializing PlanHub scraper...
+DEBUG: Running scraper with max_projects=1...
+[OK] Found Chrome at: C:\Program Files\Google\Chrome\Application\chrome.exe
+
+======== CHROME PROFILE CONFIG ========
+User Data Dir:   C:\Users\dms03\Development\planroom-genius\backend\planroom_agent_storage_browser-use-user-data-dir-persistent
+Profile Name:    Profile 2
+Headless:        True
+Chrome Path:     C:\Program Files\Google\Chrome\Application\chrome.exe
+=======================================
+
+ Browser initialized
+[PH] ========================================
+[PH] Starting PlanHub scrape
+[PH] Navigating to project list...
+ Navigating to https://supplier.planhub.com/project/list...
+ Navigation successful
+[PH] Current URL: https://supplier.planhub.com/project/list
+ Already logged in
+[PH] Loading saved search filter...
+[PH]    Clicking 'View Saved Searches' button...
+[PH]      Button not found - trying alternate selector...
+[PH]    Selecting 'Daniel's Filter'...
+[PH]      Daniel's Filter selected
+[PH]      Waiting for results to update...
+[PH] Saved search filter applied successfully
+[PH] === PASS 1: Extracting Project Details ===
+[PH] Waiting for project table...
+[PH] Found 10 project rows
+[PH] Processing 1 of 10 rows...
+[PH]    Extracting project 1...
+[PH]      Name: Lawrence Public Schools - Centennial Ren...
+[PH]      Bid Date: 03/25/2026
+[PH]      Location: Lawrence, Kansas
+[PH] Found: Lawrence Public Schools - Centennial Ren
+[PH] === PASS 1 Complete: Found 1 valid leads ===
+[PH] === PASS 2: Extracting Details & Files ===
+[PH] Processing 1/1: Lawrence Public Schools - Cent
+
+[PH] [Pass 2] Processing: Lawrence Public Schools - Centennial Ren...
+[PH]    Waiting for details page...
+[PH]    Details page did not load, taking screenshot...
+[PH] Returning to project list...
+[PH] Navigating to project list...
+ Navigating to https://supplier.planhub.com/project/list...
+ Navigation successful
+[PH] Current URL: https://supplier.planhub.com/project/list
+ Already logged in
+[PH] SCRAPING COMPLETE - Total leads: 1
+
+ Saved 1 new leads to C:\Users\dms03\Development\planroom-genius\backend\leads_db.json
+ Total leads in database: 30
+
+ Browser closed
+DEBUG: Scraper finished. Found 1 leads.
+DEBUG: Lead: Lawrence Public Schools - Centennial Renovation
+DEBUG: Files link: None
+DEBUG: Download link: None
+DEBUG: Local file: None
+Exception ignored in atexit callback: <function Launcher.launch.<locals>._close_process at 0x000001C16CC728E0>
+Traceback (most recent call last):
+  File "C:\Users\dms03\AppData\Local\Programs\Python\Python311\Lib\site-packages\pyppeteer\launcher.py", line 153, in _close_process
+    self._loop.run_until_complete(self.killChrome())
+  File "C:\Users\dms03\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py", line 629, in run_until_complete
+    self._check_closed()
+  File "C:\Users\dms03\AppData\Local\Programs\Python\Python311\Lib\asyncio\base_events.py", line 520, in _check_closed
+    raise RuntimeError('Event loop is closed')
+RuntimeError: Event loop is closed

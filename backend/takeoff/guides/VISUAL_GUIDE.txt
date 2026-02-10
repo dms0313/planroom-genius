@@ -1,0 +1,147 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                 🚨 FIRE ALARM PDF ANALYZER                               ║
+║                WHERE TO FIND YOUR DOWNLOAD LINKS                         ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+After you click "Analyze Fire Alarm Systems" and analysis completes,
+scroll down to find this section:
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                                                                        │
+│  📊 Analysis Results                                                   │
+│                                                                        │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                           │
+│  │    45    │  │    12    │  │    25    │                           │
+│  │  Total   │  │  Pages   │  │  Total   │                           │
+│  │ Devices  │  │   with   │  │  Pages   │                           │
+│  └──────────┘  │ Devices  │  └──────────┘                           │
+│                └──────────┘                                            │
+│                                                                        │
+│  🚨 Detected Devices                                                   │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                    │
+│  │ Smoke Det.  │ │ Pull Station│ │ Horn Strobe │                    │
+│  │ Page 3      │ │ Page 5      │ │ Page 7      │                    │
+│  │ 92% conf.   │ │ 87% conf.   │ │ 94% conf.   │                    │
+│  └─────────────┘ └─────────────┘ └─────────────┘                    │
+│                                                                        │
+│  📥 Export Results (JSON)   ← Can export all data as JSON             │
+│                                                                        │
+│  ═══════════════════════════════════════════════════════════════════  │
+│                                                                        │
+│  🖼️  Annotated Pages Preview                                         │
+│  Click any image to view in full screen                               │
+│                                                                        │
+│  ╔═══════════════╗  ╔═══════════════╗  ╔═══════════════╗            │
+│  ║               ║  ║               ║  ║               ║            │
+│  ║   [Preview]   ║  ║   [Preview]   ║  ║   [Preview]   ║            │
+│  ║    Image      ║  ║    Image      ║  ║    Image      ║            │
+│  ║               ║  ║               ║  ║               ║            │
+│  ╚═══════════════╝  ╚═══════════════╝  ╚═══════════════╝            │
+│   Page 1            Page 3            Page 7                         │
+│   5 devices         12 devices        8 devices                      │
+│                                                                        │
+│   ┏━━━━━━┓┏━━━━━━━━━━┓  ┏━━━━━━┓┏━━━━━━━━━━┓  ┏━━━━━━┓┏━━━━━━━━━━┓  │
+│   ┃ View ┃┃ Download ┃  ┃ View ┃┃ Download ┃  ┃ View ┃┃ Download ┃  │
+│   ┗━━━━━━┛┗━━━━━━━━━━┛  ┗━━━━━━┛┗━━━━━━━━━━┛  ┗━━━━━━┛┗━━━━━━━━━━┛  │
+│      ↑         ↑            ↑         ↑            ↑         ↑        │
+│      │         │            │         │            │         │        │
+│  Opens    Downloads    Opens     Downloads    Opens     Downloads    │
+│  modal    this page    modal     this page    modal     this page    │
+│                                                                        │
+│            ⬆️  THESE ARE YOUR DOWNLOAD LINKS!  ⬆️                      │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+
+WHAT HAPPENS WHEN YOU CLICK "Download":
+
+1. Button clicked
+2. JavaScript calls: downloadPage(jobId, pageNumber)
+3. Fetches: /api/download_annotated_pdf/abc123/3
+4. Backend creates annotated PDF with red detection boxes
+5. Browser downloads file: annotated_page_3.pdf ✅
+
+
+ALTERNATIVE: Click "View" to open full-screen, then download from modal:
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  ✕                                                                     │
+│                                                                        │
+│                                                                        │
+│                        ╔═══════════════════╗                          │
+│                        ║                   ║                          │
+│                        ║                   ║                          │
+│                        ║  Large Preview    ║                          │
+│                        ║  with Detections  ║                          │
+│                        ║                   ║                          │
+│                        ║                   ║                          │
+│                        ╚═══════════════════╝                          │
+│                                                                        │
+│                          Page 3                                        │
+│                                                                        │
+│                    ┏━━━━━━━━━━━━━━━━━━┓                              │
+│                    ┃  📥 Download PDF  ┃  ← Click here!               │
+│                    ┗━━━━━━━━━━━━━━━━━━┛                              │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+
+FILE LOCATIONS IN CODE:
+
+📁 static/js/main.js
+   ├─ Line 200: Creates download buttons in preview grid
+   └─ Line 240: downloadPage() function handles click
+
+📁 routes/preview.py
+   └─ Line 90: download_annotated_pdf() endpoint generates PDF
+
+📁 templates/index.html
+   └─ Line 120: Preview grid HTML structure
+
+📁 static/css/style.css
+   └─ Line 200: Download button styles
+
+
+EXPECTED RESULT:
+
+✅ Downloaded file: annotated_page_3.pdf
+✅ Contains: Original page + red detection boxes
+✅ Shows: Device type labels with confidence scores
+✅ Format: Standard PDF viewable in any PDF reader
+
+
+TROUBLESHOOTING:
+
+❌ No download buttons visible?
+   → No devices were detected on any page
+   → Try lowering confidence threshold
+   → Check that Roboflow model is working
+
+❌ Download button doesn't respond?
+   → Open browser console (F12)
+   → Check for JavaScript errors
+   → Try refreshing page
+
+❌ Download fails with error?
+   → Check backend terminal for errors
+   → Verify job_id is still valid
+   → Try re-running analysis
+
+❌ PDF is blank/no boxes?
+   → Check coordinate scaling in preview.py
+   → Verify devices were detected
+   → Check DPI settings match
+
+
+QUICK TEST:
+
+1. Upload test PDF
+2. Select 2-3 pages
+3. Click "Analyze Fire Alarm Systems"
+4. Wait for completion
+5. Scroll to "Annotated Pages Preview"
+6. Look for [Download] buttons
+7. Click any [Download] button
+8. Check browser downloads folder
+9. Open annotated_page_X.pdf
+10. Verify red boxes are drawn on devices
+
+SUCCESS! 🎉

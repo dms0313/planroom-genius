@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus } from 'lucide-react';
 
 export default function LeadDashboard() {
   const [leads, setLeads] = useState([]);
@@ -9,17 +9,194 @@ export default function LeadDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [deduplicating, setDeduplicating] = useState(false);
   const [companyPopup, setCompanyPopup] = useState(null);
+  const [descriptionPopup, setDescriptionPopup] = useState(null);
+  const [editModal, setEditModal] = useState(null);
+  const [addModal, setAddModal] = useState(false);
+  const [showUtilityMenu, setShowUtilityMenu] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [scraperSettings, setScraperSettings] = useState({
+    planhub: true,
+    bidplanroom: true,
+    loydbuildsbetter: true,
+    buildingconnected: true,
+    use_gdrive: true
+  });
 
-  // Initial load
-  // Dynamic API Base URL to allow access from other devices
+  // Console monitor state
+  const [showConsole, setShowConsole] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState([]);
+  const [scraperStatus, setScraperStatus] = useState(null);
+  const [consoleMinimized, setConsoleMinimized] = useState(false);
+  const consoleEndRef = useRef(null);
+
+  // Google Drive state
+  const [gdriveStatus, setGdriveStatus] = useState(null);
+  const [connectingGdrive, setConnectingGdrive] = useState(false);
+  const [activeTab, setActiveTab] = useState('bid');
+  const [siteFilter, setSiteFilter] = useState('all');
+
+  // Knowledge scan state
+  const [knowledgeStatus, setKnowledgeStatus] = useState(null);
+  const [knowledgeScanning, setKnowledgeScanning] = useState(false);
+  const [knowledgeSort, setKnowledgeSort] = useState('score'); // score, chance, name
+  const [knowledgeFilter, setKnowledgeFilter] = useState('all'); // all, scanned, unscanned
+  const [knowledgeExpanded, setKnowledgeExpanded] = useState(null); // expanded project id
+  const [pointToFileModal, setPointToFileModal] = useState(null); // {lead_id, files}
+  const [pointToFileLoading, setPointToFileLoading] = useState(false);
+
+  // Form state for add/edit
+  const emptyForm = {
+    name: '',
+    company: '',
+    gc: '',
+    contact_name: '',
+    contact_email: '',
+    contact_phone: '',
+    location: '',
+    full_address: '',
+    bid_date: '',
+    description: '',
+    files_link: '',
+    download_link: '',
+    site: 'Manual Entry',
+    sprinklered: false,
+    has_budget: false
+  };
+  const [formData, setFormData] = useState(emptyForm);
+
   const API_BASE = `http://${window.location.hostname}:8000`;
 
   useEffect(() => {
     fetchLeads();
+    fetchGdriveStatus();
+    fetchKnowledgeStatus();
+    fetchSettings();
+
+    // Poll for updates every 10 seconds
+    const interval = setInterval(() => {
+      fetchLeads(true);
+      fetchKnowledgeStatus(); // Also poll knowledge status
+      // Check scraper status to keep syncing state accurate
+      fetchScraperStatus().then(status => {
+        if (status?.running) setSyncing(true);
+        else if (syncing) setSyncing(false); // Auto-turn off if finished
+      });
+    }, 10000);
+
+    // Initial check
+    fetchScraperStatus().then(status => {
+      if (status?.running) setSyncing(true);
+    });
+
+    return () => clearInterval(interval);
   }, []);
 
-  const fetchLeads = async () => {
-    setLoading(true);
+  // Fetch Google Drive status
+  const fetchGdriveStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/gdrive/status`);
+      const data = await res.json();
+      setGdriveStatus(data);
+    } catch (e) {
+      console.error("Failed to fetch Google Drive status", e);
+      setGdriveStatus({ status: 'error', message: 'Failed to check status' });
+    }
+  };
+
+  const connectGdrive = async () => {
+    setConnectingGdrive(true);
+    try {
+      const res = await fetch(`${API_BASE}/gdrive/connect`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Google Drive connected successfully!');
+        fetchGdriveStatus();
+      } else {
+        alert(`Connection failed: ${data.detail || data.message}`);
+      }
+    } catch (e) {
+      alert("Failed to connect to Google Drive.");
+    }
+    setConnectingGdrive(false);
+  };
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/settings/scrapers`);
+      if (res.ok) {
+        const data = await res.json();
+        setScraperSettings(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch settings", e);
+    }
+  };
+
+  const saveSettings = async (newSettings) => {
+    try {
+      await fetch(`${API_BASE}/settings/scrapers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSettings)
+      });
+      setScraperSettings(newSettings);
+    } catch (e) {
+      console.error("Failed to save settings", e);
+      alert("Failed to save settings");
+    }
+  };
+
+  const toggleSetting = (key) => {
+    const newSettings = { ...scraperSettings, [key]: !scraperSettings[key] };
+    saveSettings(newSettings);
+  };
+
+  const fetchKnowledgeStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/knowledge/status`);
+      const data = await res.json();
+      setKnowledgeStatus(data);
+    } catch (e) {
+      console.error("Failed to fetch knowledge status", e);
+    }
+  };
+
+  const triggerKnowledgeScan = async () => {
+    setKnowledgeScanning(true);
+    try {
+      const res = await fetch(`${API_BASE}/knowledge/scan`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.detail || 'Failed to start Knowledge scan');
+      }
+      // Start polling for status
+      const poll = setInterval(async () => {
+        const s = await fetchKnowledgeStatus();
+        await fetchLeads();
+        if (!knowledgeStatus?.running) {
+          clearInterval(poll);
+          setKnowledgeScanning(false);
+        }
+      }, 3000);
+    } catch (e) {
+      console.error("Failed to start knowledge scan", e);
+      setKnowledgeScanning(false);
+    }
+  };
+
+  const triggerSingleScan = async (leadId) => {
+    try {
+      await fetch(`${API_BASE}/knowledge/scan/${leadId}`, { method: 'POST' });
+      // Poll briefly
+      setTimeout(() => fetchLeads(), 5000);
+      setTimeout(() => fetchLeads(), 12000);
+    } catch (e) {
+      console.error("Failed to trigger single scan", e);
+    }
+  };
+
+  const fetchLeads = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/leads`);
       const data = await res.json();
@@ -27,37 +204,41 @@ export default function LeadDashboard() {
     } catch (e) {
       console.error("Failed to fetch leads", e);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
+  };
+
+  const stopScan = async () => {
+    if (!window.confirm("Are you sure you want to STOP the current scan?")) return;
+    try {
+      const res = await fetch(`${API_BASE}/stop-scan`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message);
+        setSyncing(false);
+      } else {
+        alert("Failed to stop scan: " + data.message);
+      }
+    } catch (e) {
+      console.error("Stop scan failed", e);
+      alert("Failed to send stop request");
+    }
   };
 
   const triggerScan = async (e) => {
     if (e) e.preventDefault();
-    console.log("🖱️ Triggering Scan (POST)...");
     setSyncing(true);
     try {
-      // Trigger background sync
-      const res = await fetch(`${API_BASE}/sync-leads`, {
+      await fetch(`${API_BASE}/sync-leads`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(scraperSettings)
       });
-      console.log("✅ Scan Trigger Response:", res.status);
-
-      // Start polling for results
       let elapsed = 0;
       const pollInterval = setInterval(() => {
         fetchLeads();
         elapsed += 5000;
-        console.log(`⏳ Polling ${elapsed / 1000}s...`);
-
-        // Stop polling after 3 minutes (180000ms)
-        if (elapsed >= 180000) {
-          clearInterval(pollInterval);
-          setSyncing(false);
-        }
+        if (elapsed >= 180000) { clearInterval(pollInterval); setSyncing(false); }
       }, 5000);
-
     } catch (e) {
       console.error("Agent trigger failed", e);
       setSyncing(false);
@@ -65,298 +246,380 @@ export default function LeadDashboard() {
   };
 
   const clearAllLeads = async () => {
-    if (!window.confirm('Are you sure you want to clear ALL leads? This will create a backup first.')) {
-      return;
-    }
-
+    if (!window.confirm('Are you sure you want to clear ALL leads? This will create a backup first.')) return;
     setClearing(true);
     try {
-      const res = await fetch(`${API_BASE}/clear-leads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const res = await fetch(`${API_BASE}/clear-leads`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       const data = await res.json();
-      console.log(`✅ Cleared ${data.count} leads`);
-
-      // Refresh the display
       await fetchLeads();
       alert(`Successfully cleared ${data.count} leads (backup created)`);
     } catch (e) {
-      console.error("Failed to clear leads", e);
-      alert("Failed to clear leads. Check console for details.");
+      alert("Failed to clear leads.");
     }
     setClearing(false);
   };
 
   const refreshAllLeads = async () => {
-    if (!window.confirm('Clear all existing leads and start a fresh scan?')) {
-      return;
-    }
-
+    if (!window.confirm('Clear all existing leads and start a fresh scan?')) return;
     setRefreshing(true);
     try {
-      const res = await fetch(`${API_BASE}/refresh-leads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const res = await fetch(`${API_BASE}/refresh-leads`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       const data = await res.json();
-      console.log(`✅ Cleared ${data.cleared_count} leads, starting fresh scan`);
-
-      // Clear UI immediately
       setLeads([]);
-
-      // Start polling for new results
       let elapsed = 0;
       const pollInterval = setInterval(() => {
         fetchLeads();
         elapsed += 5000;
-        console.log(`⏳ Polling for fresh data ${elapsed / 1000}s...`);
-
-        if (elapsed >= 180000) {
-          clearInterval(pollInterval);
-          setRefreshing(false);
-        }
+        if (elapsed >= 180000) { clearInterval(pollInterval); setRefreshing(false); }
       }, 5000);
-
       alert(`Cleared ${data.cleared_count} leads. Fresh scan started!`);
     } catch (e) {
-      console.error("Failed to refresh leads", e);
-      alert("Failed to refresh. Check console for details.");
+      alert("Failed to refresh.");
       setRefreshing(false);
     }
   };
 
   const deduplicateLeads = async () => {
-    if (!window.confirm('Remove duplicate leads by merging their information?')) {
-      return;
-    }
-
+    if (!window.confirm('Remove duplicate leads by merging their information?')) return;
     setDeduplicating(true);
     try {
-      const res = await fetch(`${API_BASE}/deduplicate-leads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const res = await fetch(`${API_BASE}/deduplicate-leads`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       const data = await res.json();
-      console.log(`✅ Removed ${data.removed_count} duplicates`);
-
-      // Refresh the display
       await fetchLeads();
       alert(`Removed ${data.removed_count} duplicate leads!\nBefore: ${data.original_count} | After: ${data.deduplicated_count}`);
     } catch (e) {
-      console.error("Failed to deduplicate leads", e);
-      alert("Failed to deduplicate. Check console for details.");
+      alert("Failed to deduplicate.");
     }
     setDeduplicating(false);
   };
 
-  // Helper to check if project is expired
-  const isExpired = (bidDate) => {
-    if (!bidDate || bidDate === 'N/A' || bidDate === 'TBD') return false;
+  const addLead = async () => {
     try {
-      const date = new Date(bidDate);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return date < today;
-    } catch {
-      return false;
+      const res = await fetch(`${API_BASE}/leads`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
+      if (res.ok) { await fetchLeads(); setAddModal(false); setFormData(emptyForm); }
+      else alert('Failed to add lead');
+    } catch (e) { alert("Failed to add lead."); }
+  };
+
+  const updateLead = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/leads/${editModal.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
+      if (res.ok) { await fetchLeads(); setEditModal(null); setFormData(emptyForm); }
+      else alert('Failed to update lead');
+    } catch (e) { alert("Failed to update lead."); }
+  };
+
+  const deleteLead = async (lead) => {
+    if (!window.confirm(`Delete "${lead.name}"?`)) return;
+    try {
+      const res = await fetch(`${API_BASE}/leads/${lead.id}`, { method: 'DELETE' });
+      if (res.ok) await fetchLeads();
+    } catch (e) { alert("Failed to delete lead."); }
+  };
+
+  // Toggle highlight color or strikethrough for a lead
+  const toggleLeadStyle = async (lead, field, value) => {
+    try {
+      const res = await fetch(`${API_BASE}/leads/${lead.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value })
+      });
+      if (res.ok) fetchLeads(true);
+    } catch (e) { console.error(`Failed to toggle ${field}:`, e); }
+  };
+
+  // Get highlight background class
+  const getHighlightBg = (highlight) => {
+    switch (highlight) {
+      case 'green': return 'bg-green-900/40 border-l-4 border-l-green-500';
+      case 'yellow': return 'bg-yellow-900/40 border-l-4 border-l-yellow-500';
+      case 'red': return 'bg-red-900/40 border-l-4 border-l-red-500';
+      default: return '';
     }
   };
 
-  // Filter groups
-  const bcLeads = leads.filter(l => l.site?.toLowerCase().includes("building"));
-  const phLeads = leads.filter(l => l.site?.toLowerCase().includes("planhub"));
+  const openEditModal = (lead) => {
+    setFormData({
+      name: lead.name || '', company: lead.company || '', gc: lead.gc || '',
+      contact_name: lead.contact_name || '', contact_email: lead.contact_email || '',
+      contact_phone: lead.contact_phone || '', location: lead.location || '',
+      full_address: lead.full_address || '', bid_date: lead.bid_date || '',
+      description: lead.description || '', files_link: lead.files_link || '',
+      download_link: lead.download_link || '', site: lead.site || 'Manual Entry',
+      sprinklered: lead.sprinklered || false, has_budget: lead.has_budget || false
+    });
+    setEditModal(lead);
+  };
 
-  const LeadTable = ({ title, data }) => {
+  const openAddModal = () => { setFormData(emptyForm); setAddModal(true); };
+
+  // Console
+  const fetchConsoleLogs = async () => {
+    try { const res = await fetch(`${API_BASE}/console-logs?lines=200`); const data = await res.json(); setConsoleLogs(data.logs || []); } catch (e) { }
+  };
+  const fetchScraperStatus = async () => {
+    try { const res = await fetch(`${API_BASE}/scraper-status`); const data = await res.json(); setScraperStatus(data); return data; } catch (e) { return null; }
+  };
+  const clearConsoleLogs = async () => {
+    try { await fetch(`${API_BASE}/console-logs`, { method: 'DELETE' }); setConsoleLogs([]); } catch (e) { }
+  };
+
+  // Point-to-File
+  const openPointToFile = async (leadId) => {
+    setPointToFileLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/knowledge/files/${leadId}`);
+      const data = await res.json();
+      setPointToFileModal({ lead_id: leadId, files: data.files || [], error: data.error });
+    } catch (e) {
+      setPointToFileModal({ lead_id: leadId, files: [], error: 'Failed to load files' });
+    }
+    setPointToFileLoading(false);
+  };
+
+  const setFileClassification = async (leadId, relPath, classification) => {
+    try {
+      await fetch(`${API_BASE}/knowledge/files/${leadId}/override`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rel_path: relPath, classification })
+      });
+      // Refresh the file list
+      openPointToFile(leadId);
+    } catch (e) {
+      alert('Failed to set classification');
+    }
+  };
+
+  // Poll logs
+  useEffect(() => {
+    let interval;
+    if (showConsole || syncing) {
+      fetchConsoleLogs(); fetchScraperStatus();
+      interval = setInterval(() => { fetchConsoleLogs(); fetchScraperStatus(); }, 2000);
+    }
+    return () => { if (interval) clearInterval(interval); };
+  }, [showConsole, syncing]);
+
+  useEffect(() => {
+    if (consoleEndRef.current && !consoleMinimized) consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [consoleLogs, consoleMinimized]);
+
+  // Poll knowledge status while scanning
+  useEffect(() => {
+    let interval;
+    if (knowledgeScanning) {
+      interval = setInterval(async () => {
+        await fetchKnowledgeStatus();
+        await fetchLeads();
+      }, 3000);
+    }
+    return () => { if (interval) clearInterval(interval); };
+  }, [knowledgeScanning]);
+
+  // Check if scanning stopped
+  useEffect(() => {
+    if (knowledgeStatus && !knowledgeStatus.running && knowledgeScanning) {
+      setKnowledgeScanning(false);
+    }
+  }, [knowledgeStatus]);
+
+  const isExpired = (bidDate) => {
+    if (!bidDate || bidDate === 'N/A' || bidDate === 'TBD') return false;
+    try { const d = new Date(bidDate); const t = new Date(); t.setHours(0, 0, 0, 0); return d < t; } catch { return false; }
+  };
+
+  // Derive unique site names for filter buttons
+  const uniqueSites = [...new Set(leads.map(l => l.site).filter(Boolean))];
+  const filteredLeads = siteFilter === 'all' ? leads : leads.filter(l => l.site === siteFilter);
+
+  // Knowledge sorted/filtered leads
+  const getKnowledgeLeads = () => {
+    let filtered = [...leads];
+    if (knowledgeFilter === 'scanned') filtered = filtered.filter(l => l.knowledge_last_scanned);
+    else if (knowledgeFilter === 'unscanned') filtered = filtered.filter(l => !l.knowledge_last_scanned);
+
+    const chanceOrder = { high: 0, medium: 1, low: 2 };
+    if (knowledgeSort === 'score') {
+      filtered.sort((a, b) => (b.knowledge_score || 0) - (a.knowledge_score || 0));
+    } else if (knowledgeSort === 'chance') {
+      filtered.sort((a, b) => (chanceOrder[a.knowledge_bid_chance] ?? 3) - (chanceOrder[b.knowledge_bid_chance] ?? 3));
+    } else if (knowledgeSort === 'name') {
+      filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }
+    return filtered;
+  };
+
+  // Score color
+  const scoreColor = (score) => {
+    if (score >= 70) return 'text-green-400';
+    if (score >= 30) return 'text-yellow-400';
+    return 'text-red-400';
+  };
+  const scoreBg = (score) => {
+    if (score >= 70) return 'bg-green-500';
+    if (score >= 30) return 'bg-yellow-500';
+    return 'bg-red-500';
+  };
+  const chanceColor = (chance) => {
+    if (chance === 'high') return 'bg-green-500/20 text-green-400 border-green-500/30';
+    if (chance === 'medium') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    return 'bg-red-500/20 text-red-400 border-red-500/30';
+  };
+  const badgeColor = (badge) => {
+    if (badge === 'NO FA') return 'bg-red-500/20 text-red-400 border-red-500/30';
+    if (badge === 'DEAL BREAKER') return 'bg-red-600/20 text-red-300 border-red-600/30';
+    if (badge === 'EXISTING') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    if (badge === 'NEW SYSTEM') return 'bg-green-500/20 text-green-400 border-green-500/30';
+    if (badge === 'MODIFICATION') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+    if (badge.includes('REQ')) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+    return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+  };
+
+  const classColor = (cls) => {
+    if (cls === 'plan') return 'bg-blue-500/20 text-blue-400 border-blue-500/40';
+    if (cls === 'spec') return 'bg-green-500/20 text-green-400 border-green-500/40';
+    return 'bg-slate-500/20 text-slate-400 border-slate-500/40';
+  };
+
+  const LeadTable = ({ title, data, showSiteFilter }) => {
     const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 10;
+    const itemsPerPage = 50;
     const totalPages = Math.ceil(data.length / itemsPerPage);
-
-    // Reset to page 1 when data changes (e.g. filter or refresh)
-    useEffect(() => {
-      setCurrentPage(1);
-    }, [data.length]);
-
-    const paginatedData = data.slice(
-      (currentPage - 1) * itemsPerPage,
-      currentPage * itemsPerPage
-    );
-
-    const handlePageChange = (newPage) => {
-      if (newPage >= 1 && newPage <= totalPages) {
-        setCurrentPage(newPage);
-      }
-    };
+    useEffect(() => { setCurrentPage(1); }, [data.length]);
+    const paginatedData = data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+    const handlePageChange = (p) => { if (p >= 1 && p <= totalPages) setCurrentPage(p); };
 
     return (
       <div className="mb-8 bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col">
-        <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 backdrop-blur">
-          <h2 className="text-lg font-bold text-white flex items-center gap-3">
-            {title}
-            <span className="bg-slate-800 text-slate-400 text-xs px-2 py-1 rounded-full">{data.length}</span>
-          </h2>
-
-          {/* Pagination Controls (Top) */}
-          {totalPages > 1 && (
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span>Page {currentPage} of {totalPages}</span>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="p-1 rounded hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <button
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="p-1 rounded hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-transparent"
-                >
-                  <ChevronRight size={16} />
-                </button>
+        <div className="p-4 border-b border-slate-800 flex flex-col gap-3 bg-slate-900/50 backdrop-blur">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-bold text-white flex items-center gap-3">
+              {title}
+              <span className="bg-slate-800 text-slate-400 text-xs px-2 py-1 rounded-full">{data.length}</span>
+            </h2>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>Page {currentPage} of {totalPages}</span>
+                <div className="flex gap-1">
+                  <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronLeft size={16} /></button>
+                  <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronRight size={16} /></button>
+                </div>
               </div>
+            )}
+          </div>
+          {showSiteFilter && uniqueSites.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-slate-500 uppercase tracking-wide">Planroom:</span>
+              <button onClick={() => setSiteFilter('all')} className={`px-3 py-1 rounded text-xs font-semibold transition ${siteFilter === 'all' ? 'bg-[#ed2028] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>All</button>
+              {uniqueSites.map(site => (
+                <button key={site} onClick={() => setSiteFilter(site)} className={`px-3 py-1 rounded text-xs font-semibold transition ${siteFilter === site ? 'bg-[#ed2028] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{site}</button>
+              ))}
             </div>
           )}
         </div>
-
         <div className="overflow-x-auto flex-grow">
           <table className="w-full text-left text-xs text-slate-400">
             <thead className="bg-slate-950/50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
               <tr>
+                <th className="px-2 py-3 w-24"></th>
                 <th className="px-4 py-3">Project</th>
                 <th className="px-4 py-3">Company / GC</th>
                 <th className="px-4 py-3">Contact</th>
                 <th className="px-4 py-3">Location</th>
                 <th className="px-4 py-3 w-24">Bid Date</th>
-                <th className="px-4 py-3 text-center w-16">Files</th>
+                <th className="px-4 py-3 text-center w-20">Files</th>
+                <th className="px-4 py-3 text-center w-24">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {paginatedData.map((lead, i) => {
                 const expired = isExpired(lead.bid_date);
+                const highlightClass = getHighlightBg(lead.highlight);
+                const strikeClass = lead.strikethrough ? 'opacity-50' : '';
                 return (
-                  <tr key={lead.id || i} className={`hover:bg-slate-800/30 transition group ${expired ? 'opacity-40' : ''}`}>
-
-                    {/* Project Name */}
+                  <tr key={lead.id || i} className={`hover:bg-slate-800/30 transition group ${expired ? 'opacity-40' : ''} ${highlightClass} ${strikeClass}`}>
+                    {/* Status/Highlight column - LEFT side */}
+                    <td className="px-2 py-2">
+                      <div className="flex gap-0.5">
+                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700 hover:bg-green-600'}`} title="Green"><Circle size={8} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
+                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'yellow' ? null : 'yellow')} className={`p-1 rounded ${lead.highlight === 'yellow' ? 'bg-yellow-600' : 'bg-slate-700 hover:bg-yellow-600'}`} title="Yellow"><Circle size={8} className="text-yellow-400" fill={lead.highlight === 'yellow' ? 'currentColor' : 'none'} /></button>
+                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'red' ? null : 'red')} className={`p-1 rounded ${lead.highlight === 'red' ? 'bg-red-600' : 'bg-slate-700 hover:bg-red-600'}`} title="Red"><Circle size={8} className="text-red-400" fill={lead.highlight === 'red' ? 'currentColor' : 'none'} /></button>
+                        <button onClick={() => toggleLeadStyle(lead, 'strikethrough', !lead.strikethrough)} className={`p-1 rounded ${lead.strikethrough ? 'bg-slate-500' : 'bg-slate-700 hover:bg-slate-500'}`} title="Mark reviewed"><Minus size={8} className="text-slate-300" /></button>
+                      </div>
+                    </td>
                     <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors max-w-xs">
-                      <div className="truncate" title={lead.name}>{lead.name}</div>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <button onClick={() => setDescriptionPopup(lead)} className="text-left hover:text-orange-400 transition-colors" title="Click for description">
+                        <div className="truncate max-w-[200px]">{lead.name}</div>
+                      </button>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
+                        {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
                         {lead.sprinklered && <span className="text-[10px] bg-red-500/10 text-red-500 px-1.5 py-0.5 rounded border border-red-500/20">SPRINKLERED</span>}
+                        {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
+                          <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor(b)}`}>{b}</span>
+                        ))}
+                        {lead.knowledge_score != null && lead.knowledge_score > 0 && (
+                          <span className={`text-[10px] font-mono font-bold ${scoreColor(lead.knowledge_score)}`}>{lead.knowledge_score}</span>
+                        )}
                         <span className="text-[10px] text-slate-600">{lead.site}</span>
                       </div>
                     </td>
-
-                    {/* Company & GC - Clickable */}
                     <td className="px-4 py-2">
-                      <button
-                        onClick={() => setCompanyPopup(lead)}
-                        className="flex flex-col text-left hover:bg-slate-800/50 p-1 rounded transition-colors w-full"
-                        title="Click for details"
-                      >
-                        <span className="text-slate-300 truncate max-w-[150px] hover:text-orange-400 transition-colors" title={lead.company}>{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
-                        <span className="text-[10px] text-slate-500 truncate max-w-[150px]" title={lead.gc}>{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
+                      <button onClick={() => setCompanyPopup(lead)} className="flex flex-col text-left hover:bg-slate-800/50 p-1 rounded transition-colors w-full" title="Click for details">
+                        <span className="text-slate-300 truncate max-w-[150px] hover:text-orange-400 transition-colors">{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
+                        <span className="text-[10px] text-slate-500 truncate max-w-[150px]">{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
                       </button>
                     </td>
-
-                    {/* Contact Info */}
                     <td className="px-4 py-2">
                       <div className="flex flex-col gap-0.5">
                         <span className="text-slate-300 truncate max-w-[150px]">{lead.contact_name !== "N/A" ? lead.contact_name : <span className="text-slate-600 italic">-</span>}</span>
                         {lead.contact_email && (
                           <a href={`mailto:${lead.contact_email}`} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-orange-400 transition-colors">
-                            <Mail size={10} />
-                            <span className="truncate max-w-[140px]">{lead.contact_email}</span>
+                            <Mail size={10} /><span className="truncate max-w-[140px]">{lead.contact_email}</span>
                           </a>
                         )}
                       </div>
                     </td>
-
-                    {/* Location */}
-                    <td className="px-4 py-2 text-slate-400 truncate max-w-[120px]" title={lead.location}>
-                      {lead.location || "N/A"}
-                    </td>
-
-                    {/* Bid Date */}
-                    <td className={`px-4 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>
-                      {lead.bid_date}
-                    </td>
-
-                    {/* Action / Files */}
+                    <td className="px-4 py-2 text-slate-400 truncate max-w-[120px]" title={lead.location}>{lead.location || "N/A"}</td>
+                    <td className={`px-4 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{lead.bid_date}</td>
                     <td className="px-4 py-2 text-center">
-                      <div className="flex justify-center gap-2">
-                        {/* Local downloaded file (highest priority) */}
-                        {lead.local_file_path ? (
-                          <a
-                            href={`${API_BASE}${lead.local_file_path}`}
-                            download
-                            className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors"
-                            title="Download Local File"
-                          >
-                            <Download size={14} />
-                          </a>
-                        ) : lead.download_link ? (
-                          <a
-                            href={lead.download_link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1.5 bg-slate-800 hover:bg-green-600 text-slate-400 hover:text-white rounded transition-colors"
-                            title="Direct Download"
-                          >
-                            <Download size={14} />
-                          </a>
+                      <div className="flex justify-center gap-1">
+                        {lead.gdrive_link ? (
+                          <a href={lead.gdrive_link} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-blue-500 hover:bg-blue-400 text-white rounded transition-colors flex items-center gap-1" title="View on Google Drive"><Cloud size={12} /></a>
+                        ) : lead.files_link ? (
+                          <button onClick={() => fetch(`${API_BASE}/open-folder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: lead.files_link }) })} className="p-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors" title={`Open Local Folder: ${lead.files_link}`}><ExternalLink size={12} /></button>
+                        ) : lead.local_file_path ? (
+                          <a href={`${API_BASE}${lead.local_file_path}`} download className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors" title="Download Local File"><Download size={12} /></a>
                         ) : (
-                          lead.files_link && (
-                            <a
-                              href={lead.files_link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1.5 bg-slate-800 hover:bg-orange-600 text-slate-400 hover:text-white rounded transition-colors"
-                              title="View Files"
-                            >
-                              <ExternalLink size={14} />
-                            </a>
-                          )
+                          <span className="text-slate-600 text-[10px]">-</span>
                         )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      <div className="flex justify-center gap-1">
+                        <button onClick={() => triggerSingleScan(lead.id)} className="p-1.5 bg-slate-700 hover:bg-violet-600 text-slate-400 hover:text-white rounded transition-colors" title="Force Knowledge Scan"><Brain size={12} /></button>
+                        <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
+                        <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
                       </div>
                     </td>
                   </tr>
                 );
               })}
               {data.length === 0 && (
-                <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-slate-600 italic">
-                    No active leads found in this category.
-                  </td>
-                </tr>
+                <tr><td colSpan="8" className="px-6 py-12 text-center text-slate-600 italic">No active leads found in this category.</td></tr>
               )}
-
-              {/* Empty rows filler to maintain height if needed, OR just leave as is */}
             </tbody>
           </table>
         </div>
-
-        {/* Pagination Controls (Bottom) */}
         {totalPages > 1 && (
           <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center text-xs text-slate-400">
             <span>Showing {paginatedData.length} of {data.length} leads</span>
             <div className="flex gap-2">
-              <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                Previous
-              </button>
+              <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Previous</button>
               <span className="flex items-center px-2">Page {currentPage} of {totalPages}</span>
-              <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-              </button>
+              <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next</button>
             </div>
           </div>
         )}
@@ -365,160 +628,618 @@ export default function LeadDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-8 font-sans">
+    <div className={`min-h-screen bg-slate-950 text-slate-100 p-8 font-sans ${showConsole && !consoleMinimized ? 'pb-96' : ''}`}>
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex justify-between items-end mb-12 border-b border-slate-800/50 pb-8">
+        <div className="flex justify-between items-center mb-8 border-b border-slate-800/50 pb-6">
           <div>
-            <h1 className="text-5xl font-black tracking-tighter text-white mb-2">
-              PLANROOM<span className="text-orange-500">GENIUS v2.0</span>
+            <img src="/logo.png" alt="Marmic Fire & Safety" className="h-16 w-auto" />
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <h1 className="text-sm font-bold tracking-widest text-slate-500 uppercase">
+              Planroom<span className="text-[#ed2028]">Genius</span> v2.0
             </h1>
-            <p className="text-slate-500 text-lg">AI-Powered Construction Lead Intelligence</p>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={fetchLeads}
-              disabled={loading}
-              className="px-5 py-3 rounded-xl bg-slate-900 text-slate-400 font-bold hover:bg-slate-800 transition"
-            >
-              {loading ? 'LOADING...' : 'REFRESH VIEW'}
-            </button>
-            <button
-              onClick={deduplicateLeads}
-              disabled={deduplicating}
-              className="px-5 py-3 rounded-xl bg-blue-900 text-blue-200 font-bold hover:bg-blue-800 transition"
-            >
-              {deduplicating ? 'CLEANING...' : 'REMOVE DUPES'}
-            </button>
-            <button
-              onClick={clearAllLeads}
-              disabled={clearing}
-              className="px-5 py-3 rounded-xl bg-yellow-900 text-yellow-200 font-bold hover:bg-yellow-800 transition"
-            >
-              {clearing ? 'CLEARING...' : 'CLEAR ALL'}
-            </button>
-            <button
-              onClick={refreshAllLeads}
-              disabled={refreshing}
-              className="px-5 py-3 rounded-xl bg-purple-900 text-purple-200 font-bold hover:bg-purple-800 transition"
-            >
-              {refreshing ? 'REFRESHING...' : 'REFRESH ALL'}
-            </button>
-            <button
-              onClick={triggerScan}
-              disabled={syncing}
-              className={`bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg shadow-red-900/20 flex items-center gap-2 ${syncing ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {syncing ? (
-                <>
-                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  SCANNING...
-                </>
-              ) : "SCAN PLANROOMS"}
-            </button>
+            <div className="flex gap-2 items-center">
+              <button onClick={openAddModal} className="px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-500 transition flex items-center gap-1.5"><Plus size={16} />Add Lead</button>
+              <button onClick={fetchLeads} disabled={loading} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-400 text-sm font-semibold hover:bg-slate-700 transition">{loading ? '...' : 'Refresh'}</button>
+              <button onClick={() => { setShowConsole(!showConsole); if (!showConsole) fetchConsoleLogs(); }} className={`p-2 rounded-lg transition flex items-center gap-1.5 text-sm ${showConsole ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`} title="Toggle Console">
+                <Terminal size={16} />{syncing && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>}
+              </button>
+              <button onClick={() => { triggerScan(); setShowConsole(true); clearConsoleLogs(); }} disabled={syncing} className={`bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-5 rounded-lg transition-all shadow-lg shadow-blue-900/20 flex items-center gap-2 text-sm ${syncing ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                {syncing ? (<><svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Scanning...</>) : "Scan"}
+              </button>
+              {syncing && (
+                <button onClick={stopScan} className="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-3 rounded-lg transition-all shadow-lg shadow-red-900/20 text-sm flex items-center gap-1" title="Stop Scan">
+                  <X size={16} />Stop
+                </button>
+              )}
+              <div className="relative">
+                <button onClick={() => setShowUtilityMenu(!showUtilityMenu)} className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition" title="More options"><Settings size={18} /></button>
+                {showUtilityMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowUtilityMenu(false)} />
+                    <div className="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                      <div className="px-4 py-2.5 border-b border-slate-700">
+                        <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
+                          {gdriveStatus?.status === 'connected' ? <Cloud size={14} className="text-green-400" /> : <CloudOff size={14} className="text-slate-500" />}
+                          Google Drive
+                        </div>
+                        {gdriveStatus?.status === 'connected' ? (
+                          <span className="text-xs text-green-400">Connected</span>
+                        ) : gdriveStatus?.status === 'not_authenticated' ? (
+                          <button onClick={connectGdrive} disabled={connectingGdrive} className="text-xs text-blue-400 hover:text-blue-300 transition">{connectingGdrive ? 'Connecting...' : 'Click to connect'}</button>
+                        ) : (
+                          <span className="text-xs text-slate-500">{gdriveStatus?.message || 'Not configured'}</span>
+                        )}
+                      </div>
+                      <button onClick={() => { deduplicateLeads(); setShowUtilityMenu(false); }} disabled={deduplicating} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-700 transition disabled:opacity-50">{deduplicating ? 'Cleaning...' : 'Remove Duplicates'}</button>
+                      <button onClick={() => { refreshAllLeads(); setShowUtilityMenu(false); }} disabled={refreshing} className="w-full px-4 py-2.5 text-left text-sm text-purple-300 hover:bg-slate-700 transition disabled:opacity-50">{refreshing ? 'Refreshing...' : 'Clear & Rescan'}</button>
+                      <button onClick={() => { clearAllLeads(); setShowUtilityMenu(false); }} disabled={clearing} className="w-full px-4 py-2.5 text-left text-sm text-yellow-300 hover:bg-slate-700 transition disabled:opacity-50">{clearing ? 'Clearing...' : 'Clear All Leads'}</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Main Aggregated Table */}
-        <LeadTable title="🔥 All Active Opportunities" data={leads} />
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* BuildingConnected Table */}
-          <LeadTable title="BuildingConnected" data={bcLeads} />
-
-          {/* PlanHub Table */}
-          <LeadTable title="PlanHub" data={phLeads} />
+        {/* Tabs */}
+        <div className="mb-6 flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-2xl p-2">
+          <button onClick={() => setActiveTab('bid')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${activeTab === 'bid' ? 'bg-[#ed2028] text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+            <Building2 size={16} />Bid Board
+          </button>
+          <button onClick={() => setActiveTab('knowledge')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${activeTab === 'knowledge' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+            <Brain size={16} />Knowledge
+          </button>
+          <button onClick={() => setActiveTab('takeoff')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${activeTab === 'takeoff' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
+            <Zap size={16} />Takeoff
+          </button>
         </div>
 
-        {/* Company Popup Modal */}
-        {companyPopup && (
-          <div
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
-            onClick={() => setCompanyPopup(null)}
-          >
-            <div
-              className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex justify-between items-start mb-6">
-                <h3 className="text-2xl font-bold text-white flex items-center gap-2">
-                  <Building2 className="text-orange-500" size={24} />
-                  Company Details
-                </h3>
-                <button
-                  onClick={() => setCompanyPopup(null)}
-                  className="text-slate-400 hover:text-white transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+        {/* =================== BID BOARD TAB =================== */}
+        <div className={activeTab === 'bid' ? '' : 'hidden'}>
+          <LeadTable title="All Active Opportunities" data={filteredLeads} showSiteFilter={true} />
+        </div>
+
+        {/* =================== KNOWLEDGE TAB =================== */}
+        <div className={activeTab === 'knowledge' ? '' : 'hidden'}>
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
+            {/* Knowledge Header */}
+            <div className="p-6 border-b border-slate-800">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Brain className="text-purple-400" size={22} />Knowledge Scanner
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1">AI-powered fire alarm scope analysis of downloaded project documents</p>
+                </div>
+                <button onClick={triggerKnowledgeScan} disabled={knowledgeScanning} className="px-5 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold disabled:opacity-50 flex items-center gap-2 transition">
+                  {knowledgeScanning ? (
+                    <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Scanning...</>
+                  ) : (<><Zap size={16} />Run Knowledge Scan</>)}
                 </button>
               </div>
 
+              {/* Status bar */}
+              <div className="flex items-center gap-4 text-xs">
+                <span className={`flex items-center gap-1.5 ${knowledgeScanning ? 'text-purple-400' : 'text-slate-500'}`}>
+                  {knowledgeScanning && <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></span>}
+                  {knowledgeScanning ? `Scanning: ${knowledgeStatus?.current_project || '...'}` : 'Idle'}
+                </span>
+                <span className="text-slate-600">|</span>
+                <span className="text-slate-400">Scanned: <span className="text-white font-semibold">{knowledgeStatus?.scanned || 0}</span></span>
+                <span className="text-slate-400">Skipped: <span className="text-white font-semibold">{knowledgeStatus?.skipped || 0}</span></span>
+                <span className="text-slate-400">Total: <span className="text-white font-semibold">{knowledgeStatus?.total || 0}</span></span>
+                {knowledgeStatus?.last_error && <span className="text-red-400 truncate max-w-[300px]">Error: {knowledgeStatus.last_error}</span>}
+              </div>
+
+              {/* Sort & filter controls */}
+              <div className="flex items-center gap-3 mt-4">
+                <span className="text-xs text-slate-500 uppercase tracking-wide">Sort:</span>
+                {[['score', 'Score'], ['chance', 'Bid Chance'], ['name', 'Name']].map(([val, label]) => (
+                  <button key={val} onClick={() => setKnowledgeSort(val)} className={`px-3 py-1 rounded text-xs font-semibold transition ${knowledgeSort === val ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{label}</button>
+                ))}
+                <span className="text-slate-700 mx-1">|</span>
+                <span className="text-xs text-slate-500 uppercase tracking-wide">Filter:</span>
+                {[['all', 'All'], ['scanned', 'Scanned'], ['unscanned', 'Not Scanned']].map(([val, label]) => (
+                  <button key={val} onClick={() => setKnowledgeFilter(val)} className={`px-3 py-1 rounded text-xs font-semibold transition ${knowledgeFilter === val ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{label}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Knowledge Project List */}
+            <div className="divide-y divide-slate-800/50">
+              {getKnowledgeLeads().map((lead) => {
+                const expanded = knowledgeExpanded === lead.id;
+                const scanned = !!lead.knowledge_last_scanned;
+                return (
+                  <div key={lead.id} className="hover:bg-slate-800/20 transition">
+                    {/* Main row */}
+                    <div className="px-6 py-4 flex items-center gap-4 cursor-pointer" onClick={() => setKnowledgeExpanded(expanded ? null : lead.id)}>
+                      {/* Score gauge */}
+                      <div className="w-14 h-14 flex-shrink-0 relative">
+                        <svg viewBox="0 0 36 36" className="w-14 h-14 -rotate-90">
+                          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#1e293b" strokeWidth="3" />
+                          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke={lead.knowledge_score >= 70 ? '#22c55e' : lead.knowledge_score >= 30 ? '#eab308' : '#ef4444'} strokeWidth="3" strokeDasharray={`${scanned ? lead.knowledge_score || 0 : 0}, 100`} strokeLinecap="round" />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className={`text-sm font-bold ${scanned ? scoreColor(lead.knowledge_score || 0) : 'text-slate-600'}`}>{scanned ? (lead.knowledge_score ?? '-') : '-'}</span>
+                        </div>
+                      </div>
+
+                      {/* Project info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-white truncate">{lead.name}</h3>
+                          {lead.knowledge_bid_chance && (
+                            <span className={`text-[10px] px-2 py-0.5 rounded border font-bold uppercase ${chanceColor(lead.knowledge_bid_chance)}`}>{lead.knowledge_bid_chance}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
+                            <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor(b)}`}>{b}</span>
+                          ))}
+                          {!scanned && <span className="text-[10px] text-slate-600 italic">Not scanned</span>}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1">
+                          {lead.company !== 'N/A' && <span>{lead.company} &middot; </span>}
+                          {lead.location !== 'N/A' && <span>{lead.location} &middot; </span>}
+                          <span>Bid: {lead.bid_date}</span>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button onClick={(e) => { e.stopPropagation(); triggerSingleScan(lead.id); }} className="p-2 rounded bg-slate-800 hover:bg-purple-600 text-slate-400 hover:text-white transition text-xs" title="Rescan this project"><RefreshCw size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); openPointToFile(lead.id); }} className="p-2 rounded bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white transition text-xs" title="Point to File"><Eye size={14} /></button>
+                        {expanded ? <ChevronUp size={16} className="text-slate-500" /> : <ChevronDown size={16} className="text-slate-500" />}
+                      </div>
+                    </div>
+
+                    {/* Expanded detail */}
+                    {expanded && scanned && (
+                      <div className="px-6 pb-5 pt-1 border-t border-slate-800/30">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+                          <div className="bg-slate-800/50 rounded-lg p-3">
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">System Type</div>
+                            <div className="text-sm font-semibold text-white capitalize">{lead.knowledge_system_type || 'Unknown'}</div>
+                          </div>
+                          <div className="bg-slate-800/50 rounded-lg p-3">
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Fire Alarm Required</div>
+                            <div className={`text-sm font-semibold ${lead.knowledge_requires_fire_alarm ? 'text-green-400' : 'text-red-400'}`}>
+                              {lead.knowledge_requires_fire_alarm ? 'Yes' : 'No'}
+                            </div>
+                          </div>
+                          <div className="bg-slate-800/50 rounded-lg p-3">
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Scope Score</div>
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full ${scoreBg(lead.knowledge_score || 0)}`} style={{ width: `${lead.knowledge_score || 0}%` }}></div>
+                              </div>
+                              <span className={`text-sm font-bold ${scoreColor(lead.knowledge_score || 0)}`}>{lead.knowledge_score}</span>
+                            </div>
+                          </div>
+                          <div className="bg-slate-800/50 rounded-lg p-3">
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Bid Chance</div>
+                            <div className={`text-sm font-semibold uppercase ${lead.knowledge_bid_chance === 'high' ? 'text-green-400' : lead.knowledge_bid_chance === 'medium' ? 'text-yellow-400' : 'text-red-400'}`}>
+                              {lead.knowledge_bid_chance || 'Unknown'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Vendors / Manufacturers / Deal Breakers */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                          {lead.knowledge_required_vendors?.length > 0 && (
+                            <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-3">
+                              <div className="text-[10px] text-orange-400 uppercase tracking-wide mb-1 flex items-center gap-1"><AlertTriangle size={10} />Required Vendors</div>
+                              <div className="text-xs text-orange-300">{lead.knowledge_required_vendors.join(', ')}</div>
+                            </div>
+                          )}
+                          {lead.knowledge_required_manufacturers?.length > 0 && (
+                            <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-3">
+                              <div className="text-[10px] text-orange-400 uppercase tracking-wide mb-1 flex items-center gap-1"><Shield size={10} />Required Manufacturers</div>
+                              <div className="text-xs text-orange-300">{lead.knowledge_required_manufacturers.join(', ')}</div>
+                            </div>
+                          )}
+                          {lead.knowledge_deal_breakers?.length > 0 && (
+                            <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">
+                              <div className="text-[10px] text-red-400 uppercase tracking-wide mb-1 flex items-center gap-1"><AlertCircle size={10} />Deal Breakers</div>
+                              <div className="text-xs text-red-300">{lead.knowledge_deal_breakers.join(', ')}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Notes */}
+                        {lead.knowledge_notes && (
+                          <div className="bg-slate-800/30 rounded-lg p-3">
+                            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">AI Notes</div>
+                            <div className="text-xs text-slate-300 whitespace-pre-wrap max-h-32 overflow-y-auto">{lead.knowledge_notes}</div>
+                          </div>
+                        )}
+
+                        <div className="text-[10px] text-slate-600 mt-2">Last scanned: {lead.knowledge_last_scanned}</div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {getKnowledgeLeads().length === 0 && (
+                <div className="px-6 py-16 text-center text-slate-600 italic">
+                  {knowledgeFilter === 'scanned' ? 'No projects have been scanned yet. Click "Run Knowledge Scan" to begin.' : 'No leads found.'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* =================== TAKEOFF TAB =================== */}
+        <div className={activeTab === 'takeoff' ? 'h-[calc(100vh-200px)]' : 'hidden'}>
+          <iframe
+            src={`http://${window.location.hostname}:8000/takeoff/`}
+            className="w-full h-full border-0 rounded-2xl bg-slate-900"
+            title="Fire Alarm Takeoff Assistant"
+          />
+        </div>
+
+        {/* =================== POINT TO FILE MODAL =================== */}
+        {pointToFileModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setPointToFileModal(null)}>
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-6 max-w-4xl w-full mx-4 shadow-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2"><Eye className="text-blue-400" size={20} />Point to File</h3>
+                  <p className="text-xs text-slate-500 mt-1">Click a classification badge to change how a file is identified</p>
+                </div>
+                <button onClick={() => setPointToFileModal(null)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
+              </div>
+
+              {pointToFileModal.error && <div className="text-red-400 text-sm mb-4">{pointToFileModal.error}</div>}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pointToFileModal.files?.map((file, idx) => (
+                  <div key={idx} className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden hover:border-slate-600 transition">
+                    {/* Thumbnail */}
+                    <div className="h-40 bg-slate-950 flex items-center justify-center overflow-hidden">
+                      {file.thumbnail ? (
+                        <img src={`data:image/png;base64,${file.thumbnail}`} alt={file.filename} className="max-h-full max-w-full object-contain" />
+                      ) : (
+                        <FileText size={48} className="text-slate-700" />
+                      )}
+                    </div>
+                    {/* Info */}
+                    <div className="p-3">
+                      <div className="text-xs text-white font-medium truncate mb-1" title={file.filename}>{file.filename}</div>
+                      <div className="text-[10px] text-slate-500 mb-2">{file.size_kb} KB</div>
+                      {/* Classification buttons */}
+                      <div className="flex gap-1.5">
+                        {['plan', 'spec', 'other'].map(cls => (
+                          <button key={cls} onClick={() => setFileClassification(pointToFileModal.lead_id, file.rel_path, cls)} className={`px-2 py-1 rounded text-[10px] font-semibold border transition ${file.classification === cls ? classColor(cls) + ' ring-1 ring-white/20' : 'bg-slate-700 text-slate-500 border-slate-600 hover:text-white'}`}>
+                            {cls.charAt(0).toUpperCase() + cls.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {pointToFileModal.files?.length === 0 && (
+                <div className="text-center py-12 text-slate-600 italic">No PDF files found for this project. Make sure files have been downloaded.</div>
+              )}
+
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setPointToFileModal(null)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors">Close</button>
+                <button onClick={() => { triggerSingleScan(pointToFileModal.lead_id); setPointToFileModal(null); }} className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><RefreshCw size={16} />Rescan with Changes</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =================== COMPANY POPUP =================== */}
+        {companyPopup && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setCompanyPopup(null)}>
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-start mb-6">
+                <h3 className="text-2xl font-bold text-white flex items-center gap-2"><Building2 className="text-orange-500" size={24} />Company Details</h3>
+                <button onClick={() => setCompanyPopup(null)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
+              </div>
               <div className="space-y-4">
-                {/* Company Name */}
                 <div className="bg-slate-800/50 rounded-lg p-4">
                   <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Company</div>
-                  <div className="text-lg font-semibold text-white">
-                    {companyPopup.company !== "N/A" ? companyPopup.company : <span className="text-slate-600 italic">No Company</span>}
-                  </div>
-                  {companyPopup.gc && companyPopup.gc !== "N/A" && (
-                    <div className="text-sm text-slate-400 mt-1">GC: {companyPopup.gc}</div>
-                  )}
+                  <div className="text-lg font-semibold text-white">{companyPopup.company !== "N/A" ? companyPopup.company : <span className="text-slate-600 italic">No Company</span>}</div>
+                  {companyPopup.gc && companyPopup.gc !== "N/A" && <div className="text-sm text-slate-400 mt-1">GC: {companyPopup.gc}</div>}
                 </div>
-
-                {/* Contact Name */}
                 <div className="bg-slate-800/50 rounded-lg p-4">
-                  <div className="text-xs text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1">
-                    <User size={12} />
-                    Contact Name
-                  </div>
-                  <div className="text-lg font-medium text-white">
-                    {companyPopup.contact_name !== "N/A" ? companyPopup.contact_name : <span className="text-slate-600 italic">No Contact</span>}
-                  </div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1"><User size={12} />Contact Name</div>
+                  <div className="text-lg font-medium text-white">{companyPopup.contact_name !== "N/A" ? companyPopup.contact_name : <span className="text-slate-600 italic">No Contact</span>}</div>
                 </div>
-
-                {/* Email */}
                 {companyPopup.contact_email && (
                   <div className="bg-slate-800/50 rounded-lg p-4">
-                    <div className="text-xs text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1">
-                      <Mail size={12} />
-                      Email
-                    </div>
-                    <a
-                      href={`mailto:${companyPopup.contact_email}`}
-                      className="text-lg text-orange-400 hover:text-orange-300 transition-colors break-all"
-                    >
-                      {companyPopup.contact_email}
-                    </a>
+                    <div className="text-xs text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1"><Mail size={12} />Email</div>
+                    <a href={`mailto:${companyPopup.contact_email}`} className="text-lg text-orange-400 hover:text-orange-300 transition-colors break-all">{companyPopup.contact_email}</a>
                   </div>
                 )}
-
-                {/* Additional Info */}
                 <div className="bg-slate-800/50 rounded-lg p-4">
                   <div className="text-xs text-slate-500 uppercase tracking-wide mb-2">Project Info</div>
                   <div className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2 text-slate-300">
-                      <MapPin size={14} className="text-slate-500" />
-                      {companyPopup.location || "N/A"}
+                    <div className="flex items-center gap-2 text-slate-300"><MapPin size={14} className="text-slate-500" />{companyPopup.location || "N/A"}</div>
+                    <div className="flex items-center gap-2 text-slate-300"><Calendar size={14} className="text-slate-500" />Bid Date: {companyPopup.bid_date || "N/A"}</div>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setCompanyPopup(null)} className="mt-6 w-full bg-[#ed2028] hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors">Close</button>
+            </div>
+          </div>
+        )}
+
+        {/* =================== DESCRIPTION POPUP =================== */}
+        {descriptionPopup && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setDescriptionPopup(null)}>
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-4 max-w-3xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-start mb-4">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2"><Description className="text-orange-500" size={20} />Project Details</h3>
+                <div className="flex gap-2">
+                  {descriptionPopup.url && (
+                    <a href={descriptionPopup.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-slate-600 text-blue-300 px-3 py-1 rounded-full transition-colors">
+                      <ExternalLink size={12} /> Open Project
+                    </a>
+                  )}
+                  <button onClick={() => setDescriptionPopup(null)} className="text-slate-400 hover:text-white transition-colors"><X size={20} /></button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="bg-slate-800/50 rounded-lg p-3">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Project Name</div>
+                  <div className="text-base font-semibold text-white">{descriptionPopup.name || 'N/A'}</div>
+                </div>
+                <div className="bg-slate-800/50 rounded-lg p-3">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Description / Full Address</div>
+                  <div className="text-sm text-slate-300 whitespace-pre-wrap">{descriptionPopup.description || descriptionPopup.full_address || 'No description available'}</div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="bg-slate-800/50 rounded-lg p-3 flex-1">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1"><MapPin size={10} />Location</div>
+                    <div className="text-sm text-slate-300">{descriptionPopup.location || 'N/A'}</div>
+                  </div>
+                  <div className="bg-slate-800/50 rounded-lg p-3 flex-1">
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Source</div>
+                    <div className="text-sm text-slate-300">{descriptionPopup.site || descriptionPopup.source || 'N/A'}</div>
+                  </div>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {descriptionPopup.sprinklered && <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30">Sprinklered</span>}
+                  {descriptionPopup.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/30">Has Budget</span>}
+                  {descriptionPopup.knowledge_badges && descriptionPopup.knowledge_badges.map((b, idx) => (
+                    <span key={idx} className={`text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)}`}>{b}</span>
+                  ))}
+                </div>
+
+                {/* AI Analysis Section */}
+                {descriptionPopup.knowledge_last_scanned && (
+                  <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4 mt-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Brain className="text-purple-400" size={18} />
+                      <span className="text-sm font-semibold text-purple-300">AI Fire Alarm Analysis</span>
+                      {descriptionPopup.knowledge_score != null && (
+                        <span className={`ml-auto text-lg font-bold ${scoreColor(descriptionPopup.knowledge_score)}`}>
+                          Score: {descriptionPopup.knowledge_score}/100
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2 text-slate-300">
-                      <Calendar size={14} className="text-slate-500" />
-                      Bid Date: {companyPopup.bid_date || "N/A"}
+
+                    <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+                      <div className="bg-slate-800/50 rounded p-2">
+                        <span className="text-slate-500">System Type:</span>
+                        <span className="ml-1 text-white capitalize">{descriptionPopup.knowledge_system_type || 'Unknown'}</span>
+                      </div>
+                      <div className="bg-slate-800/50 rounded p-2">
+                        <span className="text-slate-500">Bid Chance:</span>
+                        <span className={`ml-1 font-semibold ${chanceColor(descriptionPopup.knowledge_bid_chance)}`}>
+                          {descriptionPopup.knowledge_bid_chance || 'Unknown'}
+                        </span>
+                      </div>
                     </div>
+
+                    {descriptionPopup.knowledge_required_vendors && descriptionPopup.knowledge_required_vendors.length > 0 && (
+                      <div className="text-xs mb-2">
+                        <span className="text-slate-500">Required Vendors:</span>
+                        <span className="ml-1 text-orange-300">{descriptionPopup.knowledge_required_vendors.join(', ')}</span>
+                      </div>
+                    )}
+
+                    {descriptionPopup.knowledge_deal_breakers && descriptionPopup.knowledge_deal_breakers.length > 0 && (
+                      <div className="text-xs mb-2">
+                        <span className="text-red-400">⚠️ Deal Breakers:</span>
+                        <span className="ml-1 text-red-300">{descriptionPopup.knowledge_deal_breakers.join(', ')}</span>
+                      </div>
+                    )}
+
+                    {descriptionPopup.knowledge_notes && (
+                      <div className="mt-3 pt-3 border-t border-purple-500/20">
+                        <div className="text-xs text-slate-500 mb-1">Analysis Notes:</div>
+                        <div className="text-xs text-slate-300 whitespace-pre-wrap bg-slate-800/50 rounded p-2">
+                          {descriptionPopup.knowledge_notes}
+                        </div>
+                      </div>
+                    )}
+
+                    {descriptionPopup.knowledge_addendums && descriptionPopup.knowledge_addendums.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-orange-500/20">
+                        <div className="text-xs text-orange-400 font-semibold mb-2 flex items-center gap-1">
+                          <AlertTriangle size={12} />
+                          Addendums / Revisions ({descriptionPopup.knowledge_addendums.length})
+                        </div>
+                        <div className="space-y-1">
+                          {descriptionPopup.knowledge_addendums.map((add, idx) => (
+                            <div key={idx} className="text-xs bg-orange-900/20 rounded p-2 flex justify-between items-center">
+                              <span className="text-orange-200 truncate max-w-[250px]">{add.filename}</span>
+                              {add.modified && (
+                                <span className="text-[10px] text-orange-400/60">{new Date(add.modified).toLocaleDateString()}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="text-[10px] text-slate-600 mt-2 flex justify-between">
+                      <span>Scanned: {new Date(descriptionPopup.knowledge_last_scanned).toLocaleDateString()}</span>
+                      {descriptionPopup.knowledge_file_count && (
+                        <span>Files: {descriptionPopup.knowledge_file_count}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {!descriptionPopup.knowledge_last_scanned && (
+                  <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4 mt-4 text-center">
+                    <Brain className="text-slate-600 mx-auto mb-2" size={20} />
+                    <div className="text-xs text-slate-500">Not scanned by Knowledge Scanner yet</div>
+                    <div className="text-[10px] text-slate-600 mt-1">Run Knowledge Scan to see AI analysis</div>
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setDescriptionPopup(null)} className="mt-6 w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors">Close</button>
+            </div>
+          </div>
+        )}
+
+        {/* Settings Modal */}
+        {showSettings && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 animate-fade-in">
+            <div className="bg-gray-800 rounded-xl shadow-2xl max-w-md w-full border border-gray-700 overflow-hidden">
+              <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900/50">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Settings size={20} className="text-blue-400" />
+                  Scraper Settings
+                </h2>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Enabled Planrooms</h3>
+                  <div className="space-y-3">
+                    {[
+                      { key: 'planhub', label: 'PlanHub' },
+                      { key: 'bidplanroom', label: 'BidPlanroom' },
+                      { key: 'loydbuildsbetter', label: 'Loyd Builds Better' },
+                      { key: 'buildingconnected', label: 'BuildingConnected' }
+                    ].map(({ key, label }) => (
+                      <div key={key} className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors">
+                        <span className="text-gray-200 font-medium">{label}</span>
+                        <button
+                          onClick={() => toggleSetting(key)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${scraperSettings[key] ? 'bg-blue-600' : 'bg-gray-600'
+                            }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${scraperSettings[key] ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                          />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-gray-700">
+                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Integrations</h3>
+                  <div className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors">
+                    <span className="text-gray-200 font-medium">Upload to Google Drive</span>
+                    <button
+                      onClick={() => toggleSetting('use_gdrive')}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${scraperSettings['use_gdrive'] ? 'bg-green-600' : 'bg-gray-600'
+                        }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${scraperSettings['use_gdrive'] ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                      />
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <button
-                onClick={() => setCompanyPopup(null)}
-                className="mt-6 w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-lg transition-colors"
-              >
-                Close
-              </button>
+              <div className="p-4 border-t border-gray-700 bg-gray-900/30 flex justify-end">
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors font-medium"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =================== CONSOLE PANEL =================== */}
+        {showConsole && (
+          <div className={`fixed bottom-0 left-0 right-0 bg-slate-900 border-t-2 border-slate-700 shadow-2xl z-40 transition-all ${consoleMinimized ? 'h-12' : 'h-80'}`}>
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-slate-700">
+              <div className="flex items-center gap-3">
+                <Terminal size={16} className="text-green-400" />
+                <span className="text-sm font-semibold text-white">Scraper Console</span>
+                {scraperStatus?.running && <span className="flex items-center gap-2 text-xs text-green-400"><span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>{scraperStatus.current_step || 'Running...'}</span>}
+                {scraperStatus && !scraperStatus.running && scraperStatus.last_status && <span className="text-xs text-slate-400">Last: {scraperStatus.last_status}</span>}
+              </div>
+              <div className="flex items-center gap-2">
+                {scraperStatus?.leads_found && <span className="text-xs text-slate-400">BC: {scraperStatus.leads_found.buildingconnected} | PH: {scraperStatus.leads_found.planhub}</span>}
+                <button onClick={clearConsoleLogs} className="px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition">Clear</button>
+                <button onClick={() => setConsoleMinimized(!consoleMinimized)} className="p-1 text-slate-400 hover:text-white transition">{consoleMinimized ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
+                <button onClick={() => setShowConsole(false)} className="p-1 text-slate-400 hover:text-white transition"><X size={14} /></button>
+              </div>
+            </div>
+            {!consoleMinimized && (
+              <div className="h-[calc(100%-40px)] overflow-y-auto p-3 font-mono text-xs">
+                {consoleLogs.length === 0 ? (
+                  <div className="text-slate-500 italic">No logs yet. Click "Scan" to start scraping...</div>
+                ) : consoleLogs.map((log, i) => (
+                  <div key={i} className={`py-0.5 ${log.includes('ERROR') ? 'text-red-400' : log.includes('TIMEOUT') ? 'text-yellow-400' : log.includes('OK') || log.includes('Complete') ? 'text-green-400' : log.includes('LOGIN') ? 'text-orange-400 font-bold' : log.includes('Found') ? 'text-blue-400' : 'text-slate-300'}`}>{log}</div>
+                ))}
+                <div ref={consoleEndRef} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* =================== ADD/EDIT MODAL =================== */}
+        {(addModal || editModal) && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }}>
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-6 max-w-2xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-start mb-6">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  {editModal ? (<><Pencil className="text-blue-500" size={20} />Edit Lead</>) : (<><Plus className="text-green-500" size={20} />Add New Lead</>)}
+                </h3>
+                <button onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2"><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Project Name *</label><input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="Enter project name" /></div>
+                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Company</label><input type="text" value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="Company name" /></div>
+                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">General Contractor</label><input type="text" value={formData.gc} onChange={(e) => setFormData({ ...formData, gc: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="GC name" /></div>
+                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Contact Name</label><input type="text" value={formData.contact_name} onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="Contact person" /></div>
+                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Contact Email</label><input type="email" value={formData.contact_email} onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="email@example.com" /></div>
+                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Contact Phone</label><input type="tel" value={formData.contact_phone} onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="(555) 123-4567" /></div>
+                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Bid Date</label><input type="text" value={formData.bid_date} onChange={(e) => setFormData({ ...formData, bid_date: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="MM/DD/YYYY or TBD" /></div>
+                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Location</label><input type="text" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="City, State" /></div>
+                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Full Address</label><input type="text" value={formData.full_address} onChange={(e) => setFormData({ ...formData, full_address: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="123 Main St, City, State ZIP" /></div>
+                <div className="col-span-2"><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Description</label><textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none h-20 resize-none" placeholder="Project description..." /></div>
+                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Files Link</label><input type="url" value={formData.files_link} onChange={(e) => setFormData({ ...formData, files_link: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="https://..." /></div>
+                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Download Link</label><input type="url" value={formData.download_link} onChange={(e) => setFormData({ ...formData, download_link: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="https://..." /></div>
+                <div className="col-span-2 flex gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.sprinklered} onChange={(e) => setFormData({ ...formData, sprinklered: e.target.checked })} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500" /><span className="text-sm text-slate-300">Sprinklered</span></label>
+                  <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.has_budget} onChange={(e) => setFormData({ ...formData, has_budget: e.target.checked })} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500" /><span className="text-sm text-slate-300">Has Budget</span></label>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors">Cancel</button>
+                <button onClick={editModal ? updateLead : addLead} disabled={!formData.name} className="flex-1 bg-[#ed2028] hover:bg-red-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors">{editModal ? 'Update Lead' : 'Add Lead'}</button>
+              </div>
             </div>
           </div>
         )}

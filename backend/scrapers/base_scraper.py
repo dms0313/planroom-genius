@@ -73,11 +73,15 @@ class BaseScraper(ABC):
                 '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
             ]
         elif system == 'Linux':
+            # Comprehensive Linux/Raspberry Pi paths
             possible_paths = [
-                '/usr/bin/chromium-browser',
-                '/usr/bin/chromium',
-                '/usr/bin/google-chrome',
-                '/usr/bin/google-chrome-stable',
+                '/usr/bin/chromium-browser',      # Debian/Ubuntu/Raspberry Pi OS
+                '/usr/bin/chromium',              # Arch/Fedora
+                '/usr/bin/google-chrome',         # Google Chrome
+                '/usr/bin/google-chrome-stable',  # Google Chrome stable
+                '/snap/bin/chromium',             # Snap installation
+                '/usr/lib/chromium-browser/chromium-browser',  # Alternative location
+                '/usr/lib/chromium/chromium',     # Alternative location
             ]
 
         for path in possible_paths:

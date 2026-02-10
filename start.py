@@ -65,13 +65,14 @@ def start_backend():
             print("✗ Port 8000 is already in use. Another instance may be running.")
             return False
 
-        # Start backend process
+        # Start backend process - show output for debugging
+        # Don't pipe stdout/stderr so we can see scraper output
         backend_process = subprocess.Popen(
             [python_exe, "api.py"],
             cwd="backend",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True
+            # Show backend output in console for debugging scrapers
+            stdout=None,  # Inherit from parent (show in console)
+            stderr=None,  # Inherit from parent (show in console)
         )
 
         # Wait a bit and check if process started

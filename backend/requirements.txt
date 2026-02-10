@@ -1,10 +1,8 @@
-# Browser Automation (Puppeteer)
-pyppeteer>=1.0.2
+# Browser Automation (Playwright)
+playwright>=1.49.0
 
-# Deprecated - AI Agent & Browser Automation (moved to deprecated/)
-# browser-use>=0.1.0
-# langchain-google-genai>=2.0.0
-# playwright>=1.49.0
+# Deprecated - pyppeteer replaced by playwright
+# pyppeteer>=1.0.2
 
 # API & Server
 fastapi>=0.109.0
@@ -14,3 +12,15 @@ python-dotenv>=1.0.1
 # Utilities
 pydantic>=2.6.0
 httpx>=0.26.0
+
+# Google Drive Integration
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0
+
+# Knowledge Scanner (PDF analysis)
+PyMuPDF>=1.25.0
+requests>=2.31.0
+
+# Scheduler
+schedule>=1.2.0

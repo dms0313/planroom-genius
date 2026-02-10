@@ -1,103 +1,187 @@
 """
 BuildingConnected scraper - Extract data from table view (faster approach)
 Scrapes directly from the bid board table without clicking into each project
+Uses Playwright for reliable browser automation.
 """
 import os
+import platform
 import asyncio
 import json
-import warnings
+import sys
 from datetime import datetime
-from pyppeteer import launch
+from playwright.async_api import async_playwright
 
-# Suppress pyppeteer cleanup warnings
-warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*coroutine.*never awaited.*')
+# Import shared config for cross-platform support
+try:
+    from config import ScraperConfig, GoogleDriveConfig
+except ImportError:
+    ScraperConfig = None
+    GoogleDriveConfig = None
+
+# Import Google Drive service
+try:
+    from services.google_drive import upload_and_cleanup, should_use_gdrive, is_authenticated, get_status, authenticate
+    GDRIVE_AVAILABLE = True
+    print(f"[BC] Google Drive module loaded. Available: {GDRIVE_AVAILABLE}")
+except ImportError as e:
+    GDRIVE_AVAILABLE = False
+    print(f"[BC] Google Drive module NOT available: {e}")
+
+# Global log buffer that scheduler can access
+_log_buffer = []
+
+def get_bc_logs():
+    """Get and clear the log buffer."""
+    global _log_buffer
+    logs = _log_buffer.copy()
+    _log_buffer = []
+    return logs
+
+def log_status(msg):
+    """Log to both console and web UI."""
+    global _log_buffer
+    print(f"[BC] {msg}", flush=True)
+    _log_buffer.append(f"[BC] {msg}")
+
+    # Also try to add to scheduler's log
+    try:
+        from services.scheduler import add_to_log
+        add_to_log(f"[BC] {msg}")
+    except:
+        pass
 
 
 class BuildingConnectedTableScraper:
     """Scrape BuildingConnected data directly from table view"""
 
     def __init__(self):
+        self.playwright = None
         self.browser = None
+        self.context = None
         self.page = None
         self.leads = []
-        self.download_dir = os.path.join(os.path.dirname(__file__), 'downloads')
+
+        # Use shared config if available, otherwise use defaults
+        if ScraperConfig:
+            self.config = ScraperConfig()
+            self.download_dir = self.config.DOWNLOAD_DIR
+            self.chrome_user_data = self.config.CHROME_USER_DATA_DIR
+            self.profile_name = self.config.CHROME_PROFILE_NAME
+            self.headless = self.config.HEADLESS
+        else:
+            # Fallback defaults with platform detection
+            self.download_dir = os.path.join(os.path.dirname(__file__), 'downloads')
+            if platform.system() == 'Linux':
+                # Linux / Raspberry Pi - use home directory detection (any username)
+                home_dir = os.path.expanduser("~")
+                self.chrome_user_data = os.getenv(
+                    "CHROME_USER_DATA_DIR",
+                    os.path.join(home_dir, ".config", "chromium")
+                )
+                self.profile_name = os.getenv("CHROME_PROFILE_NAME", "Default")
+                self.headless = os.getenv("HEADLESS", "true").lower() == "true"
+            else:
+                # Windows / macOS defaults
+                self.chrome_user_data = os.getenv(
+                    "CHROME_USER_DATA_DIR",
+                    os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)),
+                        "planroom_agent_storage_browser-use-user-data-dir-persistent"
+                    )
+                )
+                self.profile_name = os.getenv("CHROME_PROFILE_NAME", "Profile 2")
+                self.headless = os.getenv("HEADLESS", "false").lower() == "true"
+
         os.makedirs(self.download_dir, exist_ok=True)
 
-    def find_chrome_executable(self):
-        """Find Chrome executable on the system"""
-        import platform
-        system = platform.system()
-        possible_paths = []
-
-        if system == 'Windows':
-            possible_paths = [
-                r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-                r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
-                os.path.expanduser(r'~\AppData\Local\Google\Chrome\Application\chrome.exe'),
-            ]
-        elif system == 'Darwin':
-            possible_paths = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
-        elif system == 'Linux':
-            possible_paths = ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome']
-
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        return None
-
     async def setup_browser(self):
-        """Initialize browser with profile"""
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        chrome_user_data = os.path.join(
-            script_dir,
-            "planroom_agent_storage_browser-use-user-data-dir-persistent"
+        """Initialize browser with Playwright"""
+        # Use a Playwright-specific profile directory
+        playwright_profile = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "playwright_profile"
         )
-        profile_name = "Profile 2"
-        chrome_path = self.find_chrome_executable()
 
-        if chrome_path:
-            print(f"[OK] Found Chrome at: {chrome_path}")
+        print(f"\n======== BROWSER CONFIG (Playwright) ========")
+        print(f"Platform:        {platform.system()} ({platform.machine()})")
+        print(f"Profile Dir:     {playwright_profile}")
+        print(f"Headless:        {self.headless}")
+        print("==============================================\n")
 
-        print(f"\n======== CHROME PROFILE CONFIG ========")
-        print(f"User Data Dir:   {chrome_user_data}")
-        print(f"Profile Name:    {profile_name}")
-        print(f"Chrome Path:     {chrome_path or 'Auto-detect'}")
-        print("=======================================\n")
+        print("[BC] Starting Playwright...")
+        self.playwright = await async_playwright().start()
 
-        launch_options = {
-            'headless': True,  # Default to True for stability, or use config
-            'userDataDir': chrome_user_data,
-            'args': [
-                f'--profile-directory={profile_name}',
+        print("[BC] Launching browser...")
+
+        # Use persistent context to maintain login session
+        self.context = await self.playwright.chromium.launch_persistent_context(
+            user_data_dir=playwright_profile,
+            headless=self.headless,
+            viewport={'width': 1920, 'height': 1080},
+            accept_downloads=True,
+            downloads_path=self.download_dir,
+            args=[
                 '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
                 '--disable-blink-features=AutomationControlled',
-                '--disable-gpu',
-                '--disable-software-rasterizer',
+                '--disable-dev-shm-usage',
             ],
-        }
+            ignore_default_args=['--enable-automation'],
+        )
 
-        if chrome_path:
-            launch_options['executablePath'] = chrome_path
+        # Get the first page or create one
+        if self.context.pages:
+            self.page = self.context.pages[0]
+        else:
+            self.page = await self.context.new_page()
 
-        self.browser = await launch(**launch_options)
-        self.page = await self.browser.newPage()
-        # Increased viewport width to ensure company column is visible
-        await self.page.setViewport({'width': 1920, 'height': 1080})
-
-        print(" Browser initialized")
+        print("[BC] Browser initialized successfully")
+        print("[BC] NOTE: If not logged in, you'll need to log in manually once.")
 
     async def navigate_to_pipeline(self):
         """Navigate to BuildingConnected bid board"""
-        print(" Navigating to pipeline...")
-        await self.page.goto(
-            'https://app.buildingconnected.com/opportunities/pipeline',
-            {'waitUntil': 'domcontentloaded', 'timeout': 60000}
-        )
-        print(" Waiting for virtual table to load...")
-        await asyncio.sleep(3)  # Increased wait time for virtual table to fully load
-        print(" Pipeline loaded")
+        log_status("Navigating to pipeline...")
+        try:
+            await self.page.goto(
+                'https://app.buildingconnected.com/opportunities/pipeline',
+                wait_until='domcontentloaded',
+                timeout=60000
+            )
+        except Exception as e:
+            log_status(f"Navigation error: {e}")
+
+        # Check if we're on the login page
+        current_url = self.page.url
+        log_status(f"Current URL: {current_url[:60]}...")
+
+        if 'login' in current_url or 'signin' in current_url:
+            log_status("=" * 40)
+            log_status("LOGIN REQUIRED")
+            log_status("Please log in to BuildingConnected in the browser window")
+            log_status("=" * 40)
+
+            # Wait for user to log in (check every 3 seconds for up to 5 minutes)
+            max_wait = 300  # 5 minutes
+            waited = 0
+            while waited < max_wait:
+                await asyncio.sleep(3)
+                waited += 3
+                current_url = self.page.url
+                if 'login' not in current_url and 'signin' not in current_url:
+                    log_status("Login detected! Continuing...")
+                    break
+                if waited % 15 == 0:
+                    log_status(f"Still waiting for login... ({waited}s)")
+
+            # Check one more time
+            current_url = self.page.url
+            if 'login' in current_url or 'signin' in current_url:
+                log_status("ERROR: Login timeout - please try again")
+                raise Exception("Login timeout")
+
+        log_status("Waiting for virtual table to load...")
+        await asyncio.sleep(3)
+
+        log_status("Pipeline loaded successfully")
 
     async def sort_by_due_date(self):
         """Click the due date column header to sort by due date (current projects first)"""
@@ -108,85 +192,471 @@ class BuildingConnectedTableScraper:
                 'div[class*="ReactVirtualized__Table__headerRow"] > div:nth-child(3)',
             ]
 
-            date_header = None
             for selector in date_header_selectors:
                 try:
-                    date_header = await self.page.querySelector(selector)
+                    date_header = await self.page.query_selector(selector)
                     if date_header:
-                        break
+                        await date_header.click()
+                        print("[BC] Waiting for table to re-sort...")
+                        await asyncio.sleep(3)
+                        print("[BC] Sorted by due date")
+                        return
                 except:
                     continue
 
-            if date_header:
-                await date_header.click()
-                print(" Waiting for table to re-sort...")
-                await asyncio.sleep(3)  # Increased wait time for virtual table to re-render after sort
-                print(" Sorted by due date")
-            else:
-                print(" Could not sort - continuing")
+            print("[BC] Could not sort - continuing")
 
         except Exception as e:
-            print(f" Sort failed: {e}")
+            print(f"[BC] Sort failed: {e}")
 
     async def get_visible_rows(self):
         """Get currently visible rows from the ReactVirtualized table"""
         # Wait for the table to load
-        await self.page.waitForSelector('.ReactVirtualized__Grid', {'timeout': 10000})
-
-        # Directly query for row elements in the virtual table
-        # Pattern: .ReactVirtualized__Grid.ReactVirtualized__Table__Grid > div > div:nth-child(N) > div
-        # We query for all direct row containers
-        rows = await self.page.querySelectorAll(
-            '.ReactVirtualized__Grid.ReactVirtualized__Table__Grid > div > div[style*="position"]'
-        )
-
-        if not rows or len(rows) == 0:
-            # Fallback: try alternate selector pattern
-            rows = await self.page.querySelectorAll(
-                '.ReactVirtualized__Table__Grid > div > div'
-            )
-
-        if not rows or len(rows) == 0:
-            print(" WARNING: No row elements found in virtual table")
+        try:
+            await self.page.wait_for_selector('.ReactVirtualized__Grid', timeout=10000)
+            print("[BC] Found ReactVirtualized grid")
+        except Exception as e:
+            print(f"[BC] ERROR: Could not find ReactVirtualized grid: {e}")
+            try:
+                debug_path = os.path.join(self.download_dir, 'bc_no_grid_debug.png')
+                await self.page.screenshot(path=debug_path, full_page=True)
+                print(f"[BC] Saved debug screenshot to: {debug_path}")
+            except:
+                pass
             return []
 
-        # Filter out header rows and empty rows
-        valid_rows = []
-        for row in rows:
-            # Check if row has content (has a link to opportunity)
-            has_link = await row.querySelector('a[href*="/opportunities/"]')
-            if has_link:
-                valid_rows.append(row)
+        # Get rows - they are direct children of the scroll container
+        rows = await self.page.query_selector_all('.ReactVirtualized__Table__Grid > div > div')
 
-        return valid_rows
+        if not rows or len(rows) == 0:
+            print("[BC] WARNING: No row elements found")
+            return []
+
+        print(f"[BC] Found {len(rows)} rows")
+        return rows
 
     async def scroll_table(self, pixels=400):
-        """Scroll the table down by specified pixels (reduced for better virtual rendering)"""
-        await self.page.evaluate(f'''
-            () => {{
-                const grid = document.querySelector('.ReactVirtualized__Grid');
-                if (grid) {{
-                    grid.scrollTop += {pixels};
-                }}
-            }}
-        ''')
-        await asyncio.sleep(1.5)  # Increased wait time for virtual table to render new rows
+        """Scroll the table down by specified pixels"""
+        await self.page.evaluate(f'''() => {{
+            const grid = document.querySelector('.ReactVirtualized__Grid');
+            if (grid) {{ grid.scrollTop += {pixels}; }}
+        }}''')
+        await asyncio.sleep(1.5)
 
     async def get_scroll_position(self):
         """Get current scroll position and max scroll"""
-        return await self.page.evaluate('''
-            () => {
-                const grid = document.querySelector('.ReactVirtualized__Grid');
-                if (grid) {
-                    return {
-                        scrollTop: grid.scrollTop,
-                        scrollHeight: grid.scrollHeight,
-                        clientHeight: grid.clientHeight
-                    };
-                }
-                return null;
+        return await self.page.evaluate('''() => {
+            const grid = document.querySelector('.ReactVirtualized__Grid');
+            if (grid) {
+                return {
+                    scrollTop: grid.scrollTop,
+                    scrollHeight: grid.scrollHeight,
+                    clientHeight: grid.clientHeight
+                };
             }
-        ''')
+            return null;
+        }''')
+
+    def _snapshot_download_dir(self):
+        """Capture filenames and mtimes for download detection."""
+        if not os.path.exists(self.download_dir):
+            return {}
+        snapshot = {}
+        for name in os.listdir(self.download_dir):
+            path = os.path.join(self.download_dir, name)
+            if os.path.isfile(path):
+                try:
+                    snapshot[name] = os.path.getmtime(path)
+                except Exception:
+                    continue
+        return snapshot
+
+    def _pick_latest_download(self, before_snapshot, after_snapshot):
+        """Pick newest file that is new or updated (handles overwrite)."""
+        candidates = []
+        for name, mtime in after_snapshot.items():
+            if name.endswith(('.crdownload', '.tmp', '.part')):
+                continue
+            if name not in before_snapshot or mtime > before_snapshot.get(name, 0):
+                candidates.append((name, mtime))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda x: x[1])
+        return candidates[-1][0]
+
+    def _rename_download(self, filename, project_name):
+        """Rename downloaded file to a unique, project-specific filename."""
+        old_path = os.path.join(self.download_dir, filename)
+        if not os.path.exists(old_path):
+            return filename, old_path
+
+        safe_name = "".join(c for c in project_name[:60] if c.isalnum() or c in ' -_').strip()
+        if not safe_name:
+            safe_name = "project"
+        # Remove timestamp to prevent duplicate uploads to GDrive
+        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base, ext = os.path.splitext(filename)
+        # Default to .zip if no extension (BuildingConnected always downloads ZIPs)
+        if not ext:
+            ext = '.zip'
+        new_name = f"{safe_name}{ext}"
+        new_path = os.path.join(self.download_dir, new_name)
+
+        counter = 1
+        while os.path.exists(new_path):
+            new_name = f"{safe_name}_{counter}{ext}"
+            new_path = os.path.join(self.download_dir, new_name)
+            counter += 1
+
+        try:
+            os.rename(old_path, new_path)
+            return new_name, new_path
+        except Exception:
+            return filename, old_path
+
+    def _derive_project_url_from_href(self, href):
+        if not href or '/opportunities/' not in href:
+            return None, None
+        project_id = href.split('/opportunities/')[1].split('/')[0]
+        base_url = href.split('/opportunities/')[0]
+        project_url = f"{base_url}/opportunities/{project_id}/details"
+        return project_url, project_id
+
+    async def get_sidebar_project_href(self):
+        """Return a project-related href from the opened sidebar."""
+        try:
+            return await self.page.evaluate('''() => {
+                const panel =
+                    document.querySelector('div[class*="view__RootDiv"]') ||
+                    document.querySelector('div[class*="quickLinksContainer"]')?.closest('div');
+                if (!panel) return null;
+                const filesLink = panel.querySelector('a[href^="/opportunities/"][href*="/files"]') ||
+                                  panel.querySelector('a[href*="/opportunities/"][href*="/files"]');
+                if (filesLink && filesLink.href) return filesLink.href;
+                const detailLink = panel.querySelector('a[href^="/opportunities/"]') || panel.querySelector('a[href*="/opportunities/"]');
+                if (detailLink && detailLink.href) return detailLink.href;
+                return null;
+            }''')
+        except Exception:
+            return None
+
+    async def handle_large_file_prompt(self):
+        """Handle 'large file size' confirmation modal and 'download started' popup if they appear."""
+        try:
+            # Use aggressive JavaScript-based popup dismissal that doesn't rely on specific selectors
+            dismissed = await self.page.evaluate('''() => {
+                // Helper to check if element is visible
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    return el.offsetParent !== null && 
+                           style.display !== 'none' && 
+                           style.visibility !== 'hidden' &&
+                           style.opacity !== '0';
+                };
+                
+                // Helper to find and click a button with matching text
+                const clickButtonWithText = (container, textPatterns) => {
+                    const buttons = container.querySelectorAll('button, [role="button"], div[class*="button"], span[class*="button"]');
+                    for (const btn of buttons) {
+                        const text = (btn.textContent || '').trim().toLowerCase();
+                        for (const pattern of textPatterns) {
+                            if (text.includes(pattern.toLowerCase())) {
+                                btn.click();
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                };
+                
+                // Strategy 1: Find any overlay/modal with confirm-like buttons
+                // Look for high z-index elements that are likely modals
+                const allDivs = Array.from(document.querySelectorAll('body > div'));
+                const overlays = allDivs.filter(el => {
+                    if (!isVisible(el)) return false;
+                    const style = window.getComputedStyle(el);
+                    const zIndex = parseInt(style.zIndex) || 0;
+                    // Look for high z-index overlays (modals typically have z-index > 1000)
+                    return zIndex > 100 || style.position === 'fixed' || style.position === 'absolute';
+                });
+                
+                // Confirm button patterns to look for
+                const confirmPatterns = ['ok, go for it', 'ok go for it', 'ok', 'continue', 'yes', 'confirm', 'proceed', 'download', 'got it', 'dismiss'];
+                const dismissPatterns = ['close', 'x', '×', 'cancel', 'no thanks'];
+                
+                // Check each overlay for dismiss-able content
+                for (const overlay of overlays) {
+                    const text = (overlay.textContent || '').toLowerCase();
+                    
+                    // Check if this looks like a download/size warning popup
+                    const isPopup = text.includes('download') || 
+                                   text.includes('heads up') ||
+                                   text.includes('large') ||
+                                   text.includes('size') ||
+                                   text.includes('lot of data') ||
+                                   text.includes('started') ||
+                                   text.includes('warning');
+                    
+                    if (isPopup) {
+                        // Try to click confirm button first
+                        if (clickButtonWithText(overlay, confirmPatterns)) {
+                            return true;
+                        }
+                        // Try dismiss patterns as fallback
+                        if (clickButtonWithText(overlay, dismissPatterns)) {
+                            return true;
+                        }
+                        // Last resort: try clicking any button in the overlay
+                        const anyButton = overlay.querySelector('button');
+                        if (anyButton && isVisible(anyButton)) {
+                            anyButton.click();
+                            return true;
+                        }
+                    }
+                }
+                
+                // Strategy 2: Specific text-based search across entire document
+                const allButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
+                for (const btn of allButtons) {
+                    if (!isVisible(btn)) continue;
+                    const text = (btn.textContent || '').trim().toLowerCase();
+                    // "OK, go for it!" is the specific BC button
+                    if (text === 'ok, go for it!' || text.includes('go for it')) {
+                        btn.click();
+                        return true;
+                    }
+                }
+                
+                // Strategy 3: Find close/X buttons on visible overlays
+                for (const overlay of overlays) {
+                    const closeButtons = overlay.querySelectorAll('[aria-label*="close"], [aria-label*="Close"], [aria-label*="dismiss"]');
+                    for (const closeBtn of closeButtons) {
+                        if (isVisible(closeBtn)) {
+                            closeBtn.click();
+                            return true;
+                        }
+                    }
+                    // Look for X button (often styled differently)
+                    const xButtons = overlay.querySelectorAll('button');
+                    for (const xBtn of xButtons) {
+                        const text = (xBtn.textContent || '').trim();
+                        if (text === '×' || text === 'x' || text === 'X' || text === '✕') {
+                            xBtn.click();
+                            return true;
+                        }
+                    }
+                }
+                
+                return false;
+            }''')
+            
+            if dismissed:
+                print("[BC]    Popup dismissed via JavaScript")
+                return True
+            
+            # Fallback: Try Playwright locators with various text patterns
+            dismiss_locators = [
+                self.page.get_by_text("OK, go for it!", exact=True),
+                self.page.get_by_text("OK, go for it!"),
+                self.page.get_by_role("button", name="OK, go for it!"),
+                self.page.get_by_text("Got it"),
+                self.page.get_by_text("Continue"),
+                self.page.get_by_text("Dismiss"),
+                self.page.locator('button:has-text("OK")'),
+            ]
+            
+            for loc in dismiss_locators:
+                try:
+                    if await loc.count() > 0:
+                        await loc.first.click(force=True, timeout=1000)
+                        print("[BC]    Popup dismissed via locator")
+                        return True
+                except:
+                    continue
+            
+            return False
+        except Exception as e:
+            print(f"[BC]    Popup handler error: {e}")
+            return False
+    
+    async def start_popup_watcher(self):
+        """Start a background task that continuously monitors and dismisses popups."""
+        async def popup_watcher():
+            while True:
+                try:
+                    await asyncio.sleep(0.5)  # Check every 500ms
+                    if self.page and not self.page.is_closed():
+                        await self.dismiss_any_popups()
+                except Exception:
+                    pass  # Silently continue if page is closed or error occurs
+        
+        self._popup_watcher_task = asyncio.create_task(popup_watcher())
+    
+    async def stop_popup_watcher(self):
+        """Stop the background popup watcher."""
+        if hasattr(self, '_popup_watcher_task'):
+            self._popup_watcher_task.cancel()
+            try:
+                await self._popup_watcher_task
+            except asyncio.CancelledError:
+                pass
+    
+    async def dismiss_any_popups(self):
+        """Quickly check for and dismiss any visible popups."""
+        try:
+            await self.page.evaluate('''() => {
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    return el.offsetParent !== null && 
+                           style.display !== 'none' && 
+                           style.visibility !== 'hidden';
+                };
+                
+                // Look for overlay divs that might be popups
+                const overlays = Array.from(document.querySelectorAll('body > div')).filter(el => {
+                    if (!isVisible(el)) return false;
+                    const style = window.getComputedStyle(el);
+                    const zIndex = parseInt(style.zIndex) || 0;
+                    return zIndex > 100;
+                });
+                
+                const popupKeywords = ['download', 'heads up', 'large', 'size', 'warning', 'started', 'lot of data'];
+                const confirmKeywords = ['ok', 'continue', 'yes', 'confirm', 'got it', 'dismiss', 'go for it'];
+                
+                for (const overlay of overlays) {
+                    const text = (overlay.textContent || '').toLowerCase();
+                    const isPopup = popupKeywords.some(kw => text.includes(kw));
+                    
+                    if (isPopup) {
+                        const buttons = overlay.querySelectorAll('button, [role="button"]');
+                        for (const btn of buttons) {
+                            const btnText = (btn.textContent || '').toLowerCase();
+                            if (confirmKeywords.some(kw => btnText.includes(kw))) {
+                                btn.click();
+                                return;
+                            }
+                        }
+                        // Click first button as fallback
+                        if (buttons.length > 0) {
+                            buttons[0].click();
+                            return;
+                        }
+                    }
+                }
+            }''')
+        except:
+            pass
+
+    async def open_project_sidebar(self, project_name, max_scroll_attempts=25):
+        """Open the project side panel by clicking the project name in the table."""
+        try:
+            await self.page.goto(
+                'https://app.buildingconnected.com/opportunities/pipeline',
+                wait_until='domcontentloaded',
+                timeout=60000
+            )
+            await asyncio.sleep(2)
+            await self.page.wait_for_selector('.ReactVirtualized__Grid', timeout=10000)
+        except Exception as e:
+            print(f"[BC]    Could not load pipeline for sidebar: {e}")
+            return False
+
+        # Reset scroll to top
+        try:
+            await self.page.evaluate('''() => {
+                const grid = document.querySelector('.ReactVirtualized__Grid');
+                if (grid) grid.scrollTop = 0;
+            }''')
+            await asyncio.sleep(0.5)
+        except:
+            pass
+
+        name_snippet = (project_name or "").strip()[:24]
+        if not name_snippet:
+            return False
+
+        for _ in range(max_scroll_attempts):
+            clicked = await self.page.evaluate('''(name) => {
+                const rows = document.querySelectorAll('.ReactVirtualized__Grid > div > div');
+                for (const row of rows) {
+                    const text = row.textContent || '';
+                    if (text.includes(name)) {
+                        const link =
+                            row.querySelector('a.nameCell-0-1-308.sidePanelTextHighlight-0-1-314') ||
+                            row.querySelector('a[href^="/opportunities/"]') ||
+                            row.querySelector('a[href*="/opportunities/"]');
+                        const nameEl =
+                            row.querySelector('a > div.projectName-0-1-301.sidePanelTextHighlight-0-1-314') ||
+                            row.querySelector('a > div[class*="projectName"]') ||
+                            row.querySelector('div[class*="projectName"]');
+                        if (link) {
+                            link.click();
+                            return true;
+                        }
+                        if (nameEl) {
+                            nameEl.click();
+                            return true;
+                        }
+                        row.click();
+                        return true;
+                    }
+                }
+                return false;
+            }''', name_snippet)
+
+            if clicked:
+                try:
+                    await self.page.wait_for_selector('div[class*="quickLinksContainer"]', timeout=8000)
+                except:
+                    pass
+                return True
+
+            # Scroll down to find the project
+            await self.page.evaluate('''() => {
+                const grid = document.querySelector('.ReactVirtualized__Grid');
+                if (grid) grid.scrollTop += 350;
+            }''')
+            await asyncio.sleep(0.7)
+
+        print(f"[BC]    Could not open sidebar for: {project_name[:40]}")
+        return False
+
+    async def open_sidebar_from_row(self, row):
+        """Open the sidebar by clicking a link or project name within a row element."""
+        try:
+            # Prefer clicking the name/row to avoid full navigation
+            name_el = await row.query_selector('div[class*="projectName"]')
+            if name_el:
+                await name_el.click()
+            else:
+                try:
+                    await row.click()
+                except:
+                    # Last resort: click link but prevent navigation
+                    link = await row.query_selector('a[href^="/opportunities/"], a[href*="/opportunities/"]')
+                    if link:
+                        await self.page.evaluate('''(el) => {
+                            if (!el) return;
+                            el.addEventListener('click', (e) => e.preventDefault(), { once: true });
+                            el.click();
+                        }''', link)
+
+            try:
+                await self.page.wait_for_selector('div[class*="quickLinksContainer"]', timeout=8000)
+            except:
+                pass
+            # If navigation happened, avoid poisoning the table context
+            if '/opportunities/pipeline' not in (self.page.url or ''):
+                try:
+                    await self.page.go_back()
+                except:
+                    pass
+                return False
+            return True
+        except Exception:
+            return False
 
     def is_project_expired(self, date_str):
         """Check if a project's bid date has passed"""
@@ -208,326 +678,878 @@ class BuildingConnectedTableScraper:
         except:
             return False
 
-    async def extract_row_data(self, row, index):
-        """Extract data from a single table row"""
+    async def extract_row_data(self, row, index, click_for_url=False):
+        """Extract data from a single table row using JavaScript (Playwright)
+
+        Args:
+            row: The row element
+            index: Row index for logging
+            click_for_url: If True, click the row to reveal details panel and get URL
+        """
         try:
-            # Get all column elements within this row
-            columns = await row.querySelectorAll('[class*="rowColumn"]')
+            # Use JavaScript to extract all data at once using positional selectors
+            # Based on BuildingConnected table structure (from user's CSS path):
+            # Row > inner div wrapper > columns (div:nth-child(1), div:nth-child(2), etc.)
+            # - Column 1: Name (with link)
+            # - Column 2: Status/type
+            # - Column 3: Due Date
+            # - Column 4: Location
+            # - Column 5: Company/Contact
+            data = await row.evaluate('''(row) => {
+                const result = {
+                    name: '',
+                    url: '',
+                    bid_date: '',
+                    bid_time: '',
+                    city: '',
+                    state: '',
+                    company: '',
+                    contact: '',
+                    has_budget: false
+                };
 
-            # Extract project name using the correct selector path
-            name_selectors = [
-                'div[class*="nameCellColumn"] div[class*="projectName"] div[class*="textWrapper"]',
-                'div[class*="nameCellColumn"] div[class*="nameCell"] div[class*="textWrapper"]',
-                '[class*="textWrapper"]',  # Fallback
-            ]
+                // Row structure: row > div (wrapper) > div columns
+                // Get the inner wrapper first
+                let wrapper = row.querySelector(':scope > div');
+                if (!wrapper) wrapper = row;
 
-            name = None
-            for selector in name_selectors:
-                name_elem = await row.querySelector(selector)
-                if name_elem:
-                    name = await self.page.evaluate('(el) => el.textContent', name_elem)
-                    if name and name.strip():
-                        name = name.strip()
-                        break
+                // Get columns from the wrapper
+                const cols = wrapper.querySelectorAll(':scope > div');
 
-            if not name:
-                name = f"Project {index + 1}"
+                // Column 1: Name and URL (has the link)
+                if (cols.length > 0) {
+                    const nameCol = cols[0];
+                    // Get URL from any link in the row (search whole row, not just name col)
+                    let link = row.querySelector('a[href^="/opportunities/"]');
+                    if (!link) link = row.querySelector('a[href*="/opportunities/"]');
+                    if (!link) link = nameCol.querySelector('a');
+                    if (link) {
+                        const href = link.getAttribute('href');
+                        if (href) result.url = href;
+                        // Name is typically in a span inside the link
+                        const nameSpan = link.querySelector('span');
+                        if (nameSpan) result.name = nameSpan.textContent.trim();
+                    }
+                    // Fallback: get name from textWrapper
+                    if (!result.name) {
+                        const textWrapper = row.querySelector('div[class*="textWrapper"]');
+                        if (textWrapper) result.name = textWrapper.textContent.trim();
+                    }
+                    // Fallback: first span in name column
+                    if (!result.name) {
+                        const firstSpan = nameCol.querySelector('span');
+                        if (firstSpan) result.name = firstSpan.textContent.trim();
+                    }
 
-            # Extract from columns by index (if we have enough columns)
-            bid_date = "N/A"
-            location = "N/A"
-            city = "N/A"
-            state = "N/A"
-            company = "N/A"
-            contact_name = "N/A"
-            expected_start = "N/A"
+                    // Check for "Budget" badge in the name column
+                    // Selector: span.Badge or span with class containing "badge"
+                    const badges = nameCol.querySelectorAll('span[class*="Badge"], span[class*="badge"]');
+                    for (const badge of badges) {
+                        const badgeText = badge.textContent.trim().toLowerCase();
+                        if (badgeText === 'budget' || badgeText.includes('budget')) {
+                            result.has_budget = true;
+                            break;
+                        }
+                    }
+                }
 
-            if len(columns) > 2:
-                # Column 2 (index 2) - Bid Date
-                date_text = await self.page.evaluate('(el) => el.textContent', columns[2])
-                if date_text:
-                    bid_date = date_text.strip()
+                // Fallback for URL: search anywhere in the row
+                if (!result.url) {
+                    const anyLink = row.querySelector('a[href^="/opportunities/"]') || row.querySelector('a');
+                    if (anyLink) {
+                        const href = anyLink.getAttribute('href');
+                        if (href) result.url = href;
+                    }
+                }
 
-            if len(columns) > 3:
-                # Column 3 (index 3) - Location (City, State)
-                location_text = await self.page.evaluate('(el) => el.textContent', columns[3])
-                if location_text:
-                    location = location_text.strip()
-                    # Try to parse city and state
-                    # Format might be "CityState" or "City, State" or multiline
-                    if ',' in location:
-                        parts = location.split(',')
-                        city = parts[0].strip()
-                        state = parts[1].strip() if len(parts) > 1 else "N/A"
-                    else:
-                        # Might be on separate lines or concatenated
-                        # Look for capital letter that starts state (assuming US states)
-                        import re
-                        match = re.search(r'([A-Z][a-z\s]+)([A-Z][a-z]+)$', location)
-                        if match:
-                            city = match.group(1).strip()
-                            state = match.group(2).strip()
-                        else:
-                            city = location
+                // Fallback: some elements use `to` attribute instead of href
+                if (!result.url) {
+                    const toEl = row.querySelector('[to^="/opportunities/"]');
+                    if (toEl) {
+                        const to = toEl.getAttribute('to');
+                        if (to) result.url = to;
+                    }
+                }
 
-            if len(columns) > 4:
-                # Column 4 (index 4) - Company and Contact (in nested divs)
-                # Structure: column > div[class*="right-"] > div:nth-child(1/2) > span
+                // Debug: check what links exist
+                const allLinks = row.querySelectorAll('a');
+                result._linkCount = allLinks.length;
+                if (allLinks.length > 0) {
+                    result._firstLinkHref = allLinks[0].href || allLinks[0].getAttribute('href') || 'no-href';
+                }
+
+                // Column 3: Due Date (index 2)
+                if (cols.length > 2) {
+                    const dateCol = cols[2];
+                    const spans = dateCol.querySelectorAll('span');
+                    if (spans.length > 0) {
+                        result.bid_date = spans[0].textContent.trim();
+                        if (spans.length > 1) result.bid_time = spans[1].textContent.trim();
+                    }
+                }
+
+                // Column 4: Location (index 3)
+                if (cols.length > 3) {
+                    const locCol = cols[3];
+                    // Location has city and state - try to find them separately
+                    // First try nested divs
+                    const innerDivs = locCol.querySelectorAll('div');
+                    let foundCity = false;
+                    for (const div of innerDivs) {
+                        const text = div.textContent.trim();
+                        // Skip empty or if it contains other nested content
+                        if (!text || div.querySelector('div')) continue;
+                        if (!foundCity) {
+                            result.city = text;
+                            foundCity = true;
+                        } else {
+                            result.state = text;
+                            break;
+                        }
+                    }
+                    // Fallback: try spans
+                    if (!result.city) {
+                        const spans = locCol.querySelectorAll('span');
+                        if (spans.length >= 2) {
+                            result.city = spans[0].textContent.trim();
+                            result.state = spans[1].textContent.trim();
+                        } else if (spans.length === 1) {
+                            // Try to split "City, State" or "CityState"
+                            const text = spans[0].textContent.trim();
+                            const match = text.match(/^(.+?),?\s*([A-Z]{2}|[A-Z][a-z]+)$/);
+                            if (match) {
+                                result.city = match[1].trim();
+                                result.state = match[2].trim();
+                            } else {
+                                result.city = text;
+                            }
+                        }
+                    }
+                }
+
+                // Column 5: Company/Contact (index 4)
+                // Based on user's selector: div:nth-child(5) > div > div.right-... > div:nth-child(1) > span
+                if (cols.length > 4) {
+                    const compCol = cols[4];
+                    // Company name is in: div > div[class*="right"] > div:nth-child(1) > span
+                    const rightDiv = compCol.querySelector('div[class*="right"]');
+                    if (rightDiv) {
+                        const companySpan = rightDiv.querySelector('div:nth-child(1) > span');
+                        if (companySpan) result.company = companySpan.textContent.trim();
+                        // Contact is in div:nth-child(2) > span
+                        const contactSpan = rightDiv.querySelector('div:nth-child(2) > span');
+                        if (contactSpan) result.contact = contactSpan.textContent.trim();
+                    }
+                    // Fallback: try getting spans directly
+                    if (!result.company) {
+                        const spans = compCol.querySelectorAll('span');
+                        if (spans.length >= 2) {
+                            result.company = spans[0].textContent.trim();
+                            result.contact = spans[1].textContent.trim();
+                        } else if (spans.length === 1) {
+                            result.company = spans[0].textContent.trim();
+                        }
+                    }
+                }
+
+                // Debug: count columns found and show structure
+                result._colCount = cols.length;
+                result._hasWrapper = wrapper !== row;
+                result._rowClasses = row.className || '';
+                result._hasLink = !!row.querySelector('a');
+
+                return result;
+            }''')
+
+            # Debug: log first few extractions
+            if index < 3:
+                col_count = data.get('_colCount', 0)
+                link_count = data.get('_linkCount', 0)
+                first_link = data.get('_firstLinkHref', 'none')[:60]
+                print(f"[BC] DEBUG row {index}: cols={col_count}, links={link_count}")
+                print(f"[BC]   first_link: {first_link}")
+                print(f"[BC]   name='{data.get('name', '')[:30]}' url='{data.get('url', '')[:50]}'")
+
+            # Check if we got a name
+            if not data or not data.get('name'):
+                return None
+
+            name = data['name']
+            url = data.get('url', '')
+            bid_date = data.get('bid_date', 'N/A') or 'N/A'
+            bid_time = data.get('bid_time', '')
+            city = data.get('city', 'N/A') or 'N/A'
+            state = data.get('state', 'N/A') or 'N/A'
+            company = data.get('company', 'N/A') or 'N/A'
+            contact_name = data.get('contact', 'N/A') or 'N/A'
+            has_budget = data.get('has_budget', False)
+
+            # If we need to click the row to get the URL
+            if click_for_url and not url:
+                clicked_successfully = False
                 try:
-                    # Try specific selector structure first
-                    company_elem = await row.querySelector('div:nth-child(5) div[class*="right-"] div:nth-child(1) span')
-                    if company_elem:
-                        company_text = await self.page.evaluate('(el) => el.textContent', company_elem)
-                        if company_text:
-                            company = company_text.strip()
+                    # Check if element is still attached before clicking
+                    is_attached = await row.evaluate('(el) => el.isConnected')
+                    if is_attached:
+                        # Click the row to open details panel
+                        log_status(f"Clicking row {index} to get URL...")
+                        await row.click()
+                        await asyncio.sleep(2.5)  # Wait for panel to open
+                        clicked_successfully = True
+                except Exception as click_err:
+                    log_status(f"Click failed for row {index}: {click_err}")
+                    pass
 
-                    contact_elem = await row.querySelector('div:nth-child(5) div[class*="right-"] div:nth-child(2) span')
-                    if contact_elem:
-                        contact_text = await self.page.evaluate('(el) => el.textContent', contact_elem)
-                        if contact_text:
-                            contact_name = contact_text.strip()
-                except:
-                    # Fallback to old method
-                    company_text = await self.page.evaluate('(el) => el.textContent', columns[4])
-                    if company_text:
-                        lines = company_text.strip().split('\n')
-                        if len(lines) >= 2:
-                            company = lines[0].strip()
-                            contact_name = lines[1].strip()
-                        else:
-                            company = company_text.strip()
+                # Only try to extract URL if we clicked successfully
+                if not clicked_successfully:
+                    pass  # Skip URL extraction, we still have the basic data
+                else:
+                    # Debug: check what's in the DOM after clicking
+                    panel_debug = await self.page.evaluate('''() => {
+                        const result = {
+                            allLinks: [],
+                            panelExists: false,
+                            moreDetailsBtn: null,
+                            panelClasses: '',
+                            panelLinks: []
+                        };
 
-            if len(columns) > 5:
-                # Column 5 (index 5) - Expected Start
-                start_text = await self.page.evaluate('(el) => el.textContent', columns[5])
-                if start_text:
-                    expected_start = start_text.strip()
+                        // Check for any panel/drawer that appeared - try more selectors
+                        // IMPORTANT: Avoid matching row elements with "sidePanel" in class name
+                        const panelSelectors = [
+                            // Look for actual panel containers (usually have overlay/drawer/panel in class)
+                            'div[class*="PreviewPanel"]',
+                            'div[class*="DetailDrawer"]',
+                            'div[class*="slideOut"]',
+                            'div[class*="rightPanel"]',
+                            'div[class*="detailsPanel"]',
+                            'div[class*="opportunityDetail"]',
+                            'div[class*="quickLinksContainer"]',  // The quick links section
+                            // Try finding by structure - panels typically have fixed/absolute positioning
+                            'div[class*="Overlay"] > div',
+                            'div[class*="Modal"] > div',
+                        ];
 
-            # Get the project URL
-            link_elem = await row.querySelector('a[href*="/opportunities/"]')
-            if link_elem:
-                url = await self.page.evaluate('(el) => el.href', link_elem)
-                project_id = url.split('/opportunities/')[1].split('/')[0] if '/opportunities/' in url else f'project_{index}'
+                        let panel = null;
+                        for (const selector of panelSelectors) {
+                            panel = document.querySelector(selector);
+                            if (panel) {
+                                result.panelClasses = selector + ' -> ' + (panel.className || '').substring(0, 50);
+                                break;
+                            }
+                        }
+                        result.panelExists = !!panel;
+
+                        if (panel) {
+                            // Get links specifically from the panel
+                            const panelLinks = panel.querySelectorAll('a');
+                            for (const link of panelLinks) {
+                                if (link.href) result.panelLinks.push(link.href.substring(0, 80));
+                            }
+                        }
+
+                        // Find all links with "opportunities" in href (from whole page)
+                        const links = document.querySelectorAll('a[href*="/opportunities/"]');
+                        for (const link of links) {
+                            result.allLinks.push(link.href);
+                        }
+
+                        // Look for "More Project Details" text
+                        const allButtons = document.querySelectorAll('button, a');
+                        for (const btn of allButtons) {
+                            if (btn.textContent && btn.textContent.includes('More Project Details')) {
+                                result.moreDetailsBtn = btn.href || btn.getAttribute('href') || 'found-but-no-href';
+                            }
+                        }
+
+                        return result;
+                    }''')
+
+                    if index < 3:  # Debug first 3 rows
+                        print(f"[BC]   Panel debug: panel={panel_debug.get('panelExists')}, pageLinks={len(panel_debug.get('allLinks', []))}, panelLinks={len(panel_debug.get('panelLinks', []))}")
+                        print(f"[BC]   Panel class: {panel_debug.get('panelClasses', 'none')[:60]}")
+                        if panel_debug.get('panelLinks'):
+                            print(f"[BC]   Panel link[0]: {panel_debug['panelLinks'][0][:60]}...")
+                        elif panel_debug.get('allLinks'):
+                            print(f"[BC]   Page link[0]: {panel_debug['allLinks'][0][:60]}...")
+
+                    # Try to get URL from the PANEL (not the table rows)
+                    # The panel is the side drawer that opens when you click a row
+                    url_info = await self.page.evaluate('''() => {
+                        // Look for the side panel/drawer that contains project details
+                        // It typically has classes like slidePanel, drawer, or similar
+                        const panel = document.querySelector(
+                            'div[class*="slidePanel"], div[class*="drawer"], div[class*="sidePanel"], ' +
+                            'div[class*="DetailPanel"], div[class*="quickView"], div[class*="projectDetail"]'
+                        );
+
+                        if (panel) {
+                            // Find the "More Project Details" button/link in the panel
+                            const moreDetailsBtn = panel.querySelector('a[href*="/opportunities/"][href*="/details"]');
+                            if (moreDetailsBtn) return { url: moreDetailsBtn.href, source: 'panelDetailsLink' };
+
+                            // Try quickLinks in the panel
+                            const quickLink = panel.querySelector('div[class*="quickLinks"] a[href*="/opportunities/"]');
+                            if (quickLink) return { url: quickLink.href, source: 'panelQuickLink' };
+
+                            // Find any opportunity link in the panel
+                            const panelLink = panel.querySelector('a[href*="/opportunities/"]');
+                            if (panelLink) return { url: panelLink.href, source: 'panelOppLink' };
+                        }
+
+                        // Fallback: look for highlighted/selected row link
+                        const selectedRow = document.querySelector('div[class*="selected"], div[class*="highlighted"], div[class*="active"]');
+                        if (selectedRow) {
+                            const rowLink = selectedRow.querySelector('a[href*="/opportunities/"]');
+                            if (rowLink) return { url: rowLink.href, source: 'selectedRowLink' };
+                        }
+
+                        // Last resort: find a link with /details in the path
+                        const detailsLink = document.querySelector('a[href*="/opportunities/"][href*="/details"]');
+                        if (detailsLink) return { url: detailsLink.href, source: 'detailsLink' };
+
+                        return null;
+                    }''')
+
+                    if url_info and url_info.get('url'):
+                        url = url_info['url']
+                        print(f"[BC]   Got URL ({url_info.get('source')}): {url[:50]}...")
+
+            # Normalize URL (relative -> absolute) and generate project ID
+            project_id = f'project_{index}'
+            if url and '/opportunities/' in url:
+                if url.startswith('/'):
+                    url = f"https://app.buildingconnected.com{url}"
+                project_id = url.split('/opportunities/')[1].split('/')[0]
+
+            # Set url to N/A if empty
+            if not url:
+                url = 'N/A'
+
+            # Format location properly (avoid duplication)
+            if city != "N/A" and state != "N/A":
+                location = f"{city}, {state}"
+            elif city != "N/A":
+                location = city
             else:
-                url = "N/A"
-                project_id = f'project_{index}'
+                location = "N/A"
+
+            budget_indicator = " [BUDGET]" if has_budget else ""
+            print(f"[BC] {name[:35]:35} | {bid_date:12} | {city[:15]:15} | {company[:20]}{budget_indicator}")
 
             return {
                 'id': project_id,
                 'name': name,
                 'bid_date': bid_date,
-                'due_date': bid_date,  # Alias
-                'expected_start': expected_start,
+                'bid_time': bid_time,
+                'due_date': bid_date,
                 'location': location,
                 'city': city,
                 'state': state,
                 'company': company,
-                'gc': company,  # General contractor
+                'gc': company,
                 'contact_name': contact_name,
                 'url': url,
                 'source': 'BuildingConnected',
                 'site': 'BuildingConnected',
                 'extracted_at': datetime.now().isoformat(),
-                # These will be filled in by detail view extraction
                 'contact_email': None,
                 'files_count': None,
                 'has_new_files': False,
-                'files_link': None,  # Link to files page (for downloading)
+                'has_budget': has_budget,
+                'files_link': None,
                 'download_link': None,
             }
 
         except Exception as e:
-            print(f"  Error extracting row {index}: {e}")
+            msg = str(e)
+            print(f"[BC] Error extracting row {index}: {e}")
+            if "Execution context was destroyed" in msg:
+                return {"__context_destroyed": True}
             return None
 
-    async def extract_detail_info(self, project_url):
-        """Extract additional info from project detail page"""
+    async def extract_detail_info(self, project, sidebar_opened=False):
+        """Extract additional info from the project side panel or detail page."""
         try:
-            # Navigate to project detail page (faster load)
-            await self.page.goto(project_url, {'waitUntil': 'domcontentloaded', 'timeout': 30000})
-            await asyncio.sleep(0.5)  # Reduced wait time
-
             detail_info = {
                 'contact_email': None,
+                'contact_phone': None,
+                'full_address': None,
+                'description': None,
                 'files_count': None,
                 'has_new_files': False,
-                'files_link': None,  # Link to files page
+                'files_link': None,
                 'download_link': None,
             }
 
-            # Extract contact email from quick links
-            email_elem = await self.page.querySelector('div[class*="quickLinksContainer"] a:nth-child(2) div span')
-            if email_elem:
-                email = await self.page.evaluate('(el) => el.textContent', email_elem)
-                detail_info['contact_email'] = email.strip() if email else None
+            project_url = project.get('url') if isinstance(project, dict) else None
+            project_name = project.get('name') if isinstance(project, dict) else None
 
-            # Extract files count
-            files_count_elem = await self.page.querySelector('div[class*="quickLinksContainer"] a:nth-child(2) div[class*="number"]')
-            if files_count_elem:
-                count_text = await self.page.evaluate('(el) => el.textContent', files_count_elem)
+            # Prefer side panel (per instructions)
+            if not sidebar_opened and project_name:
+                sidebar_opened = await self.open_project_sidebar(project_name)
+
+            # Fallback: navigate to project URL if sidebar not available
+            if not sidebar_opened and project_url and project_url != "N/A":
                 try:
-                    detail_info['files_count'] = int(count_text.strip())
+                    await self.page.goto(project_url, wait_until='domcontentloaded', timeout=30000)
+                    await asyncio.sleep(2)
+                except Exception as nav_err:
+                    print(f"[BC]     Detail nav failed: {nav_err}")
+
+            # Construct files link from project URL as a fallback (do not use as download link)
+            if project_url and '/opportunities/' in project_url:
+                base_url = project_url.split('/opportunities/')[0]
+                project_id = project_url.split('/opportunities/')[1].split('/')[0]
+                detail_info['files_link'] = f"{base_url}/opportunities/{project_id}/files"
+
+            # Extract files count from quick links
+            files_count_selectors = [
+                '#main > div > div.styled__StyledRoot-sc-1lsmkna-0.frwmPl > div.styled__StyledLayoutContainer-sc-1lsmkna-1.dRXrjH > div.styled__StyledMain-sc-1lsmkna-3.dFaUcj > div > div.styled__StyledPageContent-j773fv-3.tRbST > div > div > div > div > div.bidBoardBeta-0-1-210 > div.view__RootDiv-sc-1inb5pz-0.cVxFi > div > div.scrollY-0-1-387.flexCol-0-1-380 > div.quickLinksContainer-0-1-419 > a:nth-child(2) > div > div.number-0-1-420',
+                'div[class*="quickLinksContainer"] a:nth-child(2) div[class*="number"]',
+                'div[class*="quickLinksContainer"] div[class*="number"]',
+                'a[href*="/files"] div[class*="number"]',
+            ]
+            for selector in files_count_selectors:
+                try:
+                    count_elem = await self.page.query_selector(selector)
+                    if count_elem:
+                        text = await count_elem.text_content()
+                        if text:
+                            try:
+                                detail_info['files_count'] = int(text.strip())
+                            except:
+                                detail_info['files_count'] = text.strip()
+                        break
                 except:
-                    detail_info['files_count'] = count_text.strip()
+                    continue
 
-            # Check for new files badge
-            new_badge_elem = await self.page.querySelector('div[class*="quickLinksContainer"] a:nth-child(2) div span')
-            if new_badge_elem:
-                badge_text = await self.page.evaluate('(el) => el.textContent', new_badge_elem)
-                if badge_text and ('new' in badge_text.lower() or 'addendum' in badge_text.lower()):
-                    detail_info['has_new_files'] = True
+            # Check for "New" badge on files
+            new_badge_selectors = [
+                'div[class*="quickLinksContainer"] a:nth-child(2) span span',
+                'div[class*="quickLinksContainer"] a:nth-child(2) div span',
+                'a[href*="/files"] span span',
+            ]
+            for selector in new_badge_selectors:
+                try:
+                    badge_elem = await self.page.query_selector(selector)
+                    if badge_elem:
+                        text = await badge_elem.text_content()
+                        if text and ('new' in text.lower() or 'addendum' in text.lower()):
+                            detail_info['has_new_files'] = True
+                        break
+                except:
+                    continue
 
-            # Get files page link (don't actually download, just get the link)
-            try:
-                # Get the href from the Files link in quick links
-                files_link = await self.page.querySelector('div[class*="quickLinksContainer"] a:nth-child(2)')
-                if files_link:
-                    files_url = await self.page.evaluate('(el) => el.href', files_link)
-                    if files_url:
-                        # Store the files page URL - users can click this to download
-                        detail_info['files_link'] = files_url
-                        detail_info['download_link'] = files_url
+            # Get files link from page if we don't have it yet (sidebar quick link)
+            if not detail_info['files_link']:
+                files_link_selectors = [
+                    '#main > div > div.styled__StyledRoot-sc-1lsmkna-0.frwmPl > div.styled__StyledLayoutContainer-sc-1lsmkna-1.dRXrjH > div.styled__StyledMain-sc-1lsmkna-3.dFaUcj > div > div.styled__StyledPageContent-j773fv-3.tRbST > div > div > div > div > div.bidBoardBeta-0-1-210 > div.view__RootDiv-sc-1inb5pz-0.cVxFi > div > div.scrollY-0-1-387.flexCol-0-1-380 > div.quickLinksContainer-0-1-419 > a:nth-child(2)',
+                    'div[class*="quickLinksContainer"] a:nth-child(2)',
+                    'a[href*="/files"]',
+                ]
+                for selector in files_link_selectors:
+                    try:
+                        link_elem = await self.page.query_selector(selector)
+                        if link_elem:
+                            href = await link_elem.get_attribute('href')
+                            if href:
+                                if href.startswith('/'):
+                                    href = f"https://app.buildingconnected.com{href}"
+                                detail_info['files_link'] = href
+                            break
+                    except:
+                        continue
 
-            except Exception as e:
-                print(f"    Could not get files link: {e}")
+            # Extract contact email
+            email_selectors = [
+                'a[href^="mailto:"]',
+                'div[class*="contactInfo"] a[href^="mailto:"]',
+            ]
+            for selector in email_selectors:
+                try:
+                    email_elem = await self.page.query_selector(selector)
+                    if email_elem:
+                        href = await email_elem.get_attribute('href')
+                        if href and href.startswith('mailto:'):
+                            detail_info['contact_email'] = href.replace('mailto:', '')
+                        break
+                except:
+                    continue
+
+            # Extract full address
+            address_selectors = [
+                'main > div > div.styled__StyledRoot-sc-1lsmkna-0.frwmPl > div.styled__StyledLayoutContainer-sc-1lsmkna-1.dRXrjH > div.styled__StyledMain-sc-1lsmkna-3.dFaUcj > div > div.styled__StyledPageContent-j773fv-3.tRbST > div > div > div > div > div.bidBoardBeta-0-1-85 > div.view__RootDiv-sc-1inb5pz-0.cVxFi > div > div.scrollY-0-1-291.flexCol-0-1-284 > div:nth-child(10) > div:nth-child(2) > div:nth-child(7) > div.hoverArea-0-1-405.rightSideFlex-0-1-409 > div.value-0-1-410 > div > span',
+                'div[class*="scrollY"] div[class*="value"] div span',
+                'div[class*="hoverArea"] div[class*="value"] div span',
+                'div[class*="locationWrapper"] span',
+            ]
+            for selector in address_selectors:
+                try:
+                    addr_elem = await self.page.query_selector(selector)
+                    if addr_elem:
+                        text = await addr_elem.text_content()
+                        if text and text.strip():
+                            detail_info['full_address'] = text.strip()
+                        break
+                except:
+                    continue
+
+            # Extract project description (side panel)
+            description_selectors = [
+                '#main > div > div.styled__StyledRoot-sc-1lsmkna-0.frwmPl > div.styled__StyledLayoutContainer-sc-1lsmkna-1.dRXrjH > div.styled__StyledMain-sc-1lsmkna-3.dFaUcj > div > div.styled__StyledPageContent-j773fv-3.tRbST > div > div > div > div > div.bidBoardBeta-0-1-85 > div.view__RootDiv-sc-1inb5pz-0.cVxFi > div > div.scrollY-0-1-291.flexCol-0-1-284 > div:nth-child(10) > div:nth-child(2) > div:nth-child(9) > div.hoverArea-0-1-405 > div.value-0-1-410 > div > div > div > div > div > div > div > div > div:nth-child(1) > div > span > span',
+                'div[class*="scrollY"] div[class*="value"] span',
+                'div[class*="description"] span',
+            ]
+            for selector in description_selectors:
+                try:
+                    desc_elem = await self.page.query_selector(selector)
+                    if desc_elem:
+                        text = await desc_elem.text_content()
+                        if text and text.strip():
+                            detail_info['description'] = text.strip()
+                            break
+                except:
+                    continue
 
             return detail_info
 
         except Exception as e:
-            print(f"    Error extracting detail info: {e}")
+            print(f"[BC]     Error extracting detail info: {e}")
             return None
 
-    async def download_files_for_project(self, project):
+    async def download_files_for_project(self, project, sidebar_opened=False):
         """
-        Download files for a specific project (Pass 2).
-
-        Workflow:
-        1. Navigate to project detail page
-        2. Click Files tab
-        3. Click Download All button
-        4. Save files to download directory
-        5. Return local file path
+        Download files for a specific project (Pass 2) using Playwright.
         """
-        print(f"\n[Pass 2] Downloading files for: {project['name']}")
+        print(f"\n[BC] [Pass 2] Downloading files for: {project['name']}")
 
         try:
-            # Navigate to project URL
-            if project['url'] == "N/A":
-                print("   No URL available for this project")
+            if not project.get('name'):
+                print("[BC]    Project missing name; cannot open sidebar")
                 return False
 
-            print(f"   Navigating to project: {project['url']}")
-            await self.page.goto(project['url'], {'waitUntil': 'domcontentloaded', 'timeout': 30000})
-            await asyncio.sleep(2)
+            # Open side panel by clicking project name, then click Files quick link
+            if not sidebar_opened:
+                print("[BC]    Opening project sidebar...")
+                opened = await self.open_project_sidebar(project['name'])
+                if not opened:
+                    print("[BC]    Could not open project sidebar")
+                    return False
 
-            # Click Files tab
-            print("   Clicking Files tab...")
-            files_tab_selectors = [
-                'a[href*="/files"]',
-                '[data-testid="files-tab"]',
-                'div.Tabs___StyledDiv3-sc-v38ayv-2 a:nth-child(2)',
-                'a:has-text("Files")',
-            ]
+            print("[BC]    Clicking Files link in sidebar...")
+            
+            # First try JavaScript-based detection for Files link
+            files_link_result = await self.page.evaluate('''() => {
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    return el.offsetParent !== null && 
+                           style.display !== 'none' && 
+                           style.visibility !== 'hidden';
+                };
+                
+                // Find all links
+                const links = Array.from(document.querySelectorAll('a'));
+                
+                for (const link of links) {
+                    if (!isVisible(link)) continue;
+                    const text = (link.textContent || '').trim().toLowerCase();
+                    const href = link.getAttribute('href') || '';
+                    
+                    // Match "Files" link
+                    if (text === 'files' || href.includes('/files')) {
+                        const fullHref = href.startsWith('/') 
+                            ? 'https://app.buildingconnected.com' + href 
+                            : href;
+                        link.click();
+                        return { clicked: true, href: fullHref };
+                    }
+                }
+                
+                return { clicked: false, href: null };
+            }''')
+            
+            clicked_files_link = files_link_result.get('clicked', False)
+            if files_link_result.get('href'):
+                project['files_link'] = files_link_result['href']
+                print(f"[BC]    Files link found: {files_link_result['href'][:60]}...")
+            
+            if not clicked_files_link:
+                # Fallback to CSS selectors
+                files_link_selectors = [
+                    'div[class*="quickLinksContainer"] a:nth-child(2)',
+                    'a[href*="/files"]',
+                    'text=Files',
+                ]
 
-            clicked_files_tab = False
-            for selector in files_tab_selectors:
-                try:
-                    files_tab = await self.page.querySelector(selector)
-                    if files_tab:
-                        await files_tab.click()
-                        clicked_files_tab = True
-                        print("   Files tab clicked")
-                        break
-                except:
-                    continue
+                for selector in files_link_selectors:
+                    try:
+                        link_elem = await self.page.query_selector(selector)
+                        if link_elem:
+                            href = await link_elem.get_attribute('href')
+                            if href:
+                                if href.startswith('/'):
+                                    href = f"https://app.buildingconnected.com{href}"
+                                project['files_link'] = href
+                            await link_elem.click()
+                            clicked_files_link = True
+                            break
+                    except:
+                        continue
 
-            if not clicked_files_tab:
-                print("   Could not find Files tab")
+            if not clicked_files_link:
+                print("[BC]    Could not find Files link in sidebar")
                 return False
 
+            try:
+                await self.page.wait_for_url("**/files", timeout=10000)
+            except:
+                pass
             await asyncio.sleep(2)
 
-            # Get the starting file count in download directory
-            download_dir = self.download_dir
-            files_before = set(os.listdir(download_dir)) if os.path.exists(download_dir) else set()
+            # Snapshot before download (for fallback detection)
+            files_before = self._snapshot_download_dir()
 
-            # Click Download All button
-            print("   Clicking Download All button...")
-            download_btn_selectors = [
-                '[data-testid="download-all-bttn"]',
-                'button:has-text("Download All")',
-                'button[class*="download"]',
-            ]
-
-            clicked_download = False
-            for selector in download_btn_selectors:
-                try:
-                    download_btn = await self.page.querySelector(selector)
-                    if download_btn:
-                        await download_btn.click()
-                        clicked_download = True
-                        print("   Download initiated")
-                        break
-                except:
-                    continue
+            # Click Download All button using robust JavaScript detection
+            print("[BC]    Clicking Download All button...")
+            
+            # First try JavaScript-based detection (most robust)
+            clicked_download = await self.page.evaluate('''() => {
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    return el.offsetParent !== null && 
+                           style.display !== 'none' && 
+                           style.visibility !== 'hidden' &&
+                           style.opacity !== '0';
+                };
+                
+                // Find all buttons and clickable elements
+                const candidates = Array.from(document.querySelectorAll('button, [role="button"], a[class*="button"], div[class*="button"]'));
+                
+                for (const el of candidates) {
+                    if (!isVisible(el)) continue;
+                    const text = (el.textContent || '').trim().toLowerCase();
+                    const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+                    
+                    // Match "Download All" or "Download" buttons
+                    if (text === 'download all' || text === 'download' || 
+                        ariaLabel.includes('download all') || ariaLabel.includes('download')) {
+                        el.click();
+                        return true;
+                    }
+                }
+                
+                // Also check for download icons with nearby download text
+                const svgs = Array.from(document.querySelectorAll('svg'));
+                for (const svg of svgs) {
+                    const parent = svg.closest('button, [role="button"], a');
+                    if (parent && isVisible(parent)) {
+                        const text = (parent.textContent || '').toLowerCase();
+                        if (text.includes('download')) {
+                            parent.click();
+                            return true;
+                        }
+                    }
+                }
+                
+                return false;
+            }''')
+            
+            download = None
+            if not clicked_download:
+                # Fallback: try CSS selectors
+                download_btn_selectors = [
+                    '[data-testid="download-all-bttn"]',
+                    'button:has-text("Download All")',
+                    'button:has-text("Download")',
+                    'text=Download All',
+                ]
+                
+                for selector in download_btn_selectors:
+                    try:
+                        download_btn = await self.page.query_selector(selector)
+                        if download_btn:
+                            try:
+                                async with self.page.expect_download(timeout=20000) as download_info:
+                                    await download_btn.click()
+                                download = await download_info.value
+                                clicked_download = True
+                                print("[BC]    Download initiated (captured)")
+                                break
+                            except Exception:
+                                await download_btn.click()
+                                clicked_download = True
+                                print("[BC]    Download initiated")
+                                break
+                    except:
+                        continue
+            else:
+                print("[BC]    Download button clicked via JavaScript")
 
             if not clicked_download:
-                print("   Could not find Download button")
+                print("[BC]    Could not find Download button")
                 return False
 
+            # Handle any popups that appear (large file confirmation, download started, etc.)
+            # Try multiple times with short delays since popups may appear after a moment
+            for attempt in range(5):
+                await asyncio.sleep(0.5)
+                prompt_clicked = await self.handle_large_file_prompt()
+                if prompt_clicked:
+                    print(f"[BC]    Popup dismissed (attempt {attempt + 1})")
+                    # After dismissing, try to capture the download if we didn't have one
+                    if not download:
+                        try:
+                            download = await self.page.wait_for_event("download", timeout=5000)
+                            print("[BC]    Download captured after popup dismiss")
+                        except Exception:
+                            pass
+                    break
+            
+            # Additional popup check and wait for download
+            if not download:
+                try:
+                    # Give more time for download to start
+                    download = await self.page.wait_for_event("download", timeout=15000)
+                except Exception:
+                    # One more popup check
+                    await self.handle_large_file_prompt()
+                    await asyncio.sleep(1)
+                    try:
+                        download = await self.page.wait_for_event("download", timeout=10000)
+                    except Exception:
+                        download = None
+
             # Wait for download to complete
-            print("   Waiting for download to complete...")
-            await asyncio.sleep(10)
+            print("[BC]    Waiting for download to complete...")
+            await asyncio.sleep(5)
 
-            # Check for new files
-            files_after = set(os.listdir(download_dir)) if os.path.exists(download_dir) else set()
-            new_files = files_after - files_before
+            local_path = None
+            new_file = None
+            if download:
+                try:
+                    suggested = download.suggested_filename
+                    target_path = os.path.join(self.download_dir, suggested)
+                    await download.save_as(target_path)
+                    new_file = suggested
+                    local_path = target_path
+                except Exception:
+                    local_path = await download.path()
+                    if local_path:
+                        new_file = os.path.basename(local_path)
 
-            if new_files:
-                # Get the most recent file (likely the downloaded zip)
-                new_file = sorted(new_files, key=lambda f: os.path.getmtime(os.path.join(download_dir, f)))[-1]
-                local_path = os.path.join(download_dir, new_file)
+            if not new_file:
+                # Fallback: detect from directory changes
+                await asyncio.sleep(5)
+                files_after = self._snapshot_download_dir()
+                new_file = self._pick_latest_download(files_before, files_after)
+                if new_file:
+                    local_path = os.path.join(self.download_dir, new_file)
 
-                # Create a web-accessible path
-                # Assuming downloads folder is served at /downloads
-                web_path = f"/downloads/{new_file}"
+            if new_file and local_path:
+                # Rename to unique project-specific filename
+                new_file, local_path = self._rename_download(new_file, project['name'])
+                print(f"[BC]    File downloaded: {new_file}")
 
-                # Update project with local file path
-                project['local_file_path'] = web_path
-                project['downloaded_file'] = new_file
-                print(f"   File downloaded: {new_file}")
-                print(f"   Local path: {web_path}")
+                # Try to upload to Google Drive
+                if GDRIVE_AVAILABLE:
+                    gdrive_status = get_status()
+                    print(f"[BC]    Google Drive status: {gdrive_status}")
+
+                    # Check if we should use Google Drive
+                    use_gdrive = should_use_gdrive()
+                    if not use_gdrive and gdrive_status.get('configured') and not gdrive_status.get('authenticated'):
+                        print("[BC]    Google Drive configured but not authenticated - attempting auth...")
+                        try:
+                            from services.google_drive import authenticate
+                            creds = authenticate()
+                            if creds:
+                                print("[BC]    Google Drive authentication successful!")
+                                use_gdrive = True
+                            else:
+                                print("[BC]    Google Drive authentication failed")
+                        except Exception as auth_err:
+                            print(f"[BC]    Google Drive auth error: {auth_err}")
+                else:
+                    use_gdrive = False
+                    print("[BC]    Google Drive not available")
+
+                if use_gdrive:
+                    try:
+                        print("[BC]    Uploading to Google Drive...")
+                        # Use the renamed local filename (already includes project + timestamp)
+                        gdrive_filename = new_file
+
+                        result = upload_and_cleanup(
+                            local_path,
+                            filename=gdrive_filename,
+                            source='BuildingConnected',
+                            delete_local=True
+                        )
+
+                        if result:
+                            project['gdrive_file_id'] = result.get('file_id')
+                            project['gdrive_link'] = result.get('web_link')
+                            project['gdrive_download_link'] = result.get('download_link')
+                            project['download_link'] = result.get('web_link')
+                            project['storage_type'] = 'gdrive'
+                            print(f"[BC]    SUCCESS! Uploaded to Google Drive: {result.get('web_link', '')[:60]}...")
+                        else:
+                            # Fallback to local storage
+                            print("[BC]    Google Drive upload failed, keeping local file")
+                            web_path = f"/downloads/{new_file}"
+                            project['local_file_path'] = web_path
+                            project['download_link'] = web_path
+                            project['storage_type'] = 'local'
+                    except Exception as e:
+                        print(f"[BC]    Google Drive error: {e}, keeping local file")
+                        import traceback
+                        traceback.print_exc()
+                        web_path = f"/downloads/{new_file}"
+                        project['local_file_path'] = web_path
+                        project['download_link'] = web_path
+                        project['storage_type'] = 'local'
+                else:
+                    # Local storage only
+                    web_path = f"/downloads/{new_file}"
+                    project['local_file_path'] = web_path
+                    project['downloaded_file'] = new_file
+                    project['download_link'] = web_path
+                    project['storage_type'] = 'local'
+                    print(f"[BC]    Saved locally: {web_path}")
             else:
-                print("   Warning: No new files detected in download directory")
+                print("[BC]    Warning: No new files detected or updated in download directory")
 
-            print("   Download complete")
+            print("[BC]    Download complete")
             return True
 
         except Exception as e:
-            print(f"   Error downloading files: {e}")
+            print(f"[BC]    Error downloading files: {e}")
             import traceback
             traceback.print_exc()
             return False
 
     async def scrape_all_projects(self, max_projects=None, include_details=False, download_files=False):
         """
-        Scrape projects from table view using two-pass approach
+        Scrape projects from table view using multi-pass approach
 
         Args:
             max_projects: Max number to process (optional limit)
-            include_details: If True, click into each project for contact email, files info (slower)
-            download_files: If True, perform second pass to download files for all projects
+            include_details: If True, get contact email and files link in a separate pass (slower)
+            download_files: If True, perform another pass to download files for all projects
         """
-        print("\n Starting BuildingConnected scrape (Two-Pass Mode)...")
-        print(f" Include details: {'Yes' if include_details else 'No'}")
-        print(f" Download files: {'Yes' if download_files else 'No'}")
-        print(" Strategy: Pass 1 - Extract data, Pass 2 - Download files\n")
+        log_status("=" * 40)
+        log_status("Starting BuildingConnected scrape")
+        log_status(f"Include details: {'Yes' if include_details else 'No'}")
+        log_status(f"Download files: {'Yes' if download_files else 'No'}")
 
         await self.navigate_to_pipeline()
         await self.sort_by_due_date()
 
-        # ====== PASS 1: Extract Project Data ======
-        print("\n=== PASS 1: Extracting Project Data ===")
+        # ====== PASS 1: Extract ALL Project Data from Table (with row clicks for URL) ======
+        log_status("=== SINGLE PASS: Extracting Table Data + Details ===")
 
         seen_ids = set()
         processed_count = 0
@@ -538,69 +1560,74 @@ class BuildingConnectedTableScraper:
         consecutive_no_scroll = 0
         last_scroll_top = -1
 
+        context_resets = 0
         while not found_expired and scroll_attempts < max_scroll_attempts:
             # Get visible rows in current viewport
             rows = await self.get_visible_rows()
             new_projects_this_batch = 0
 
             if scroll_attempts == 0:
-                print(f" Found {len(rows)} visible row elements")
+                log_status(f"Found {len(rows)} visible row elements")
 
             # Debug logging every 5 scrolls
             if scroll_attempts > 0 and scroll_attempts % 5 == 0:
-                print(f"\n[Scroll Batch {scroll_attempts}] Checking {len(rows)} visible rows...")
+                log_status(f"Scroll batch {scroll_attempts}: checking {len(rows)} rows, total collected: {processed_count}")
 
             # Process each visible row
+            reset_rows = False
             for idx, row in enumerate(rows):
                 try:
-                    # Quick ID check to skip duplicates
-                    link_elem = await row.querySelector('a[href*="/opportunities/"]')
-                    if not link_elem:
-                        if scroll_attempts == 0 and idx < 3:
-                            print(f"  Row {idx}: No link found, skipping")
-                        continue
-
-                    url = await self.page.evaluate('(el) => el.href', link_elem)
-                    project_id = url.split('/opportunities/')[1].split('/')[0] if '/opportunities/' in url else None
-
-                    # Skip if already processed
-                    if project_id in seen_ids:
-                        continue
-
-                    # Extract full row data
-                    data = await self.extract_row_data(row, processed_count)
+                    # Extract row data from table
+                    # Enable clicking for first batch to get URLs, then rely on URL patterns
+                    should_click = (scroll_attempts == 0 and idx < 5)  # Click first 5 rows to establish pattern
+                    data = await self.extract_row_data(row, processed_count, click_for_url=should_click)
+                    if data and data.get("__context_destroyed"):
+                        log_status("Execution context reset detected - reloading pipeline and retrying rows")
+                        context_resets += 1
+                        if context_resets > 3:
+                            log_status("Too many context resets; aborting to avoid loop")
+                            return self.leads
+                        await self.navigate_to_pipeline()
+                        await self.sort_by_due_date()
+                        reset_rows = True
+                        break
                     if not data:
                         continue
 
-                    # Check if expired - SKIP expired projects instead of stopping
+                    # Skip if already processed
+                    if data['id'] in seen_ids:
+                        continue
+
+                    # Check if expired
                     if self.is_project_expired(data['bid_date']):
-                        print(f"⏭  Skipping expired project: {data['name'][:30]}... (Date: {data['bid_date']})")
-                        seen_ids.add(data['id'])  # Mark as seen to avoid reprocessing
-                        continue  # Skip this project but continue scrolling
+                        print(f"[BC] Skipping expired: {data['name'][:30]}... ({data['bid_date']})")
+                        seen_ids.add(data['id'])
+                        continue
 
                     # New project found!
                     seen_ids.add(data['id'])
                     new_projects_this_batch += 1
 
-                    # Optionally get detail info
-                    if include_details and data['url'] != "N/A":
-                        print(f"[{processed_count + 1}] Getting details for: {data['name'][:40]}...")
-                        detail_info = await self.extract_detail_info(data['url'])
-                        if detail_info:
-                            data.update(detail_info)
-                        # Navigate back
-                        await self.navigate_to_pipeline()
-                        await self.sort_by_due_date()
-                    else:
-                        print(f"[{processed_count + 1}] {data['name'][:40]}... | {data['bid_date']} | {data['location']}")
+                    # Just log it - NO DETAILS YET (will get in Pass 2)
+                    print(f"[BC] [{processed_count + 1}] {data['name'][:40]}... | {data['bid_date']} | {data['location']}")
+
+                    # Open sidebar from this row and extract details immediately (single pass)
+                    sidebar_opened = await self.open_sidebar_from_row(row)
+                    detail_info = await self.extract_detail_info(data, sidebar_opened=sidebar_opened)
+                    if detail_info:
+                        data.update(detail_info)
+
+                    # Optional download in same pass
+                    if download_files:
+                        await self.download_files_for_project(data, sidebar_opened=sidebar_opened)
 
                     self.leads.append(data)
                     processed_count += 1
 
-                    # Max limit check removed - scrape unlimited projects until expired project found
-
                 except Exception as e:
                     continue
+            if reset_rows:
+                continue
 
             # Break if expired found
             if found_expired:
@@ -615,64 +1642,71 @@ class BuildingConnectedTableScraper:
                 # Check if we found new projects this batch
                 if new_projects_this_batch == 0:
                     consecutive_no_new += 1
-                    print(f" No new projects in batch (consecutive: {consecutive_no_new}) - Scroll: {int(current_scroll)}/{int(max_scroll)}")
+                    if consecutive_no_new % 5 == 0:
+                        log_status(f"No new projects for {consecutive_no_new} batches - Scroll: {int(current_scroll)}/{int(max_scroll)}")
 
-                    # If no new projects for 20 consecutive batches, we're done (increased from 5 for more thorough scraping)
+                    # If no new projects for 20 consecutive batches, we're done
                     if consecutive_no_new >= 20:
-                        print(" No new projects for 20 batches - end of table reached")
+                        log_status("No new projects for 20 batches - end of table reached")
                         break
                 else:
                     consecutive_no_new = 0
-                    print(f" Found {new_projects_this_batch} new projects | Total: {processed_count} | Scroll: {int(current_scroll)}/{int(max_scroll)}")
+                    if new_projects_this_batch > 0:
+                        log_status(f"Found {new_projects_this_batch} new | Total: {processed_count} | Scroll: {int(current_scroll)}/{int(max_scroll)}")
 
                 # Check if at bottom (with some tolerance)
                 if current_scroll >= max_scroll - 10:
-                    print(f" Reached bottom of table (scroll: {int(current_scroll)}/{int(max_scroll)})")
-                    print(f" Total projects collected: {processed_count}")
+                    log_status(f"Reached bottom of table | Total: {processed_count}")
                     break
 
-                # Check if scroll position hasn't changed (wait a few attempts before giving up)
+                # Check if scroll position hasn't changed
                 if current_scroll == last_scroll_top:
                     consecutive_no_scroll += 1
-                    print(f" Scroll position unchanged ({consecutive_no_scroll} times)")
                     if consecutive_no_scroll >= 10:
-                        print(" Scroll not advancing - likely at end")
-                        print(f" Total projects collected: {processed_count}")
+                        log_status(f"Scroll not advancing - likely at end | Total: {processed_count}")
                         break
                 else:
-                    consecutive_no_scroll = 0  # Reset counter when scroll advances
+                    consecutive_no_scroll = 0
                     last_scroll_top = current_scroll
 
-            # Scroll down (reduced pixels for better virtual table handling)
+            # Scroll down
             await self.scroll_table(400)
             scroll_attempts += 1
 
-            # Extra wait every 10 scrolls to let virtual table catch up
+            # Extra wait every 10 scrolls
             if scroll_attempts % 10 == 0:
-                print(f" Pausing to let virtual table render... (scroll attempt {scroll_attempts})")
+                print(f"[BC] Pausing to let virtual table render... (scroll attempt {scroll_attempts})")
                 await asyncio.sleep(2)
 
-        print(f"\n=== PASS 1 Complete. Found {len(self.leads)} valid leads. ===")
+        log_status(f"=== SINGLE PASS Complete: Found {len(self.leads)} projects ===")
 
-        # ====== PASS 2: Download Files ======
-        if download_files and self.leads:
-            print("\n=== PASS 2: Downloading Files ===")
-            for i, project in enumerate(self.leads):
-                print(f"\nProcessing download for project {i+1}/{len(self.leads)}...")
-                success = await self.download_files_for_project(project)
-                if success:
-                    print(" Download completed")
-                else:
-                    print(" Download failed or skipped")
-
-                # Return to pipeline for next project
-                await self.navigate_to_pipeline()
-                await asyncio.sleep(2)
-
-        print(f"\n SCRAPING COMPLETE")
-        print(f" Total leads found: {len(self.leads)}")
-        print(f" Scroll attempts: {scroll_attempts}")
+        log_status(f"SCRAPING COMPLETE - Total leads: {len(self.leads)}")
         return self.leads
+
+    def _unzip_downloads(self):
+        """Unzip all .zip files in the download directory and move zips into extracted folders."""
+        try:
+            import zipfile
+            zips = [f for f in os.listdir(self.download_dir) if f.lower().endswith('.zip')]
+            if not zips:
+                return
+            for zip_name in zips:
+                zip_path = os.path.join(self.download_dir, zip_name)
+                base_name = os.path.splitext(zip_name)[0]
+                extract_dir = os.path.join(self.download_dir, base_name)
+                try:
+                    if not os.path.exists(extract_dir):
+                        os.makedirs(extract_dir, exist_ok=True)
+                        with zipfile.ZipFile(zip_path, 'r') as zf:
+                            zf.extractall(extract_dir)
+                    # Move original zip into extracted folder to prevent re-unzips
+                    target_zip_path = os.path.join(extract_dir, zip_name)
+                    if not os.path.exists(target_zip_path):
+                        os.replace(zip_path, target_zip_path)
+                except Exception as e:
+                    print(f"[BC]    Unzip failed for {zip_name}: {e}")
+        except Exception as e:
+            print(f"[BC]    Unzip step failed: {e}")
 
     async def save_results(self):
         """Save leads to JSON and automatically remove duplicates"""
@@ -719,26 +1753,41 @@ class BuildingConnectedTableScraper:
             await self.setup_browser()
             await self.scrape_all_projects(max_projects, include_details, download_files)
             await self.save_results()
+            # Unzip downloaded archives after scraping
+            self._unzip_downloads()
             return self.leads
-            print(f" Fatal error: {e}")
+        except asyncio.CancelledError:
+            print("\n[BC] Run cancelled (likely shutdown or Ctrl+C).")
+            return []
+        except KeyboardInterrupt:
+            print("\n[BC] Run interrupted by user.")
+            return []
+        except Exception as e:
+            print(f"\n[BC] FATAL ERROR: {e}")
             if self.page:
                 try:
-                    print(f" Current URL at crash: {self.page.url}")
+                    print(f"[BC] Current URL at crash: {self.page.url}")
                     debug_path = os.path.join(self.download_dir, 'bc_fatal_error.png')
-                    await self.page.screenshot({'path': debug_path, 'fullPage': True})
-                    print(f" Saved validation screenshot to: {debug_path}")
+                    await self.page.screenshot(path=debug_path, full_page=True)
+                    print(f"[BC] Saved debug screenshot to: {debug_path}")
                 except:
                     pass
             import traceback
             traceback.print_exc()
             return []
         finally:
-            if self.browser:
+            # Close Playwright properly
+            if self.context:
                 try:
-                    await self.browser.close()
-                    print("\n Browser closed")
+                    await self.context.close()
                 except:
                     pass
+            if self.playwright:
+                try:
+                    await self.playwright.stop()
+                except:
+                    pass
+            print("\n[BC] Browser closed")
 
 
 async def main():
@@ -749,12 +1798,12 @@ async def main():
 
     print("Choose mode:")
     print("1. FAST: Table data only (name, date, company, contact)")
-    print("2. DETAILED: Include email and files info")
+    print("2. DETAILED: Include email and files info (DEFAULT)")
     print("3. FULL: Two-pass mode with file downloads")
 
-    # Default to full two-pass mode with file downloads
-    include_details = False  # Set to True for detailed mode
-    download_files = True    # Set to True to enable Pass 2 file downloads
+    # Default to detailed mode to get files links
+    include_details = True   # Extract email and files links from detail pages
+    download_files = True   # Set to True to enable Pass 2 file downloads
 
     scraper = BuildingConnectedTableScraper()
     leads = await scraper.run(max_projects=None, include_details=include_details, download_files=download_files)
@@ -785,4 +1834,9 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except asyncio.CancelledError:
+        print("[BC] Cancelled during shutdown.")
+    except KeyboardInterrupt:
+        print("[BC] Interrupted by user.")

@@ -12,6 +12,38 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scrapers.base_scraper import BaseScraper
 from config import PlanHubConfig
 
+# Import Google Drive service
+try:
+    from services.google_drive import upload_and_cleanup, should_use_gdrive, is_authenticated, get_status
+    GDRIVE_AVAILABLE = True
+    print(f"[PH] Google Drive module loaded. Available: {GDRIVE_AVAILABLE}")
+except ImportError as e:
+    GDRIVE_AVAILABLE = False
+    print(f"[PH] Google Drive module NOT available: {e}")
+
+# Global log buffer that scheduler can access
+_ph_log_buffer = []
+
+def get_ph_logs():
+    """Get and clear the log buffer."""
+    global _ph_log_buffer
+    logs = _ph_log_buffer.copy()
+    _ph_log_buffer = []
+    return logs
+
+def log_status(msg):
+    """Log to both console and web UI."""
+    global _ph_log_buffer
+    print(f"[PH] {msg}", flush=True)
+    _ph_log_buffer.append(f"[PH] {msg}")
+
+    # Also try to add to scheduler's log
+    try:
+        from services.scheduler import add_to_log
+        add_to_log(f"[PH] {msg}")
+    except:
+        pass
+
 
 class PlanHubScraper(BaseScraper):
     """
@@ -115,11 +147,15 @@ class PlanHubScraper(BaseScraper):
         Returns:
             bool: True if successful, False otherwise
         """
-        print(" Navigating to project list...")
+        print("[PH] Navigating to project list...")
 
         # Navigate to project list
         if not await self.navigate_with_retry(self.config.PROJECT_LIST_URL):
             return False
+
+        # Check current URL
+        current_url = self.page.url
+        print(f"[PH] Current URL: {current_url}")
 
         # Check if login required
         if not await self.check_login_status():
@@ -138,78 +174,106 @@ class PlanHubScraper(BaseScraper):
         Returns:
             bool: True if successful, False otherwise
         """
-        print(" Loading saved search filter...")
+        print("[PH] Loading saved search filter...")
 
         try:
             # Wait for page to load
             await asyncio.sleep(2)
 
-            # Click "Saved searches" button
-            print("   Clicking 'Saved searches' button...")
+            # Click "View Saved Searches" button
+            print("[PH]    Clicking 'View Saved Searches' button...")
             saved_searches_btn_selector = '#cdk-accordion-child-1 > div > div > planhub-persist-filters-actions > section > div > planhub-button:nth-child(4) > button'
 
             try:
                 saved_searches_btn = await self.page.querySelector(saved_searches_btn_selector)
                 if saved_searches_btn:
                     await saved_searches_btn.click()
-                    print("     Saved searches button clicked")
+                    print("[PH]      Button clicked")
                     await asyncio.sleep(1.5)
                 else:
-                    print("     Saved searches button not found")
-                    return False
+                    print("[PH]      Button not found - trying alternate selector...")
+                    # Try clicking by text
+                    await self.page.evaluate('''() => {
+                        const btns = Array.from(document.querySelectorAll('button'));
+                        const btn = btns.find(b => b.textContent.includes('Saved') || b.textContent.includes('View'));
+                        if (btn) btn.click();
+                    }''')
+                    await asyncio.sleep(1.5)
             except Exception as e:
-                print(f"     Could not click saved searches button: {e}")
+                print(f"[PH]      Could not click saved searches button: {e}")
                 return False
 
             # Select "Daniel's Filter"
-            print("   Selecting 'Daniel's Filter'...")
+            print("[PH]    Selecting 'Daniel's Filter'...")
             daniels_filter_selector = '#modal-content > planhub-project-manage-filters-modal > div.table-container > table > tbody > tr > td.mat-cell.cdk-cell.cdk-column-name.mat-column-name.ng-star-inserted'
 
             try:
                 daniels_filter = await self.page.querySelector(daniels_filter_selector)
                 if daniels_filter:
                     await daniels_filter.click()
-                    print("     Daniel's Filter selected")
+                    print("[PH]      Daniel's Filter selected")
                     await asyncio.sleep(2)
 
-                    # Click outside to trigger auto-refresh
+                    # Click outside to close modal and trigger refresh
                     await self.page.evaluate('() => document.body.click()')
-                    print("     Waiting for page to auto-refresh with saved filter...")
+                    print("[PH]      Waiting for results to update...")
                     await asyncio.sleep(3)
                 else:
-                    print("     Daniel's Filter not found in saved searches")
-                    return False
+                    print("[PH]      Daniel's Filter not found - trying by text...")
+                    # Try finding by text content
+                    found = await self.page.evaluate('''() => {
+                        const cells = Array.from(document.querySelectorAll('td'));
+                        const cell = cells.find(c => c.textContent.includes("Daniel"));
+                        if (cell) { cell.click(); return true; }
+                        return false;
+                    }''')
+                    if found:
+                        print("[PH]      Found and clicked by text")
+                        await asyncio.sleep(3)
+                    else:
+                        print("[PH]      Could not find Daniel's Filter")
+                        return False
             except Exception as e:
-                print(f"     Could not select Daniel's Filter: {e}")
+                print(f"[PH]      Could not select Daniel's Filter: {e}")
                 return False
 
-            print(" Saved search filter applied successfully")
+            print("[PH] Saved search filter applied successfully")
             return True
 
         except Exception as e:
-            print(f" Error applying filters: {e}")
+            print(f"[PH] Error applying filters: {e}")
             import traceback
             traceback.print_exc()
             return False
 
     async def get_project_rows(self):
         """
-        Get project rows from the table.
+        Get project rows from the table using precise selectors.
 
         Returns:
             list: List of project row elements
         """
         try:
             # Wait for table to load
-            await self.wait_for_selector_safely(self.config.PROJECT_TABLE_SELECTOR)
+            print("[PH] Waiting for project table...")
+            table_selector = 'planhub-project-table table tbody'
+            await self.wait_for_selector_safely(table_selector, timeout=15000)
 
-            # Get all project rows
-            rows = await self.page.querySelectorAll(self.config.PROJECT_ROW_SELECTOR)
+            # Get all project rows - use precise selector
+            row_selector = 'planhub-project-table table tbody tr.mat-row'
+            rows = await self.page.querySelectorAll(row_selector)
 
-            print(f" Found {len(rows)} project rows")
+            print(f"[PH] Found {len(rows)} project rows")
             return rows
         except Exception as e:
-            print(f" Could not get project rows: {e}")
+            print(f"[PH] Could not get project rows: {e}")
+            # Take debug screenshot
+            try:
+                debug_path = os.path.join(self.download_dir, 'ph_no_rows_debug.png')
+                await self.page.screenshot({'path': debug_path, 'fullPage': True})
+                print(f"[PH] Saved debug screenshot to: {debug_path}")
+            except:
+                pass
             return []
 
     async def check_sprinkler_keywords(self, text):
@@ -234,7 +298,7 @@ class PlanHubScraper(BaseScraper):
 
     async def extract_project_details(self, row_element, index):
         """
-        Extract details from a project row.
+        Extract details from a project row using precise selectors.
 
         Args:
             row_element: Pyppeteer element handle for the row
@@ -243,43 +307,65 @@ class PlanHubScraper(BaseScraper):
         Returns:
             dict: Project details or None if extraction failed
         """
-        print(f"   Extracting project {index + 1} details...")
+        print(f"[PH]    Extracting project {index + 1}...")
 
         try:
-            # Extract text content from row
-            row_text = await self.page.evaluate('(el) => el.textContent', row_element)
-
-            if not row_text or not row_text.strip():
-                print("     Empty row, skipping")
-                return None
-
-            # For now, we'll extract basic info from the row text
-            # This will need to be refined based on actual HTML structure
-            # Ideally, we'd use specific cell selectors
-
-            # Try to extract cells from row
-            cells = await row_element.querySelectorAll('td, [role="cell"]')
-
             project_name = "N/A"
-            gc = "N/A"
             bid_date = "N/A"
+            location = "N/A"
 
-            # Extract from cells (adjust indices based on actual table structure)
-            if len(cells) >= 3:
-                project_name = await self.page.evaluate('(el) => el.textContent', cells[0])
-                project_name = project_name.strip() if project_name else "N/A"
+            # Extract Project Name - td.mat-column-project_name span
+            name_selectors = [
+                'td.mat-column-project_name div span',
+                'td.mat-column-project_name span',
+                'td.cdk-column-project_name span',
+            ]
+            for selector in name_selectors:
+                try:
+                    name_elem = await row_element.querySelector(selector)
+                    if name_elem:
+                        text = await self.page.evaluate('(el) => el.textContent', name_elem)
+                        if text and text.strip():
+                            project_name = text.strip()
+                            break
+                except:
+                    continue
 
-                gc = await self.page.evaluate('(el) => el.textContent', cells[1])
-                gc = gc.strip() if gc else "N/A"
+            # Extract Bid Date - td.mat-column-bid_due_date
+            date_selectors = [
+                'td.mat-column-bid_due_date',
+                'td.cdk-column-bid_due_date',
+            ]
+            for selector in date_selectors:
+                try:
+                    date_elem = await row_element.querySelector(selector)
+                    if date_elem:
+                        text = await self.page.evaluate('(el) => el.textContent', date_elem)
+                        if text and text.strip():
+                            bid_date = text.strip()
+                            break
+                except:
+                    continue
 
-                bid_date = await self.page.evaluate('(el) => el.textContent', cells[2])
-                bid_date = bid_date.strip() if bid_date else "N/A"
-            else:
-                # Fallback to row text parsing
-                print("     Could not find cells, using row text")
-                project_name = row_text[:100]  # First 100 chars as name
+            # Extract Location - td.mat-column-location span
+            loc_selectors = [
+                'td.mat-column-location span',
+                'td.cdk-column-location span',
+                'td.mat-column-location',
+            ]
+            for selector in loc_selectors:
+                try:
+                    loc_elem = await row_element.querySelector(selector)
+                    if loc_elem:
+                        text = await self.page.evaluate('(el) => el.textContent', loc_elem)
+                        if text and text.strip():
+                            location = text.strip()
+                            break
+                except:
+                    continue
 
-            # Check for sprinkler keywords in full row text
+            # Get full row text for sprinkler keyword check
+            row_text = await self.page.evaluate('(el) => el.textContent', row_element)
             sprinklered = await self.check_sprinkler_keywords(row_text)
 
             # Generate unique ID
@@ -289,144 +375,529 @@ class PlanHubScraper(BaseScraper):
             details = {
                 'id': project_id,
                 'name': project_name,
-                'gc': gc,
+                'gc': "N/A",  # Will be extracted from detail page
+                'company': "N/A",
+                'contact_name': "N/A",
                 'bid_date': bid_date,
-                'due_date': bid_date,  # Alias
+                'due_date': bid_date,
                 'site': 'PlanHub',
                 'source': 'PlanHub',
                 'sprinklered': sprinklered,
-                'location': f"ZIP {self.config.LOCATION_ZIP}, {self.config.LOCATION_RADIUS}mi radius",
+                'location': location,
+                'city': location.split(',')[0].strip() if ',' in location else location,
+                'state': location.split(',')[1].strip() if ',' in location else "N/A",
                 'trade': self.config.TRADE_FILTER,
                 'url': self.config.PROJECT_LIST_URL,
-                'extracted_at': datetime.now().isoformat()
+                'extracted_at': datetime.now().isoformat(),
+                'files_link': None,
+                'download_link': None,
+                'local_file_path': None,
             }
 
-            print(f"     Name: {project_name}")
-            print(f"     GC: {gc}")
-            print(f"     Bid Date: {bid_date}")
-            print(f"     Sprinklered: {sprinklered}")
+            print(f"[PH]      Name: {project_name[:40]}...")
+            print(f"[PH]      Bid Date: {bid_date}")
+            print(f"[PH]      Location: {location}")
 
             return details
 
         except Exception as e:
-            print(f"     Error extracting details: {e}")
+            print(f"[PH]      Error extracting details: {e}")
             import traceback
             traceback.print_exc()
             return None
 
-    async def download_files_for_lead(self, lead):
+    async def download_files_for_lead(self, lead, row_element=None):
         """
-        Perform deep navigation to download files for a specific lead.
-        
-        Workflow:
-        1. Find project in list (by name)
-        2. Click project -> Open Quick View
-        3. Click 'More Project Detail' -> Full Page
-        4. Click 'Project Files' tab
-        5. Click 'Select All'
-        6. Click 'Download Files'
-        """
-        print(f"\n[Pass 2] Downloading files for: {lead['name']}")
-        
-        try:
-            # Ensure we are on the list page
-            if 'project/list' not in self.page.url:
-                 await self.navigate_to_projects()
-                 await asyncio.sleep(2)
+        Click row to open details, extract full address, download files.
 
-            # 1. Find and click project in list
-            # We use a text-based finder since indices might shift if list updates
-            print(f"   Locating project '{lead['name']}'...")
-            
-            # Escape quotes in name for XPath
-            safe_name = lead['name'].replace('"', '\\"')
-            
-            # XPath to find div containing text
-            # We look for the row/cell containing the name
-            project_found = await self.page.evaluate(f'''() => {{
-                const elements = Array.from(document.querySelectorAll('td, span, div'));
-                const target = elements.find(el => el.textContent.trim() === "{safe_name}");
-                if (target) {{
-                    target.click();
-                    return true;
-                }}
-                return false;
-            }}''')
-            
-            if not project_found:
-                print("   Could not find project in list (rendering issue?)")
+        Workflow:
+        1. Click project row to open details
+        2. Extract full address
+        3. Click 'Project Files' tab
+        4. Click 'Select All'
+        5. Click 'Download Files'
+        """
+        print(f"\n[PH] [Pass 2] Processing: {lead['name'][:40]}...")
+
+        try:
+            # Click the row to open project details
+            if row_element:
+                print("[PH]    Clicking row to open details...")
+                await row_element.click()
+            else:
+                # Fallback: find by name
+                safe_name = lead['name'].replace('"', '\\"').replace("'", "\\'")
+                clicked = await self.page.evaluate(f'''() => {{
+                    const rows = document.querySelectorAll('planhub-project-table tbody tr');
+                    for (const row of rows) {{
+                        if (row.textContent.includes("{safe_name}")) {{
+                            row.click();
+                            return true;
+                        }}
+                    }}
+                    return false;
+                }}''')
+                if not clicked:
+                    print("[PH]    Could not find project row")
+                    return False
+
+            # Wait for details page to load
+            print("[PH]    Waiting for details page...")
+            await asyncio.sleep(3)
+
+            # Verify we're on details page
+            details_selector = 'app-project-details-v2'
+            try:
+                await self.page.waitForSelector(details_selector, {'timeout': 10000})
+                print("[PH]    Details page loaded")
+            except:
+                print("[PH]    Details page did not load, taking screenshot...")
+                try:
+                    debug_path = os.path.join(self.download_dir, 'ph_details_fail.png')
+                    await self.page.screenshot({'path': debug_path, 'fullPage': True})
+                except:
+                    pass
                 return False
 
-            print("   Project clicked, waiting for Quick View...")
-            await asyncio.sleep(self.config.DELAY_AFTER_CLICK)
-            
-            # 2. Click "More Project Detail"
-            print("   Clicking 'More Project Detail'...")
-            await self.wait_for_selector_safely(self.config.MORE_DETAILS_BTN_FULL)
-            await self.click_element_safely([self.config.MORE_DETAILS_BTN_FULL], "More Project Detail Button")
-            await asyncio.sleep(3) # Wait for navigation
+            # Extract full address
+            address_selector = 'app-project-details-overview div.project-details div.description'
+            try:
+                addr_elem = await self.page.querySelector(address_selector)
+                if addr_elem:
+                    addr_text = await self.page.evaluate('(el) => el.textContent', addr_elem)
+                    if addr_text:
+                        lead['full_address'] = addr_text.strip()
+                        print(f"[PH]    Address: {addr_text.strip()[:50]}...")
+            except:
+                pass
 
-            # 3. Click "Project Files" tab
-            print("   Clicking 'Project Files' tab...")
-            await self.wait_for_selector_safely(self.config.PROJECT_FILES_TAB)
-            await self.click_element_safely([self.config.PROJECT_FILES_TAB], "Project Files Tab")
+            # Extract project description
+            description_selectors = [
+                '#project-info-container > div:nth-child(5) > div:nth-child(1) > div:nth-child(6) > div',
+                'app-project-details-overview div.project-description',
+                'app-project-details-overview .description-text',
+                'app-project-details-overview .project-info .description',
+                '.project-details .scope',
+                '.project-details .notes'
+            ]
+            for desc_selector in description_selectors:
+                try:
+                    desc_elem = await self.page.querySelector(desc_selector)
+                    if desc_elem:
+                        desc_text = await self.page.evaluate('(el) => el.textContent', desc_elem)
+                        if desc_text and desc_text.strip():
+                            lead['description'] = desc_text.strip()
+                            print(f"[PH]    Description: {desc_text.strip()[:50]}...")
+                            break
+                except:
+                    continue
+
+            # If no description found, try to get it from the overview section
+            if not lead.get('description'):
+                try:
+                    overview_text = await self.page.evaluate('''() => {
+                        const overview = document.querySelector('app-project-details-overview');
+                        if (!overview) return null;
+                        const wrappers = overview.querySelectorAll('.wrapper, .project-details');
+                        let text = '';
+                        for (const wrapper of wrappers) {
+                            const descriptions = wrapper.querySelectorAll('.description');
+                            for (const desc of descriptions) {
+                                if (desc.textContent.length > 50) {
+                                    text += desc.textContent.trim() + ' ';
+                                }
+                            }
+                        }
+                        return text.trim() || null;
+                    }''')
+                    if overview_text:
+                        lead['description'] = overview_text
+                        print(f"[PH]    Description (from overview): {overview_text[:50]}...")
+                except:
+                    pass
+
+            # Click "Project Files" tab (Page 2 / Plans tab)
+            # Updated XPath: /html/body/planhub-main/div/mat-sidenav-container/mat-sidenav-content/app-root/div/app-project-details/div/app-project-details-v2/div/div/div[2]/planhub-button-toggle/mat-button-toggle-group/mat-button-toggle[2]/button/span/div/span
+            print("[PH]    Clicking Project Files tab (Page 2)...")
+            files_tab_xpath = '/html/body/planhub-main/div/mat-sidenav-container/mat-sidenav-content/app-root/div/app-project-details/div/app-project-details-v2/div/div/div[2]/planhub-button-toggle/mat-button-toggle-group/mat-button-toggle[2]/button/span/div/span'
+            files_tab_css_fallbacks = [
+                'app-project-details-v2 planhub-button-toggle mat-button-toggle-group mat-button-toggle:nth-child(2) button',
+                'mat-button-toggle-group mat-button-toggle:nth-of-type(2) button',
+                '#mat-button-toggle-2-button',
+            ]
+            try:
+                files_tab = None
+                # Try XPath first
+                files_tab_elements = await self.page.xpath(files_tab_xpath)
+                if files_tab_elements:
+                    files_tab = files_tab_elements[0]
+                    print("[PH]    Found files tab via XPath")
+                else:
+                    # Fallback to CSS selectors
+                    for css_sel in files_tab_css_fallbacks:
+                        files_tab = await self.page.querySelector(css_sel)
+                        if files_tab:
+                            print(f"[PH]    Found files tab via CSS: {css_sel}")
+                            break
+
+                if files_tab:
+                    await files_tab.click()
+                    await asyncio.sleep(3)
+                    print("[PH]    Files tab opened")
+                else:
+                    print("[PH]    Files tab not found with any selector")
+                    try:
+                        debug_path = os.path.join(self.download_dir, 'ph_files_tab_fail.png')
+                        await self.page.screenshot({'path': debug_path, 'fullPage': True})
+                    except:
+                        pass
+            except Exception as e:
+                print(f"[PH]    Error clicking files tab: {e}")
+
+            # Wait for file table to load
+            print("[PH]    Waiting for file table to load...")
             await asyncio.sleep(2)
 
-            # 4. Select All Files
-            print("   Selecting all files...")
-            # Check if there are files first
-            has_files = await self.page.evaluate("() => document.querySelectorAll('planhub-project-file-table tr').length > 0")
+            # Check if there are files
+            has_files = await self.page.evaluate("() => document.querySelectorAll('planhub-project-file-table tbody tr, planhub-project-file-table .file-row, planhub-project-file-table div[class*=file]').length > 0")
             if not has_files:
-                print("   No files table found.")
-                return True # Not an error, just no files
+                print("[PH]    No files available for this project")
+                return True
 
-            await self.click_element_safely([self.config.SELECT_ALL_FILES_CHECKBOX], "Select All Checkbox")
-            await asyncio.sleep(1)
+            # Click "Select All" checkbox
+            # Updated XPath: /html/body/planhub-main/div/mat-sidenav-container/mat-sidenav-content/app-root/div/app-project-details/div/app-project-details-v2/div/div/div[2]/mat-card/planhub-project-file-table/div/div[1]/div/planhub-checkbox/mat-checkbox/label/span[1]/span[3]
+            print("[PH]    Selecting all files...")
+            select_all_xpath = '/html/body/planhub-main/div/mat-sidenav-container/mat-sidenav-content/app-root/div/app-project-details/div/app-project-details-v2/div/div/div[2]/mat-card/planhub-project-file-table/div/div[1]/div/planhub-checkbox/mat-checkbox/label/span[1]/span[3]'
+            select_all_css_fallbacks = [
+                'planhub-project-file-table planhub-checkbox mat-checkbox label',
+                'planhub-project-file-table planhub-checkbox mat-checkbox',
+                'planhub-project-file-table mat-checkbox label',
+                '#mat-checkbox-1 label',
+            ]
+            try:
+                select_all = None
+                # Try XPath first
+                select_all_elements = await self.page.xpath(select_all_xpath)
+                if select_all_elements:
+                    select_all = select_all_elements[0]
+                    print("[PH]    Found Select All via XPath")
+                else:
+                    for css_sel in select_all_css_fallbacks:
+                        select_all = await self.page.querySelector(css_sel)
+                        if select_all:
+                            print(f"[PH]    Found Select All via CSS: {css_sel}")
+                            break
 
-            # 5. Download
-            print("   Clicking Download...")
+                if select_all:
+                    await select_all.click()
+                    await asyncio.sleep(1)
+                    print("[PH]    All files selected")
+                else:
+                    print("[PH]    Select All checkbox not found")
+            except Exception as e:
+                print(f"[PH]    Error selecting files: {e}")
 
-            # Get the starting file count in download directory
-            download_dir = self.download_dir
-            files_before = set(os.listdir(download_dir)) if os.path.exists(download_dir) else set()
+            # Click Download button
+            # Updated XPath: /html/body/planhub-main/div/mat-sidenav-container/mat-sidenav-content/app-root/div/app-project-details/div/app-project-details-v2/div/div/div[2]/mat-card/planhub-project-file-table/div/div[1]/planhub-button/button/span[1]/span
+            print("[PH]    Clicking Download...")
+            download_btn_xpath = '/html/body/planhub-main/div/mat-sidenav-container/mat-sidenav-content/app-root/div/app-project-details/div/app-project-details-v2/div/div/div[2]/mat-card/planhub-project-file-table/div/div[1]/planhub-button/button/span[1]/span'
+            download_btn_css_fallbacks = [
+                'planhub-project-file-table planhub-button button',
+                'planhub-project-file-table div planhub-button button',
+            ]
+            download_btn = None
+            try:
+                download_btn_elements = await self.page.xpath(download_btn_xpath)
+                if download_btn_elements:
+                    download_btn = download_btn_elements[0]
+                    print("[PH]    Found Download button via XPath")
+                else:
+                    for css_sel in download_btn_css_fallbacks:
+                        download_btn = await self.page.querySelector(css_sel)
+                        if download_btn:
+                            print(f"[PH]    Found Download button via CSS: {css_sel}")
+                            break
+            except Exception as e:
+                print(f"[PH]    Error finding download button: {e}")
 
-            await self.click_element_safely([self.config.DOWNLOAD_FILES_BTN], "Download Button")
+            download_btn_selector = 'planhub-project-file-table planhub-button button'
 
-            # Wait for download to complete
-            print("   Waiting for download to complete...")
-            await asyncio.sleep(10)
+            # Get files before download
+            files_before = set(os.listdir(self.download_dir)) if os.path.exists(self.download_dir) else set()
+
+            try:
+                # Use pre-located download_btn from XPath, fall back to CSS if needed
+                if not download_btn:
+                    download_btn = await self.page.querySelector(download_btn_selector)
+                if download_btn:
+                    await download_btn.click()
+                    print("[PH]    Download initiated, waiting...")
+                    await asyncio.sleep(10)
+                else:
+                    print("[PH]    Download button not found!")
+                    try:
+                        debug_path = os.path.join(self.download_dir, 'ph_download_btn_fail.png')
+                        await self.page.screenshot({'path': debug_path, 'fullPage': True})
+                    except:
+                        pass
+            except Exception as e:
+                print(f"[PH]    Error clicking download: {e}")
 
             # Check for new files
-            files_after = set(os.listdir(download_dir)) if os.path.exists(download_dir) else set()
+            files_after = set(os.listdir(self.download_dir)) if os.path.exists(self.download_dir) else set()
             new_files = files_after - files_before
 
             if new_files:
-                # Get the most recent file (likely the downloaded zip)
-                new_file = sorted(new_files, key=lambda f: os.path.getmtime(os.path.join(download_dir, f)))[-1]
-                local_path = os.path.join(download_dir, new_file)
+                new_file = sorted(new_files, key=lambda f: os.path.getmtime(os.path.join(self.download_dir, f)))[-1]
+                local_path = os.path.join(self.download_dir, new_file)
+                print(f"[PH]    Downloaded: {new_file}")
 
-                # Create a web-accessible path
-                web_path = f"/downloads/{new_file}"
+                # Try to upload to Google Drive
+                if GDRIVE_AVAILABLE:
+                    gdrive_status = get_status()
+                    print(f"[PH]    Google Drive status: {gdrive_status}")
 
-                # Update lead with local file path
-                lead['local_file_path'] = web_path
-                lead['downloaded_file'] = new_file
-                print(f"   File downloaded: {new_file}")
-                print(f"   Local path: {web_path}")
+                    use_gdrive = should_use_gdrive()
+                    if not use_gdrive and gdrive_status.get('configured') and not gdrive_status.get('authenticated'):
+                        print("[PH]    Google Drive configured but not authenticated - attempting auth...")
+                        try:
+                            from services.google_drive import authenticate
+                            creds = authenticate()
+                            if creds:
+                                print("[PH]    Google Drive authentication successful!")
+                                use_gdrive = True
+                            else:
+                                print("[PH]    Google Drive authentication failed")
+                        except Exception as auth_err:
+                            print(f"[PH]    Google Drive auth error: {auth_err}")
+                else:
+                    use_gdrive = False
+                    print("[PH]    Google Drive not available")
+
+                if use_gdrive:
+                    try:
+                        # Create a stable, descriptive filename (no timestamp to prevent GDrive duplicates)
+                        project_name_clean = "".join(c for c in lead['name'][:60] if c.isalnum() or c in ' -_').strip()
+                        ext = os.path.splitext(new_file)[1] or '.zip'
+                        gdrive_filename = f"{project_name_clean}{ext}"
+
+                        result = upload_and_cleanup(
+                            local_path,
+                            filename=gdrive_filename,
+                            source='PlanHub',
+                            delete_local=True
+                        )
+
+                        if result:
+                            lead['gdrive_file_id'] = result.get('file_id')
+                            lead['gdrive_link'] = result.get('web_link')
+                            lead['gdrive_download_link'] = result.get('download_link')
+                            lead['download_link'] = result.get('web_link')
+                            lead['storage_type'] = 'gdrive'
+                            print(f"[PH]    SUCCESS! Uploaded to Google Drive: {result.get('web_link', '')[:60]}...")
+                        else:
+                            # Fallback to local storage
+                            print("[PH]    Google Drive upload failed, keeping local file")
+                            web_path = f"/downloads/{new_file}"
+                            lead['local_file_path'] = web_path
+                            lead['download_link'] = web_path
+                            lead['storage_type'] = 'local'
+                    except Exception as e:
+                        print(f"[PH]    Google Drive error: {e}, keeping local file")
+                        import traceback
+                        traceback.print_exc()
+                        web_path = f"/downloads/{new_file}"
+                        lead['local_file_path'] = web_path
+                        lead['download_link'] = web_path
+                        lead['storage_type'] = 'local'
+                else:
+                    # Local storage only
+                    web_path = f"/downloads/{new_file}"
+                    lead['local_file_path'] = web_path
+                    lead['downloaded_file'] = new_file
+                    lead['download_link'] = web_path
+                    lead['storage_type'] = 'local'
+                    print(f"[PH]    Saved locally: {web_path}")
             else:
-                print("   Warning: No new files detected in download directory")
+                print("[PH]    No new files detected")
+
+            # Step 21: Click "General Contractors" tab
+            await self.extract_gc_info(lead)
 
             return True
 
         except Exception as e:
-            print(f"   Error downloading files: {e}")
+            print(f"[PH]    Error in download process: {e}")
+            import traceback
+            traceback.print_exc()
             return False
+
+    async def extract_gc_info(self, lead):
+        """
+        Extract General Contractor information from the project details page.
+
+        Steps 21-26:
+        21. Click "General Contractors" tab
+        22. Find company under "Preferred" badge
+        23. Extract company name
+        24. Extract contact name
+        25. Extract phone number
+        26. Extract email
+        """
+        print("[PH]    Extracting GC information...")
+
+        try:
+            # Step 21: Click "General Contractors" tab
+            gc_tab_selector = '#mat-button-toggle-4-button'
+            try:
+                gc_tab = await self.page.querySelector(gc_tab_selector)
+                if gc_tab:
+                    await gc_tab.click()
+                    await asyncio.sleep(2)
+                    print("[PH]      GC tab opened")
+                else:
+                    # Try alternate selector
+                    clicked = await self.page.evaluate('''() => {
+                        const btns = Array.from(document.querySelectorAll('mat-button-toggle button'));
+                        const btn = btns.find(b => b.textContent.includes('General') || b.textContent.includes('Contractor'));
+                        if (btn) { btn.click(); return true; }
+                        return false;
+                    }''')
+                    if clicked:
+                        await asyncio.sleep(2)
+                    else:
+                        print("[PH]      GC tab not found")
+                        return
+            except Exception as e:
+                print(f"[PH]      Error clicking GC tab: {e}")
+                return
+
+            # Step 22: Check for preferred badge and find GC card
+            gc_card_selector = 'planhub-project-general-contractor-card'
+            try:
+                gc_cards = await self.page.querySelectorAll(gc_card_selector)
+                if not gc_cards:
+                    print("[PH]      No GC cards found")
+                    return
+
+                # Find the preferred GC (first card usually has preferred badge)
+                preferred_card = None
+                for card in gc_cards:
+                    # Check if this card has the preferred badge
+                    has_preferred = await self.page.evaluate('''(card) => {
+                        const badge = card.querySelector('mat-icon');
+                        return badge && (badge.textContent.includes('star') || card.textContent.includes('Preferred'));
+                    }''', card)
+                    if has_preferred:
+                        preferred_card = card
+                        break
+
+                # If no preferred, use first card
+                if not preferred_card and gc_cards:
+                    preferred_card = gc_cards[0]
+
+                if not preferred_card:
+                    print("[PH]      No GC card to extract from")
+                    return
+
+                # Step 23: Extract company name
+                company_name = await self.page.evaluate('''(card) => {
+                    const nameEl = card.querySelector('.company-name') ||
+                                   card.querySelector('mat-card-title') ||
+                                   card.querySelector('.name');
+                    return nameEl ? nameEl.textContent.trim() : null;
+                }''', preferred_card)
+
+                if company_name:
+                    lead['gc'] = company_name
+                    lead['company'] = company_name
+                    print(f"[PH]      Company: {company_name}")
+
+                # Step 24: Extract contact name
+                contact_name = await self.page.evaluate('''(card) => {
+                    const content = card.querySelector('mat-card-content');
+                    if (!content) return null;
+                    const divs = content.querySelectorAll('div.content > div');
+                    for (const div of divs) {
+                        const icon = div.querySelector('mat-icon');
+                        if (icon && (icon.textContent.includes('person') || icon.textContent.includes('account'))) {
+                            const text = div.textContent.replace(icon.textContent, '').trim();
+                            if (text) return text;
+                        }
+                    }
+                    // Fallback: second div often has contact name
+                    if (divs.length >= 2) {
+                        return divs[1].textContent.trim();
+                    }
+                    return null;
+                }''', preferred_card)
+
+                if contact_name:
+                    lead['contact_name'] = contact_name
+                    print(f"[PH]      Contact: {contact_name}")
+
+                # Step 25: Extract phone number
+                phone = await self.page.evaluate('''(card) => {
+                    const anchors = card.querySelectorAll('planhub-anchor a, a[href^="tel:"]');
+                    for (const a of anchors) {
+                        const href = a.getAttribute('href') || '';
+                        if (href.startsWith('tel:')) {
+                            return href.replace('tel:', '').trim();
+                        }
+                        const text = a.textContent.trim();
+                        if (text.match(/[\d\-\(\)\s]{10,}/)) {
+                            return text;
+                        }
+                    }
+                    // Fallback: look for phone pattern in text
+                    const text = card.textContent;
+                    const phoneMatch = text.match(/\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4}/);
+                    return phoneMatch ? phoneMatch[0] : null;
+                }''', preferred_card)
+
+                if phone:
+                    lead['contact_phone'] = phone
+                    print(f"[PH]      Phone: {phone}")
+
+                # Step 26: Extract email
+                email = await self.page.evaluate('''(card) => {
+                    const anchors = card.querySelectorAll('planhub-anchor a, a[href^="mailto:"]');
+                    for (const a of anchors) {
+                        const href = a.getAttribute('href') || '';
+                        if (href.startsWith('mailto:')) {
+                            return href.replace('mailto:', '').trim();
+                        }
+                        const text = a.textContent.trim();
+                        if (text.includes('@')) {
+                            return text;
+                        }
+                    }
+                    // Fallback: look for email pattern
+                    const text = card.textContent;
+                    const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+                    return emailMatch ? emailMatch[0] : null;
+                }''', preferred_card)
+
+                if email:
+                    lead['contact_email'] = email
+                    print(f"[PH]      Email: {email}")
+
+                print("[PH]      GC info extraction complete")
+
+            except Exception as e:
+                print(f"[PH]      Error extracting GC info: {e}")
+                import traceback
+                traceback.print_exc()
+
+        except Exception as e:
+            print(f"[PH]    Error in GC extraction: {e}")
 
     async def scrape_all_projects(self, max_projects=None):
         """
         Main scraping logic for PlanHub (Two-Pass).
         """
-        print("\n Starting PlanHub scrape (Two-Pass Mode)...")
+        log_status("=" * 40)
+        log_status("Starting PlanHub scrape")
 
         # Use config default if not specified
         if max_projects is None:
@@ -434,35 +905,30 @@ class PlanHubScraper(BaseScraper):
 
         # Navigate to projects
         if not await self.navigate_to_projects():
-            print(" Failed to navigate to projects")
+            log_status("Failed to navigate to projects")
             return []
 
-        # Apply filters
+        # Apply filters (load saved search)
         if not await self.apply_filters():
-            print(" Failed to apply filters, continuing anyway...")
+            log_status("Failed to apply filters, continuing anyway...")
 
-        # --- PASS 1: Extract Details ---
-        print("\n=== PASS 1: Extracting Project Details ===")
-        
+        # --- PASS 1: Extract Details from Table ---
+        log_status("=== PASS 1: Extracting Project Details ===")
+
         rows = await self.get_project_rows()
         if not rows:
-            print(" No project rows found")
+            log_status("No project rows found")
             return []
 
         projects_to_process = min(len(rows), max_projects) if max_projects else len(rows)
-        print(f" Found {len(rows)} rows. Processing top {projects_to_process}...")
+        log_status(f"Processing {projects_to_process} of {len(rows)} rows...")
 
         valid_leads = []
-        processed_count = 0
+        row_elements = []  # Store row elements for Pass 2
 
         for index in range(projects_to_process):
             try:
-                # Re-fetch rows in each iteration to avoid stale elements if DOM updates
-                # However, PlanHub list is usually static. We'll use the cached list 'rows' 
-                # effectively if we assume no re-renders. 
-                # To be safe, we re-query if we were clicking, but here we are just reading.
-                
-                # Extract details
+                # Extract details from row
                 details = await self.extract_project_details(rows[index], index)
 
                 if not details:
@@ -470,48 +936,52 @@ class PlanHubScraper(BaseScraper):
 
                 # ID Check
                 if details['id'] in self.processed_ids:
-                    print(f"⏭  Already processed project {details['id']}, skipping")
+                    log_status(f"Skipping duplicate: {details['id'][:20]}")
                     continue
-                
+
                 self.processed_ids.add(details['id'])
 
                 # Past Due Check
                 if await self.is_project_past_due(details.get('bid_date', '')):
-                    print("⏭  Skipping past due project")
+                    log_status(f"Skipping past due: {details['name'][:30]}")
                     continue
-                
+
                 # Add to valid list
-                print(f"✅  Valid Project: {details['name']}")
+                log_status(f"Found: {details['name'][:40]}")
                 valid_leads.append(details)
-                self.leads.append(details) # Add to main list to return
-                processed_count += 1
+                row_elements.append(rows[index])
+                self.leads.append(details)
 
             except Exception as e:
-                print(f" Error extracting row {index}: {e}")
+                log_status(f"Error extracting row {index}: {e}")
                 continue
 
-        print(f"\n=== PASS 1 Complete. Found {len(valid_leads)} valid leads. ===")
-        
-        # --- PASS 2: Download Files ---
+        log_status(f"=== PASS 1 Complete: Found {len(valid_leads)} valid leads ===")
+
+        # --- PASS 2: Click into each project for details & files ---
         if valid_leads:
-            print("\n=== PASS 2: Downloading Files ===")
+            log_status("=== PASS 2: Extracting Details & Files ===")
             for i, lead in enumerate(valid_leads):
-                print(f"\nProcessing download for lead {i+1}/{len(valid_leads)}...")
-                success = await self.download_files_for_lead(lead)
+                log_status(f"Processing {i+1}/{len(valid_leads)}: {lead.get('name', '')[:30]}")
+
+                # Download files (this also extracts full address)
+                # Pass row_element=None to force finding by name, which is more robust after navigation
+                success = await self.download_files_for_lead(lead, row_element=None)
+
                 if success:
-                    print(" Download sequence completed.")
-                
+                    log_status(f"Completed download for project {i+1}")
+
                 # Return to list for next item
-                # Only need to navigate if we actually left the page
-                if success: 
-                     print(" Returning to project list...")
-                     await self.navigate_to_projects()
-                     await asyncio.sleep(2) # Wait for reload
-                     # Note: We might need to re-apply filters if they don't persist
-                     # But we'll rely on PlanHub session for now or just simple text find functionality
-                     # If the list order changes, 'find by text' is robust.
-        
-        print(f"\n Scraping complete! Found {len(self.leads)} valid leads.")
+                log_status("Returning to project list...")
+                await self.navigate_to_projects()
+                await asyncio.sleep(2)
+                
+                # Re-apply filters if needed (sometimes navigation resets them)
+                # But usually "Saved Search" persists or we can just find by name in the default list 
+                # if the name is unique enough.
+                # Ideally we should ensure we are seeing the same list.
+                
+        log_status(f"SCRAPING COMPLETE - Total leads: {len(self.leads)}")
         return self.leads
 
 
