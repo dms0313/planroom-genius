@@ -1,0 +1,100 @@
+#!/bin/bash
+#
+# Planroom Genius - Install Systemd Service
+# For Raspberry Pi 5 auto-start on boot
+#
+
+set -e
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo "=================================================="
+echo "  Installing Planroom Genius Systemd Service"
+echo "=================================================="
+echo ""
+
+# Get current user and directory
+CURRENT_USER=$(whoami)
+INSTALL_DIR=$(pwd)
+
+# Check if running as root (we need sudo for systemctl)
+if [ "$EUID" -eq 0 ]; then
+    echo "Please run without sudo. The script will ask for sudo when needed."
+    exit 1
+fi
+
+# Create service file with correct paths
+echo "Creating service file for user: $CURRENT_USER"
+echo "Install directory: $INSTALL_DIR"
+echo ""
+
+# Generate customized service file
+cat > /tmp/planroom-genius.service << EOF
+[Unit]
+Description=Planroom Genius - Construction Lead Intelligence
+Documentation=https://github.com/yourusername/planroom-genius
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$CURRENT_USER
+Group=$CURRENT_USER
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/backend/venv/bin/python $INSTALL_DIR/start.py
+Restart=always
+RestartSec=10
+Environment="HEADLESS=true"
+Environment="HOME=/home/$CURRENT_USER"
+MemoryMax=2G
+CPUQuota=80%
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=planroom-genius
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Install the service
+echo "Installing service..."
+sudo cp /tmp/planroom-genius.service /etc/systemd/system/planroom-genius.service
+sudo systemctl daemon-reload
+
+echo ""
+echo -e "${GREEN}Service installed successfully!${NC}"
+echo ""
+echo "Commands:"
+echo "  sudo systemctl enable planroom-genius  # Enable auto-start on boot"
+echo "  sudo systemctl start planroom-genius   # Start now"
+echo "  sudo systemctl status planroom-genius  # Check status"
+echo "  sudo systemctl stop planroom-genius    # Stop"
+echo "  sudo journalctl -u planroom-genius -f  # View logs"
+echo ""
+
+# Ask to enable
+read -p "Enable auto-start on boot? (y/n) " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    sudo systemctl enable planroom-genius
+    echo -e "${GREEN}Auto-start enabled!${NC}"
+fi
+
+# Ask to start now
+read -p "Start the service now? (y/n) " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    sudo systemctl start planroom-genius
+    sleep 2
+    sudo systemctl status planroom-genius --no-pager
+fi
+
+echo ""
+echo "Done! Access the dashboard at:"
+IP=$(hostname -I | awk '{print $1}')
+echo "  http://${IP}:5173"

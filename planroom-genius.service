@@ -1,0 +1,68 @@
+# Planroom Genius Systemd Service
+# Optimized for Raspberry Pi 5
+#
+# Installation:
+#   sudo cp planroom-genius.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable planroom-genius
+#   sudo systemctl start planroom-genius
+#
+# Commands:
+#   sudo systemctl status planroom-genius  # Check status
+#   sudo systemctl restart planroom-genius # Restart
+#   sudo journalctl -u planroom-genius -f  # View logs
+
+[Unit]
+Description=Planroom Genius - Construction Lead Intelligence
+Documentation=https://github.com/yourusername/planroom-genius
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Run as the pi user (change if using different username)
+User=pi
+Group=pi
+
+# Working directory (change path if installed elsewhere)
+WorkingDirectory=/home/pi/planroom-genius
+
+# Start command
+ExecStart=/home/pi/planroom-genius/backend/venv/bin/python /home/pi/planroom-genius/start.py
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Environment variables for headless operation
+Environment="HEADLESS=true"
+Environment="DISPLAY=:0"
+Environment="HOME=/home/pi"
+
+# Resource limits (optimized for Pi 5)
+# Pi 5 4GB: Use defaults
+# Pi 5 8GB: Can increase MemoryMax to 4G
+MemoryMax=2G
+CPUQuota=80%
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/pi/planroom-genius/backend/downloads
+ReadWritePaths=/home/pi/planroom-genius/backend/data
+ReadWritePaths=/home/pi/planroom-genius/backend/leads_db.json
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=planroom-genius
+
+# Timeout settings
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

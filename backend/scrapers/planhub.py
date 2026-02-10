@@ -61,6 +61,9 @@ class PlanHubScraper(BaseScraper):
     def __init__(self):
         super().__init__(config=PlanHubConfig())
         self.processed_ids = set()
+        # Override viewport for PlanHub to ensure elements are visible
+        self.config.VIEWPORT_WIDTH = 1920
+        self.config.VIEWPORT_HEIGHT = 1080
 
     async def check_login_status(self):
         """
@@ -259,6 +262,17 @@ class PlanHubScraper(BaseScraper):
             table_selector = 'planhub-project-table table tbody'
             await self.wait_for_selector_safely(table_selector, timeout=15000)
 
+            # Auto-scroll to load more projects
+            print("[PH] Auto-scrolling to load projects...")
+            previous_height = 0
+            for _ in range(5): # Scroll 5 times or until no new content
+                await self.page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                await asyncio.sleep(2)
+                new_height = await self.page.evaluate('document.body.scrollHeight')
+                if new_height == previous_height:
+                    break
+                previous_height = new_height
+            
             # Get all project rows - use precise selector
             row_selector = 'planhub-project-table table tbody tr.mat-row'
             rows = await self.page.querySelectorAll(row_selector)
@@ -802,10 +816,20 @@ class PlanHubScraper(BaseScraper):
 
                 # Step 23: Extract company name
                 company_name = await self.page.evaluate('''(card) => {
-                    const nameEl = card.querySelector('.company-name') ||
-                                   card.querySelector('mat-card-title') ||
+                    // Try to find name in standard locations
+                    const nameEl = card.querySelector('.company-name') || 
+                                   card.querySelector('mat-card-title') || 
                                    card.querySelector('.name');
-                    return nameEl ? nameEl.textContent.trim() : null;
+                    
+                    if (nameEl && nameEl.textContent.trim()) return nameEl.textContent.trim();
+                    
+                    // Fallback: iterate all elements and look for bold text which often is the name
+                    const bolds = card.querySelectorAll('strong, b, .bold');
+                    for (const b of bolds) {
+                        if (b.textContent.length > 3) return b.textContent.trim();
+                    }
+                    
+                    return null;
                 }''', preferred_card)
 
                 if company_name:

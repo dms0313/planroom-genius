@@ -1,7 +1,9 @@
 """
 Centralized configuration for Puppeteer scrapers.
+Includes Raspberry Pi 5 optimizations.
 """
 import os
+import platform
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -12,11 +14,119 @@ parent_env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env
 load_dotenv(parent_env_path)
 
 
+def detect_raspberry_pi():
+    """Detect if running on Raspberry Pi and which model"""
+    if platform.system() != 'Linux':
+        return None, None
+
+    model = None
+    is_pi5 = False
+
+    # Check device tree model
+    try:
+        with open('/proc/device-tree/model', 'r') as f:
+            model = f.read().strip('\x00')
+            is_pi5 = 'Raspberry Pi 5' in model
+    except:
+        pass
+
+    # Fallback: check cpuinfo for BCM2712 (Pi 5 SoC)
+    if not model:
+        try:
+            with open('/proc/cpuinfo', 'r') as f:
+                cpuinfo = f.read()
+                if 'BCM2712' in cpuinfo:
+                    is_pi5 = True
+                    model = 'Raspberry Pi 5'
+                elif 'Raspberry Pi' in cpuinfo:
+                    model = 'Raspberry Pi'
+        except:
+            pass
+
+    return model, is_pi5
+
+
+def get_system_ram_gb():
+    """Get system RAM in GB"""
+    try:
+        with open('/proc/meminfo', 'r') as f:
+            for line in f:
+                if line.startswith('MemTotal:'):
+                    mem_kb = int(line.split()[1])
+                    return round(mem_kb / 1024 / 1024, 1)
+    except:
+        pass
+    return 0
+
+
+# Detect Pi at module load
+PI_MODEL, IS_PI5 = detect_raspberry_pi()
+SYSTEM_RAM_GB = get_system_ram_gb() if platform.system() == 'Linux' else 0
+
+
+class PiOptimizations:
+    """Raspberry Pi 5 performance optimizations"""
+
+    # Browser launch arguments optimized for Pi 5
+    PI5_BROWSER_ARGS = [
+        '--disable-gpu',  # Use software rendering (more stable on Pi)
+        '--disable-dev-shm-usage',  # Avoid /dev/shm issues
+        '--no-sandbox',  # Required for headless on Pi
+        '--disable-setuid-sandbox',
+        '--disable-accelerated-2d-canvas',
+        '--disable-accelerated-video-decode',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',  # Reduces memory usage
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-features=TranslateUI',
+        '--disable-hang-monitor',
+        '--disable-ipc-flooding-protection',
+        '--disable-popup-blocking',
+        '--disable-prompt-on-repost',
+        '--disable-renderer-backgrounding',
+        '--disable-sync',
+        '--metrics-recording-only',
+        '--mute-audio',
+    ]
+
+    # Memory-constrained browser args (for 4GB models)
+    LOW_RAM_BROWSER_ARGS = [
+        '--js-flags=--max-old-space-size=256',  # Limit JS heap
+        '--renderer-process-limit=2',
+    ]
+
+    @classmethod
+    def get_browser_args(cls, headless=True):
+        """Get optimized browser args for Pi"""
+        args = cls.PI5_BROWSER_ARGS.copy()
+
+        if SYSTEM_RAM_GB <= 4:
+            args.extend(cls.LOW_RAM_BROWSER_ARGS)
+
+        if headless:
+            args.append('--headless=new')
+
+        return args
+
+    # Timeouts adjusted for Pi (slightly longer due to ARM processing)
+    PI_NAVIGATION_TIMEOUT = 90000  # 90 seconds
+    PI_SELECTOR_TIMEOUT = 15000  # 15 seconds
+
+    # Delays adjusted for Pi (allow more processing time)
+    PI_DELAY_AFTER_CLICK = 0.5
+    PI_DELAY_BETWEEN_PROJECTS = 0.5
+    PI_DELAY_AFTER_NAVIGATION = 1.0
+
+
 class ScraperConfig:
     """Base configuration for all scrapers"""
 
     # Chrome Profile Settings
-    import platform
     if platform.system() == 'Linux':
         # Linux / Raspberry Pi - use home directory detection
         # Supports any username, not just "pi"
@@ -39,15 +149,18 @@ class ScraperConfig:
 
     # Browser Settings
     # Default to HEADLESS=True on Linux (Pi), False on Windows unless override
-    import platform
     _is_linux = platform.system() == 'Linux'
     HEADLESS = os.getenv("HEADLESS", str(_is_linux)).lower() == "true"
     VIEWPORT_WIDTH = 1280
     VIEWPORT_HEIGHT = 720
 
-    # Timeouts (in milliseconds)
-    NAVIGATION_TIMEOUT = 60000
-    SELECTOR_TIMEOUT = 10000
+    # Timeouts (in milliseconds) - adjusted for Pi 5 if detected
+    if IS_PI5:
+        NAVIGATION_TIMEOUT = PiOptimizations.PI_NAVIGATION_TIMEOUT
+        SELECTOR_TIMEOUT = PiOptimizations.PI_SELECTOR_TIMEOUT
+    else:
+        NAVIGATION_TIMEOUT = 60000
+        SELECTOR_TIMEOUT = 10000
     DOWNLOAD_WAIT = 3000
 
     # Download Settings
@@ -57,13 +170,26 @@ class ScraperConfig:
     MAX_PROJECTS_DEFAULT = None  # None = all projects
     MAX_CONSECUTIVE_ERRORS = 3
 
-    # Delays (in seconds) - keep minimal, only rate limit Gemini API calls
-    DELAY_AFTER_CLICK = 0.2
-    DELAY_BETWEEN_PROJECTS = 0.3
-    DELAY_AFTER_NAVIGATION = 0.5
+    # Delays (in seconds) - adjusted for Pi 5 if detected
+    if IS_PI5:
+        DELAY_AFTER_CLICK = PiOptimizations.PI_DELAY_AFTER_CLICK
+        DELAY_BETWEEN_PROJECTS = PiOptimizations.PI_DELAY_BETWEEN_PROJECTS
+        DELAY_AFTER_NAVIGATION = PiOptimizations.PI_DELAY_AFTER_NAVIGATION
+    else:
+        DELAY_AFTER_CLICK = 0.2
+        DELAY_BETWEEN_PROJECTS = 0.3
+        DELAY_AFTER_NAVIGATION = 0.5
 
     # Database
     DB_FILE = os.path.join(os.path.dirname(__file__), 'leads_db.json')
+
+    # Pi-optimized browser arguments
+    @classmethod
+    def get_browser_args(cls):
+        """Get browser launch arguments, optimized for Pi if detected"""
+        if IS_PI5:
+            return PiOptimizations.get_browser_args(headless=cls.HEADLESS)
+        return []
 
 
 class BuildingConnectedConfig(ScraperConfig):

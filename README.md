@@ -50,8 +50,16 @@ python3 start.py
 - Node.js 20+
 - 4GB RAM minimum
 
-### Raspberry Pi
-- Raspberry Pi 4/5 (4GB+ RAM recommended)
+### Raspberry Pi 5 (Recommended)
+- Raspberry Pi 5 (4GB or 8GB RAM)
+- Raspberry Pi OS Bookworm (64-bit) - **Required**
+- Active Cooler recommended for sustained workloads
+- Internet connection
+- 16GB+ microSD (Class 10/U3/A2) or NVMe SSD
+- 8GB free storage
+
+### Raspberry Pi 4
+- Raspberry Pi 4 (4GB+ RAM recommended)
 - Raspberry Pi OS (64-bit)
 - Internet connection
 - 8GB free storage
@@ -100,7 +108,60 @@ python3 start.py
    start_app.bat
    ```
 
-### Linux/Raspberry Pi Installation
+### Raspberry Pi 5 Installation (Recommended)
+
+1. **Prepare your Pi 5**
+   - Flash Raspberry Pi OS Bookworm (64-bit) using Raspberry Pi Imager
+   - Enable SSH during OS setup for headless access
+   - Install Active Cooler for best performance
+   - Boot and connect via SSH or terminal
+
+2. **Clone Repository**
+   ```bash
+   git clone https://github.com/yourusername/planroom-genius.git
+   cd planroom-genius
+   ```
+
+3. **Run Pi 5 Quick Setup**
+   ```bash
+   chmod +x pi5-setup.sh
+   ./pi5-setup.sh
+   ```
+
+   The Pi 5 setup script automatically:
+   - Detects Pi 5 hardware and validates 64-bit OS
+   - Checks RAM and cooling configuration
+   - Installs Python 3.11+ with venv (Bookworm requirement)
+   - Installs Node.js 20 LTS
+   - Installs Chromium with ARM64 dependencies
+   - Configures Playwright for ARM64
+   - Sets up optimized headless mode
+
+4. **Configure Environment**
+   ```bash
+   nano .env
+   ```
+
+   Add your credentials:
+   ```env
+   PLANHUB_LOGIN=your_email@example.com
+   PLANHUB_PW=your_password
+   HEADLESS=true
+   ```
+
+5. **Start Application**
+   ```bash
+   ./start.sh
+   ```
+
+6. **Access from any device on your network**
+   ```bash
+   # Find your Pi's IP
+   hostname -I
+   # Access dashboard at http://YOUR_PI_IP:5173
+   ```
+
+### Linux/Raspberry Pi 4 Installation
 
 1. **Update System**
    ```bash
@@ -119,7 +180,7 @@ python3 start.py
    ```
 
    Setup will automatically install:
-   - Python 3 + pip
+   - Python 3 + pip + venv
    - Node.js 20
    - Chromium browser
    - All Python packages
@@ -283,11 +344,46 @@ netstat -ano | findstr :8000
 taskkill /PID <PID> /F
 ```
 
-### Raspberry Pi/Linux Issues
+### Raspberry Pi 5 Issues
+
+**Playwright fails to install:**
+```bash
+# Install missing ARM64 dependencies
+sudo apt-get install -y libgbm1 libxkbcommon0 libatk1.0-0 \
+    libatk-bridge2.0-0 libcups2 libdrm2 libxcomposite1
+```
+
+**pip install fails with "externally-managed-environment":**
+```bash
+# Bookworm requires virtual environments - use venv
+python3 -m venv backend/venv
+backend/venv/bin/pip install -r backend/requirements.txt
+```
+
+**High CPU temperature under load:**
+```bash
+# Check temperature
+vcgencmd measure_temp
+
+# If over 80C, install Active Cooler
+# The Active Cooler keeps Pi 5 under 65C during sustained loads
+```
+
+**Running out of storage:**
+```bash
+# Check disk usage
+df -h
+
+# Clear Playwright cache if needed
+rm -rf ~/.cache/ms-playwright
+backend/venv/bin/python -m playwright install chromium
+```
+
+### Raspberry Pi 4/Linux Issues
 
 **Chromium crashes:**
 ```bash
-# Increase GPU memory
+# Increase GPU memory (Pi 4 only, not needed on Pi 5)
 sudo nano /boot/config.txt
 # Add: gpu_mem=256
 sudo reboot
@@ -295,7 +391,7 @@ sudo reboot
 
 **Out of memory:**
 ```bash
-# Increase swap
+# Increase swap (especially for 2GB/4GB models)
 sudo dphys-swapfile swapoff
 sudo nano /etc/dphys-swapfile
 # Set: CONF_SWAPSIZE=2048
@@ -309,6 +405,7 @@ sudo dphys-swapfile swapon
 chmod +x start.sh
 chmod +x setup.py
 chmod +x start.py
+chmod +x pi5-setup.sh
 ```
 
 ### Common Issues (All Platforms)
@@ -344,34 +441,51 @@ python setup.py  # or python3 setup.py
 
 ## 🤖 Running as a Service (Linux/Pi)
 
-### Systemd Service
+### Quick Install (Recommended for Pi 5)
 
 ```bash
+# Run the install script - it auto-configures for your user/paths
+chmod +x install-service.sh
+./install-service.sh
+```
+
+The script will:
+- Create a customized systemd service for your installation
+- Ask to enable auto-start on boot
+- Optionally start the service immediately
+
+### Manual Systemd Service Setup
+
+```bash
+# Copy the service file
+sudo cp planroom-genius.service /etc/systemd/system/
+
+# Edit paths if needed (default assumes /home/pi/planroom-genius)
 sudo nano /etc/systemd/system/planroom-genius.service
-```
 
-Add:
-```ini
-[Unit]
-Description=Planroom Genius Service
-After=network.target
-
-[Service]
-Type=simple
-User=pi
-WorkingDirectory=/home/pi/planroom-genius
-ExecStart=/home/pi/planroom-genius/start.sh
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable:
-```bash
+# Reload and enable
+sudo systemctl daemon-reload
 sudo systemctl enable planroom-genius
 sudo systemctl start planroom-genius
+```
+
+### Service Commands
+
+```bash
+# Check status
 sudo systemctl status planroom-genius
+
+# View logs
+sudo journalctl -u planroom-genius -f
+
+# Restart after updates
+sudo systemctl restart planroom-genius
+
+# Stop service
+sudo systemctl stop planroom-genius
+
+# Disable auto-start
+sudo systemctl disable planroom-genius
 ```
 
 ---
