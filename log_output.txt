@@ -1,5 +1,0 @@
-6056a70 Stop tracking history data files
-d55c568 2.0
-1de4e79 2.0
-9e16ec5 new
-0d59366 new! afoj with '#' will be ignored, and an empty message aborts the commit.

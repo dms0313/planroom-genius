@@ -1,9 +1,0 @@
-Attempting to import backend.takeoff.routes...
-Traceback (most recent call last):
-[CONFIG] Loaded environment variables from .env file
-Failed to import backend.takeoff.routes: No module named 'fastapi'
-  File "c:\Users\dms03\Development\planroom-genius\debug_takeoff_import.py", line 9, in <module>
-    from backend.takeoff import routes
-  File "C:\Users\dms03\Development\planroom-genius\backend\takeoff\routes.py", line 23, in <module>
-    from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
-ModuleNotFoundError: No module named 'fastapi'
