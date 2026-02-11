@@ -1,6 +1,47 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen } from 'lucide-react';
 
+// Utility functions moved outside to prevent re-creation
+const isExpired = (bidDate) => {
+  if (!bidDate || bidDate === 'N/A' || bidDate === 'TBD') return false;
+  try { const d = new Date(bidDate); const t = new Date(); t.setHours(0, 0, 0, 0); return d < t; } catch { return false; }
+};
+
+const scoreColor = (score) => {
+  if (score >= 70) return 'text-green-400';
+  if (score >= 30) return 'text-yellow-400';
+  return 'text-red-400';
+};
+
+const scoreBg = (score) => {
+  if (score >= 70) return 'bg-green-500';
+  if (score >= 30) return 'bg-yellow-500';
+  return 'bg-red-500';
+};
+
+const badgeColor = (badge) => {
+  if (badge === 'NO FA') return 'bg-red-500/20 text-red-400 border-red-500/30';
+  if (badge === 'DEAL BREAKER') return 'bg-red-600/20 text-red-300 border-red-600/30';
+  if (badge === 'EXISTING') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+  if (badge === 'NEW SYSTEM') return 'bg-green-500/20 text-green-400 border-green-500/30';
+  if (badge === 'MODIFICATION') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+  if (badge.includes('REQ')) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+  return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+};
+
+const classColor = (cls) => {
+  if (cls === 'plan') return 'bg-blue-500/20 text-blue-400 border-blue-500/40';
+  if (cls === 'spec') return 'bg-green-500/20 text-green-400 border-green-500/40';
+  return 'bg-slate-500/20 text-slate-400 border-slate-500/40';
+};
+
+const getHighlightBg = (highlight) => {
+  if (highlight === 'green') return 'bg-green-500/10 border-l-2 border-green-500';
+  if (highlight === 'yellow') return 'bg-yellow-500/10 border-l-2 border-yellow-500';
+  if (highlight === 'red') return 'bg-red-500/10 border-l-2 border-red-500';
+  return '';
+};
+
 export default function LeadDashboard() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -39,6 +80,7 @@ export default function LeadDashboard() {
   const [knowledgeStatus, setKnowledgeStatus] = useState(null);
   const [knowledgeScanning, setKnowledgeScanning] = useState(false);
   const [knowledgeFilter, setKnowledgeFilter] = useState('all'); // all, scanned, unscanned
+  const [searchQuery, setSearchQuery] = useState('');
   const [pointToFileModal, setPointToFileModal] = useState(null); // {lead_id, files}
   const [pointToFileLoading, setPointToFileLoading] = useState(false);
   const [scanningIds, setScanningIds] = useState(new Set());
@@ -67,6 +109,36 @@ export default function LeadDashboard() {
     has_budget: false
   };
   const [formData, setFormData] = useState(emptyForm);
+
+  // Filter and search logic
+  const uniqueSites = useMemo(() => {
+    const sites = leads.map(l => l.site).filter(Boolean);
+    return [...new Set(sites)].sort();
+  }, [leads]);
+
+  const filteredLeads = useMemo(() => {
+    let result = leads;
+
+    // Knowledge filter
+    if (knowledgeFilter === 'scanned') result = result.filter(l => l.knowledge_score != null);
+    else if (knowledgeFilter === 'unscanned') result = result.filter(l => l.knowledge_score == null);
+
+    // Site filter
+    if (siteFilter !== 'all') result = result.filter(l => l.site === siteFilter);
+
+    // Search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(l =>
+        l.name?.toLowerCase().includes(q) ||
+        l.company?.toLowerCase().includes(q) ||
+        l.gc?.toLowerCase().includes(q) ||
+        l.description?.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  }, [leads, knowledgeFilter, siteFilter, searchQuery]);
 
   const API_BASE = `http://${window.location.hostname}:8000`;
 
@@ -488,249 +560,6 @@ export default function LeadDashboard() {
     }
   }, [knowledgeStatus]);
 
-  const isExpired = (bidDate) => {
-    if (!bidDate || bidDate === 'N/A' || bidDate === 'TBD') return false;
-    try { const d = new Date(bidDate); const t = new Date(); t.setHours(0, 0, 0, 0); return d < t; } catch { return false; }
-  };
-
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // Derive unique site names for filter buttons
-  const uniqueSites = [...new Set(leads.map(l => l.site).filter(Boolean))];
-
-  const filteredLeads = useMemo(() => {
-    let data = siteFilter === 'all' ? leads : leads.filter(l => l.site === siteFilter);
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      data = data.filter(l =>
-        (l.name && l.name.toLowerCase().includes(q)) ||
-        (l.company && l.company.toLowerCase().includes(q)) ||
-        (l.gc && l.gc.toLowerCase().includes(q)) ||
-        (l.description && l.description.toLowerCase().includes(q))
-      );
-    }
-    return data;
-  }, [leads, siteFilter, searchQuery]);
-
-  // Score color
-  const scoreColor = (score) => {
-    if (score >= 70) return 'text-green-400';
-    if (score >= 30) return 'text-yellow-400';
-    return 'text-red-400';
-  };
-  const scoreBg = (score) => {
-    if (score >= 70) return 'bg-green-500';
-    if (score >= 30) return 'bg-yellow-500';
-    return 'bg-red-500';
-  };
-
-  const badgeColor = (badge) => {
-    if (badge === 'NO FA') return 'bg-red-500/20 text-red-400 border-red-500/30';
-    if (badge === 'DEAL BREAKER') return 'bg-red-600/20 text-red-300 border-red-600/30';
-    if (badge === 'EXISTING') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-    if (badge === 'NEW SYSTEM') return 'bg-green-500/20 text-green-400 border-green-500/30';
-    if (badge === 'MODIFICATION') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-    if (badge.includes('REQ')) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-    return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
-  };
-
-  const classColor = (cls) => {
-    if (cls === 'plan') return 'bg-blue-500/20 text-blue-400 border-blue-500/40';
-    if (cls === 'spec') return 'bg-green-500/20 text-green-400 border-green-500/40';
-    return 'bg-slate-500/20 text-slate-400 border-slate-500/40';
-  };
-
-  const LeadTable = ({ title, data, showSiteFilter }) => {
-    const [currentPage, setCurrentPage] = useState(1);
-    const [expandedLeadId, setExpandedLeadId] = useState(null);
-    const itemsPerPage = 50;
-    const totalPages = Math.ceil(data.length / itemsPerPage);
-    useEffect(() => { setCurrentPage(1); }, [data.length]);
-    const paginatedData = data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-    const handlePageChange = (p) => { if (p >= 1 && p <= totalPages) setCurrentPage(p); };
-
-    return (
-      <div className="mb-8 bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col">
-        <div className="p-4 border-b border-slate-800 flex flex-col gap-3 bg-slate-900/50 backdrop-blur">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-bold text-white flex items-center gap-3">
-              {title}
-              <span className="bg-slate-800 text-slate-400 text-xs px-2 py-1 rounded-full">{data.length}</span>
-            </h2>
-            <div className="flex items-center gap-4">
-              <button onClick={triggerKnowledgeScan} disabled={knowledgeScanning} className="flex items-center gap-1.5 px-3 py-1 bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-600/30 rounded-lg text-xs font-semibold transition">
-                {knowledgeScanning ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
-                {knowledgeScanning ? 'Scanning...' : 'AI Scan All'}
-              </button>
-              {totalPages > 1 && (
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <span>Page {currentPage} of {totalPages}</span>
-                  <div className="flex gap-1">
-                    <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronLeft size={16} /></button>
-                    <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronRight size={16} /></button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-          {showSiteFilter && uniqueSites.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-slate-500 uppercase tracking-wide">Planroom:</span>
-              <button onClick={() => setSiteFilter('all')} className={`px-3 py-1 rounded text-xs font-semibold transition ${siteFilter === 'all' ? 'bg-[#ed2028] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>All</button>
-              {uniqueSites.map(site => (
-                <button key={site} onClick={() => setSiteFilter(site)} className={`px-3 py-1 rounded text-xs font-semibold transition ${siteFilter === site ? 'bg-[#ed2028] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{site}</button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="overflow-x-auto flex-grow">
-          <table className="w-full text-left text-xs text-slate-400">
-            <thead className="bg-slate-950/50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
-              <tr>
-                <th className="px-2 py-3 w-24"></th>
-                <th className="px-4 py-3">Project</th>
-                <th className="px-4 py-3">Company / GC</th>
-                <th className="px-4 py-3">Contact</th>
-                <th className="px-4 py-3">Location</th>
-                <th className="px-4 py-3 w-24">Bid Date</th>
-                <th className="px-4 py-3 text-center w-20">Files</th>
-                <th className="px-4 py-3 text-center w-24">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {paginatedData.map((lead, i) => {
-                const expired = isExpired(lead.bid_date);
-                const highlightClass = getHighlightBg(lead.highlight);
-                const strikeClass = lead.strikethrough ? 'opacity-50' : '';
-                return (
-                  <React.Fragment key={lead.id || i}>
-                    <tr className={`hover:bg-slate-800/30 transition group ${expired ? 'opacity-40' : ''} ${highlightClass} ${strikeClass}`}>
-                      {/* Status/Highlight column - LEFT side */}
-                      <td className="px-2 py-2">
-                        <div className="flex gap-0.5">
-                          <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700 hover:bg-green-600'}`} title="Green"><Circle size={8} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
-                          <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'yellow' ? null : 'yellow')} className={`p-1 rounded ${lead.highlight === 'yellow' ? 'bg-yellow-600' : 'bg-slate-700 hover:bg-yellow-600'}`} title="Yellow"><Circle size={8} className="text-yellow-400" fill={lead.highlight === 'yellow' ? 'currentColor' : 'none'} /></button>
-                          <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'red' ? null : 'red')} className={`p-1 rounded ${lead.highlight === 'red' ? 'bg-red-600' : 'bg-slate-700 hover:bg-red-600'}`} title="Red"><Circle size={8} className="text-red-400" fill={lead.highlight === 'red' ? 'currentColor' : 'none'} /></button>
-                          <button onClick={() => toggleLeadStyle(lead, 'strikethrough', !lead.strikethrough)} className={`p-1 rounded ${lead.strikethrough ? 'bg-slate-500' : 'bg-slate-700 hover:bg-slate-500'}`} title="Mark reviewed"><Minus size={8} className="text-slate-300" /></button>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors max-w-xs">
-                        <button onClick={() => setExpandedLeadId(expandedLeadId === lead.id ? null : lead.id)} className="text-left hover:text-orange-400 transition-colors flex items-center gap-2" title="Click to expand">
-                          {expandedLeadId === lead.id ? <ChevronUp size={14} className="text-orange-400" /> : <ChevronDown size={14} className="text-slate-500" />}
-                          <div className="truncate max-w-[200px]">{lead.name}</div>
-                        </button>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
-                          {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
-                          {lead.knowledge_score != null && lead.knowledge_score > 0 && (
-                            <span className={`text-[10px] font-mono font-bold ${scoreColor(lead.knowledge_score)}`}>{lead.knowledge_score}</span>
-                          )}
-                          <span className="text-[10px] text-slate-600">{lead.site}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2">
-                        <button onClick={() => setCompanyPopup(lead)} className="flex flex-col text-left hover:bg-slate-800/50 p-1 rounded transition-colors w-full" title="Click for details">
-                          <span className="text-slate-300 truncate max-w-[150px] hover:text-orange-400 transition-colors">{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
-                          <span className="text-[10px] text-slate-500 truncate max-w-[150px]">{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
-                        </button>
-                      </td>
-                      <td className="px-4 py-2">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-slate-300 truncate max-w-[150px]">{lead.contact_name !== "N/A" ? lead.contact_name : <span className="text-slate-600 italic">-</span>}</span>
-                          {lead.contact_email && (
-                            <a href={`mailto:${lead.contact_email}`} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-orange-400 transition-colors">
-                              <Mail size={10} /><span className="truncate max-w-[140px]">{lead.contact_email}</span>
-                            </a>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 text-slate-400 truncate max-w-[120px]" title={lead.location}>{lead.location || "N/A"}</td>
-                      <td className={`px-4 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{lead.bid_date}</td>
-                      <td className="px-4 py-2 text-center">
-                        <div className="flex justify-center gap-1">
-                          {lead.gdrive_link ? (
-                            <a href={lead.gdrive_link} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-blue-500 hover:bg-blue-400 text-white rounded transition-colors flex items-center gap-1" title="View on Google Drive"><Cloud size={12} /></a>
-                          ) : lead.files_link ? (
-                            <button onClick={() => fetch(`${API_BASE}/open-folder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: lead.files_link }) })} className="p-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors" title={`Open Local Folder: ${lead.files_link}`}><ExternalLink size={12} /></button>
-                          ) : lead.local_file_path ? (
-                            <a href={`${API_BASE}${lead.local_file_path}`} download className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors" title="Download Local File"><Download size={12} /></a>
-                          ) : (
-                            <span className="text-slate-600 text-[10px]">-</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 text-center">
-                        <div className="flex justify-center gap-1">
-                          <button onClick={() => triggerSingleScan(lead.id)} disabled={scanningIds.has(lead.id)} className="p-1.5 bg-slate-700 hover:bg-violet-600 text-slate-400 hover:text-white rounded transition-colors disabled:opacity-70 disabled:cursor-not-allowed" title="Force Knowledge Scan">
-                            {scanningIds.has(lead.id) ? (
-                              <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                            ) : (
-                              <Brain size={12} />
-                            )}
-                          </button>
-                          <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
-                          <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                    {expandedLeadId === lead.id && (
-                      <tr key={`expanded-${lead.id}`} className="bg-slate-800/40 border-l-4 border-orange-500 animate-in slide-in-from-left-2 duration-200">
-                        <td colSpan="8" className="px-6 py-4">
-                          <div className="flex flex-col gap-4">
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                                  {lead.name}
-                                  <span className="text-xs font-normal text-slate-500">Project Summary</span>
-                                </h4>
-                                <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
-                                  {lead.knowledge_notes ? (
-                                    lead.knowledge_notes.split('\n')[0].substring(0, 300) + (lead.knowledge_notes.length > 300 ? '...' : '')
-                                  ) : lead.description ? (
-                                    lead.description.substring(0, 300) + (lead.description.length > 300 ? '...' : '')
-                                  ) : <span className="text-slate-500 italic">No summary available. Run AI scan for details.</span>}
-                                </p>
-                                <div className="flex gap-2 mt-3 flex-wrap">
-                                  {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
-                                    <span key={idx} className={`text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)}`}>{b}</span>
-                                  ))}
-                                  {lead.sprinklered && <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full border border-red-500/20">Sprinklered</span>}
-                                </div>
-                              </div>
-                              <div>
-                                <button onClick={() => setDescriptionPopup(lead)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
-                                  <Eye size={14} /> View Full Details
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-              {data.length === 0 && (
-                <tr><td colSpan="8" className="px-6 py-12 text-center text-slate-600 italic">No active leads found in this category.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        {
-          totalPages > 1 && (
-            <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center text-xs text-slate-400">
-              <span>Showing {paginatedData.length} of {data.length} leads</span>
-              <div className="flex gap-2">
-                <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Previous</button>
-                <span className="flex items-center px-2">Page {currentPage} of {totalPages}</span>
-                <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next</button>
-              </div>
-            </div>
-          )
-        }
-      </div >
-    );
-  };
 
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-100 p-8 font-sans ${showConsole && !consoleMinimized ? 'pb-96' : ''}`}>
@@ -810,7 +639,24 @@ export default function LeadDashboard() {
 
         {/* =================== BID BOARD TAB =================== */}
         <div className={activeTab === 'bid' ? '' : 'hidden'}>
-          <LeadTable title="All Active Opportunities" data={filteredLeads} showSiteFilter={true} />
+          <LeadTable
+            title="All Active Opportunities"
+            data={filteredLeads}
+            showSiteFilter={true}
+            uniqueSites={uniqueSites}
+            siteFilter={siteFilter}
+            setSiteFilter={setSiteFilter}
+            triggerKnowledgeScan={triggerKnowledgeScan}
+            knowledgeScanning={knowledgeScanning}
+            triggerSingleScan={triggerSingleScan}
+            scanningIds={scanningIds}
+            toggleLeadStyle={toggleLeadStyle}
+            openEditModal={openEditModal}
+            deleteLead={deleteLead}
+            setCompanyPopup={setCompanyPopup}
+            setDescriptionPopup={setDescriptionPopup}
+            API_BASE={API_BASE}
+          />
         </div>
 
         {/* =================== TAKEOFF TAB =================== */}
@@ -1236,3 +1082,202 @@ export default function LeadDashboard() {
     </div>
   );
 }
+
+// LeadTable moved outside to persist state (expandedLeadId, currentPage) across parent re-renders/refreshes
+const LeadTable = ({
+  title, data, showSiteFilter, uniqueSites, siteFilter, setSiteFilter,
+  triggerKnowledgeScan, knowledgeScanning, triggerSingleScan, scanningIds,
+  toggleLeadStyle, openEditModal, deleteLead, setCompanyPopup,
+  setDescriptionPopup, API_BASE
+}) => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [expandedLeadId, setExpandedLeadId] = useState(null);
+  const itemsPerPage = 50;
+  const totalPages = Math.ceil(data.length / itemsPerPage);
+
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages);
+  }, [data.length, totalPages, currentPage]);
+
+  const paginatedData = data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const handlePageChange = (p) => { if (p >= 1 && p <= totalPages) setCurrentPage(p); };
+
+  return (
+    <div className="mb-8 bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col">
+      <div className="p-4 border-b border-slate-800 flex flex-col gap-3 bg-slate-900/50 backdrop-blur">
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-bold text-white flex items-center gap-3">
+            {title}
+            <span className="bg-slate-800 text-slate-400 text-xs px-2 py-1 rounded-full">{data.length}</span>
+          </h2>
+          <div className="flex items-center gap-4">
+            <button onClick={triggerKnowledgeScan} disabled={knowledgeScanning} className="flex items-center gap-1.5 px-3 py-1 bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-600/30 rounded-lg text-xs font-semibold transition">
+              {knowledgeScanning ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
+              {knowledgeScanning ? 'Scanning...' : 'AI Scan All'}
+            </button>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>Page {currentPage} of {totalPages}</span>
+                <div className="flex gap-1">
+                  <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronLeft size={16} /></button>
+                  <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronRight size={16} /></button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        {showSiteFilter && uniqueSites.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-slate-500 uppercase tracking-wide">Planroom:</span>
+            <button onClick={() => setSiteFilter('all')} className={`px-3 py-1 rounded text-xs font-semibold transition ${siteFilter === 'all' ? 'bg-[#ed2028] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>All</button>
+            {uniqueSites.map(site => (
+              <button key={site} onClick={() => setSiteFilter(site)} className={`px-3 py-1 rounded text-xs font-semibold transition ${siteFilter === site ? 'bg-[#ed2028] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{site}</button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="overflow-x-auto flex-grow">
+        <table className="w-full text-left text-xs text-slate-400">
+          <thead className="bg-slate-950/50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
+            <tr>
+              <th className="px-2 py-3 w-24"></th>
+              <th className="px-4 py-3">Project</th>
+              <th className="px-4 py-3">Company / GC</th>
+              <th className="px-4 py-3">Contact</th>
+              <th className="px-4 py-3">Location</th>
+              <th className="px-4 py-3 w-24">Bid Date</th>
+              <th className="px-4 py-3 text-center w-20">Files</th>
+              <th className="px-4 py-3 text-center w-24">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/50">
+            {paginatedData.map((lead, i) => {
+              const expired = isExpired(lead.bid_date);
+              const highlightClass = getHighlightBg(lead.highlight);
+              const strikeClass = lead.strikethrough ? 'opacity-50' : '';
+              return (
+                <React.Fragment key={lead.id || i}>
+                  <tr className={`hover:bg-slate-800/30 transition group ${expired ? 'opacity-40' : ''} ${highlightClass} ${strikeClass}`}>
+                    <td className="px-2 py-2">
+                      <div className="flex gap-0.5">
+                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700 hover:bg-green-600'}`} title="Green"><Circle size={8} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
+                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'yellow' ? null : 'yellow')} className={`p-1 rounded ${lead.highlight === 'yellow' ? 'bg-yellow-600' : 'bg-slate-700 hover:bg-yellow-600'}`} title="Yellow"><Circle size={8} className="text-yellow-400" fill={lead.highlight === 'yellow' ? 'currentColor' : 'none'} /></button>
+                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'red' ? null : 'red')} className={`p-1 rounded ${lead.highlight === 'red' ? 'bg-red-600' : 'bg-slate-700 hover:bg-red-600'}`} title="Red"><Circle size={8} className="text-red-400" fill={lead.highlight === 'red' ? 'currentColor' : 'none'} /></button>
+                        <button onClick={() => toggleLeadStyle(lead, 'strikethrough', !lead.strikethrough)} className={`p-1 rounded ${lead.strikethrough ? 'bg-slate-500' : 'bg-slate-700 hover:bg-slate-500'}`} title="Mark reviewed"><Minus size={8} className="text-slate-300" /></button>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors max-w-xs">
+                      <button onClick={() => setExpandedLeadId(expandedLeadId === lead.id ? null : lead.id)} className="text-left hover:text-orange-400 transition-colors flex items-center gap-2" title="Click to expand">
+                        {expandedLeadId === lead.id ? <ChevronUp size={14} className="text-orange-400" /> : <ChevronDown size={14} className="text-slate-500" />}
+                        <div className="truncate max-w-[200px]">{lead.name}</div>
+                      </button>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
+                        {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
+                        {lead.knowledge_score != null && lead.knowledge_score > 0 && (
+                          <span className={`text-[10px] font-mono font-bold ${scoreColor(lead.knowledge_score)}`}>{lead.knowledge_score}</span>
+                        )}
+                        <span className="text-[10px] text-slate-600">{lead.site}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2">
+                      <button onClick={() => setCompanyPopup(lead)} className="flex flex-col text-left hover:bg-slate-800/50 p-1 rounded transition-colors w-full" title="Click for details">
+                        <span className="text-slate-300 truncate max-w-[150px] hover:text-orange-400 transition-colors">{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
+                        <span className="text-[10px] text-slate-500 truncate max-w-[150px]">{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
+                      </button>
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-slate-300 truncate max-w-[150px]">{lead.contact_name !== "N/A" ? lead.contact_name : <span className="text-slate-600 italic">-</span>}</span>
+                        {lead.contact_email && (
+                          <a href={`mailto:${lead.contact_email}`} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-orange-400 transition-colors">
+                            <Mail size={10} /><span className="truncate max-w-[140px]">{lead.contact_email}</span>
+                          </a>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 text-slate-400 truncate max-w-[120px]" title={lead.location}>{lead.location || "N/A"}</td>
+                    <td className={`px-4 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{lead.bid_date}</td>
+                    <td className="px-4 py-2 text-center">
+                      <div className="flex justify-center gap-1">
+                        {lead.gdrive_link ? (
+                          <a href={lead.gdrive_link} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-blue-500 hover:bg-blue-400 text-white rounded transition-colors flex items-center gap-1" title="View on Google Drive"><Cloud size={12} /></a>
+                        ) : lead.files_link ? (
+                          <button onClick={() => fetch(`${API_BASE}/open-folder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: lead.files_link }) })} className="p-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors" title={`Open Local Folder: ${lead.files_link}`}><ExternalLink size={12} /></button>
+                        ) : lead.local_file_path ? (
+                          <a href={`${API_BASE}${lead.local_file_path}`} download className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors" title="Download Local File"><Download size={12} /></a>
+                        ) : (
+                          <span className="text-slate-600 text-[10px]">-</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      <div className="flex justify-center gap-1">
+                        <button onClick={() => triggerSingleScan(lead.id)} disabled={scanningIds.has(lead.id)} className="p-1.5 bg-slate-700 hover:bg-violet-600 text-slate-400 hover:text-white rounded transition-colors disabled:opacity-70 disabled:cursor-not-allowed" title="Force Knowledge Scan">
+                          {scanningIds.has(lead.id) ? (
+                            <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                          ) : (
+                            <Brain size={12} />
+                          )}
+                        </button>
+                        <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
+                        <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedLeadId === lead.id && (
+                    <tr key={`expanded-${lead.id}`} className="bg-slate-800/40 border-l-4 border-orange-500 animate-in slide-in-from-left-2 duration-200">
+                      <td colSpan="8" className="px-6 py-4">
+                        <div className="flex flex-col gap-4">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                                {lead.name}
+                                <span className="text-xs font-normal text-slate-500">Project Summary</span>
+                              </h4>
+                              <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
+                                {lead.knowledge_notes ? (
+                                  lead.knowledge_notes.split('\n')[0].substring(0, 300) + (lead.knowledge_notes.length > 300 ? '...' : '')
+                                ) : lead.description ? (
+                                  lead.description.substring(0, 300) + (lead.description.length > 300 ? '...' : '')
+                                ) : <span className="text-slate-500 italic">No summary available. Run AI scan for details.</span>}
+                              </p>
+                              <div className="flex gap-2 mt-3 flex-wrap">
+                                {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
+                                  <span key={idx} className={`text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)}`}>{b}</span>
+                                ))}
+                                {lead.sprinklered && <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full border border-red-500/20">Sprinklered</span>}
+                              </div>
+                            </div>
+                            <div>
+                              <button onClick={() => setDescriptionPopup(lead)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
+                                <Eye size={14} /> View Full Details
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {data.length === 0 && (
+              <tr><td colSpan="8" className="px-6 py-12 text-center text-slate-600 italic">No active leads found in this category.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 && (
+        <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center text-xs text-slate-400">
+          <span>Showing {paginatedData.length} of {data.length} leads</span>
+          <div className="flex gap-2">
+            <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Previous</button>
+            <span className="flex items-center px-2">Page {currentPage} of {totalPages}</span>
+            <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
