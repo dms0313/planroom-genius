@@ -562,7 +562,7 @@ class GeminiFireAlarmAnalyzer:
             "fire alarm",
             "fire-alarm",
             "fa ",
-            " fa-",
+            "fa-",
             "facp",
             "notification device",
             "horn strobe",
@@ -587,7 +587,8 @@ class GeminiFireAlarmAnalyzer:
             "ibc",
             "fire marshal",
             "fire alarm system",
-            "fire alarm riser"
+            "fire alarm riser",
+            "fa1."
         ]
 
         return any(keyword in text_lower for keyword in keywords)
