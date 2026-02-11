@@ -1973,7 +1973,11 @@ function displayGeminiResults(data, options = {}) {
         fireAlarmPages
     );
 
-    const mechanicalCard = buildMechanicalRequirementsCard(mechanicalDevices);
+    // Pass general_notes from fireAlarmDetails to the notes card
+    const notesCard = buildFireAlarmNotesCard(fireAlarmNotes, fireAlarmDetails.general_notes);
+
+    // Pass full hvac_mechanical object for detailed duct detector rendering
+    const mechanicalCard = buildMechanicalCard(mechanicalDevices, data.hvac_mechanical || {});
 
     const deviceLayoutCard = buildDeviceLayoutCard(deviceLayoutReview);
 
@@ -1984,6 +1988,7 @@ function displayGeminiResults(data, options = {}) {
     const cardsInRenderOrder = [
         overviewCard,
         briefingCard,
+        notesCard,
         mechanicalCard,
         deviceLayoutCard,
         pitfallsCard,
@@ -2220,6 +2225,7 @@ function buildHighLevelOverviewCard(overview = {}, fallbackProjectInfo = {}, pro
         ['Layout Page Provided', faDetails.layout_page_provided],
         ['Voice Required', faDetails.voice_required],
         ['CO Required', faDetails.co_required],
+        ['CO Reasoning', faDetails.co_reasoning],
         ['Fire Doors Present', faDetails.fire_doors_present],
         ['Fire Barriers Present', faDetails.fire_barriers_present],
     ];
@@ -3180,27 +3186,72 @@ function buildFireAlarmPagesCard(fireAlarmPages) {
     return card;
 }
 
-function buildFireAlarmNotesCard(fireAlarmNotes) {
+function buildFireAlarmNotesCard(fireAlarmNotes, generalNotes = []) {
     const { card, content } = createGeminiCard('Fire Alarm System Notes', 'full-width');
 
+    const allNotes = [];
+
+    // Process Keyed/General Notes first (New structure)
+    if (Array.isArray(generalNotes) && generalNotes.length > 0) {
+        generalNotes.forEach(note => {
+            allNotes.push({ note_type: 'General/Key Note', content: note, page: null });
+        });
+    }
+
+    // Process Original Fire Alarm Notes
     if (Array.isArray(fireAlarmNotes) && fireAlarmNotes.length > 0) {
-        const list = document.createElement('ul');
         fireAlarmNotes.forEach((note) => {
+            allNotes.push(note);
+        });
+    }
+
+    if (allNotes.length > 0) {
+        const list = document.createElement('ul');
+        allNotes.forEach((note) => {
             if (!note) return;
             const item = document.createElement('li');
-            const pageTag = document.createElement('span');
-            pageTag.className = 'note-page';
-            pageTag.textContent = `Pg ${note.page ?? '?'}`;
+
+            // If the note string itself contains page info (e.g. "Note text (Pg X)"), 
+            // we might not have a separate page field.
+            let pageText = note.page ? `Pg ${note.page}` : '';
+
+            // Clean up note content if it's just a string in the new format
+            let contentText = note.content || note;
+            let labelText = note.note_type || 'Note';
+
+            if (typeof note === 'string') {
+                // Try to extract page if present in parens at end
+                const pageMatch = note.match(/\(Pg\s*([\w\d.-]+)\)$/i);
+                if (pageMatch) {
+                    pageText = `Pg ${pageMatch[1]}`;
+                    contentText = note.replace(pageMatch[0], '').trim();
+                } else {
+                    contentText = note;
+                }
+                labelText = 'Key/General Note';
+            }
+
+            if (pageText) {
+                const pageTag = document.createElement('span');
+                pageTag.className = 'note-page';
+                pageTag.textContent = pageText;
+                item.appendChild(pageTag);
+            }
 
             const noteContent = document.createElement('div');
             const noteLabel = document.createElement('strong');
-            noteLabel.textContent = `${note.note_type || 'Note'}: `;
+            noteLabel.textContent = `${labelText}: `;
             const noteText = document.createElement('span');
-            noteText.textContent = note.content || 'Not provided';
+            noteText.innerHTML = formatRichText(contentText); // Allow bolding
+
             noteContent.appendChild(noteLabel);
             noteContent.appendChild(noteText);
 
-            item.appendChild(pageTag);
+            if (!pageText) {
+                // Formatting for list clarity if no page tag
+                item.style.paddingLeft = '0';
+            }
+
             item.appendChild(noteContent);
             list.appendChild(item);
         });
@@ -3214,11 +3265,21 @@ function buildFireAlarmNotesCard(fireAlarmNotes) {
     return card;
 }
 
-function buildMechanicalCard(mechanicalDevices = {}) {
-    const { card, content } = createGeminiCard('Mechanical Coordination', 'full-width');
-    const { duct_detectors: ductDetectors = [], dampers = [] } = mechanicalDevices;
+function formatRichText(text) {
+    if (!text) return '';
+    // Bold content between ** **
+    return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+}
 
-    const createDeviceList = (title, devices) => {
+function buildMechanicalCard(mechanicalDevices = {}, hvacDetails = {}) {
+    const { card, content } = createGeminiCard('Mechanical Coordination', 'full-width');
+    const { duct_detectors: oldDucts = [], dampers = [] } = mechanicalDevices;
+    const { duct_detectors: newDucts = [], hvac_equipment = [] } = hvacDetails;
+
+    // Merge duct detectors, preferring new detailed ones
+    const ductDetectors = newDucts.length > 0 ? newDucts : oldDucts;
+
+    const createDeviceList = (title, devices, renderer = null) => {
         const sectionTitle = document.createElement('h4');
         sectionTitle.textContent = title;
         content.appendChild(sectionTitle);
@@ -3228,24 +3289,24 @@ function buildMechanicalCard(mechanicalDevices = {}) {
             devices.forEach((device) => {
                 if (!device) return;
                 const li = document.createElement('li');
-                const details = [
-                    ['Page', device.page],
-                    ['Device', device.device_type],
-                    ['Location', device.location],
-                    ['Quantity', device.quantity],
-                    ['Specifications', device.specifications],
-                ];
-                details.forEach(([label, value]) => {
-                    if (!value) return;
-                    const detail = document.createElement('div');
-                    const strong = document.createElement('strong');
-                    strong.textContent = `${label}: `;
-                    const span = document.createElement('span');
-                    span.textContent = value;
-                    detail.appendChild(strong);
-                    detail.appendChild(span);
-                    li.appendChild(detail);
-                });
+
+                if (renderer) {
+                    li.appendChild(renderer(device));
+                } else {
+                    // Default renderer
+                    const details = [];
+                    if (device.rtu_name) details.push(`<strong>RTU:</strong> ${device.rtu_name}`);
+                    if (device.cfm) details.push(`<strong>CFM:</strong> ${device.cfm}`);
+                    if (device.page) details.push(`<strong>Page:</strong> ${device.page}`);
+                    if (device.notes) details.push(`<strong>Notes:</strong> ${device.notes}`);
+
+                    // Fallback for old structure
+                    if (device.device_type) details.push(`<strong>Type:</strong> ${device.device_type}`);
+                    if (device.location) details.push(`<strong>Loc:</strong> ${device.location}`);
+                    if (device.quantity) details.push(`<strong>Qty:</strong> ${device.quantity}`);
+
+                    li.innerHTML = details.join(' | ');
+                }
                 list.appendChild(li);
             });
         } else {
@@ -3256,8 +3317,20 @@ function buildMechanicalCard(mechanicalDevices = {}) {
         content.appendChild(list);
     };
 
-    createDeviceList('Duct Detectors', ductDetectors);
+    createDeviceList('Duct Detectors (RTU Specifics)', ductDetectors);
     createDeviceList('Fire/Smoke Dampers', dampers);
+
+    // High CFM Units
+    const highCfm = hvac_equipment.filter(u => u.over_2000_cfm || u.cfm > 2000);
+    if (highCfm.length > 0) {
+        createDeviceList('Units > 2,000 CFM (Shutdown Required)', highCfm, (u) => {
+            const span = document.createElement('span');
+            span.style.color = '#d97706'; // Amber for warning
+            span.style.fontWeight = 'bold';
+            span.textContent = `${u.model || 'Unit'} (${u.cfm} CFM) - pg ${u.page}`;
+            return span;
+        });
+    }
 
     return card;
 }

@@ -195,6 +195,38 @@ async def clear_console_logs_endpoint():
     clear_console_logs()
     return {"status": "cleared"}
 
+@app.post("/system/pick-folder")
+async def pick_folder_dialog():
+    """
+    Open a system folder picker dialog on the host machine.
+    Returns the selected path or null if cancelled.
+    """
+    from backend.services.gui_utils import pick_folder
+    import asyncio
+    
+    # Run in a separate thread to avoid blocking the event loop
+    loop = asyncio.get_event_loop()
+    path = await loop.run_in_executor(None, pick_folder)
+    
+    if path:
+        return {"path": path}
+    return {"path": None}
+
+@app.post("/open-folder")
+async def open_folder_endpoint(payload: dict):
+    """
+    Open a local folder on the host machine.
+    """
+    from backend.services.gui_utils import open_folder
+    path = payload.get("path")
+    if not path:
+        raise HTTPException(status_code=400, detail="Path required")
+    
+    success = open_folder(path)
+    if not success:
+        raise HTTPException(status_code=404, detail="Folder not found or could not be opened")
+    return {"status": "success"}
+
 @app.post("/knowledge/scan/{lead_id}")
 async def manual_knowledge_scan(lead_id: str, background_tasks: BackgroundTasks):
     """
@@ -601,6 +633,52 @@ async def open_local_folder(body: dict):
         return {"status": "success", "message": f"Opened {path}"}
     except Exception as e:
         logger.error(f"Failed to open folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.post("/browse-directory")
+async def browse_directory(body: dict):
+    """Browse local directories for folder picker."""
+    path = body.get("path", "")
+
+    # If no path provided, start at root (drives on Windows, home on Linux)
+    if not path:
+        if sys.platform == 'win32':
+            import string
+            drives = []
+            for letter in string.ascii_uppercase:
+                drive = f"{letter}:\\"
+                if os.path.exists(drive):
+                    drives.append({"name": drive, "path": drive, "is_dir": True})
+            return {"current": "", "parent": None, "items": drives, "is_root": True}
+        else:
+            path = os.path.expanduser("~")
+
+    path = os.path.normpath(path)
+
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Path not found")
+    if not os.path.isdir(path):
+        raise HTTPException(status_code=400, detail="Path is not a directory")
+
+    try:
+        items = []
+        for name in sorted(os.listdir(path)):
+            full_path = os.path.join(path, name)
+            if os.path.isdir(full_path) and not name.startswith('.'):
+                items.append({"name": name, "path": full_path, "is_dir": True})
+
+        parent = os.path.dirname(path)
+        if parent == path:
+            parent = None
+        is_root = (sys.platform == 'win32' and len(path) <= 3) or path == '/'
+
+        return {"current": path, "parent": parent, "items": items, "is_root": is_root}
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    except Exception as e:
+        logger.error(f"Failed to browse directory: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

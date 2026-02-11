@@ -9,6 +9,8 @@ import hashlib
 import zipfile
 import logging
 import re
+import time
+import random
 from datetime import datetime
 
 from backend.config import ScraperConfig
@@ -511,7 +513,8 @@ def render_first_page_thumbnail(pdf_path, dpi=72):
 # ---------------------------------------------------------------------------
 
 _GEMINI_PROMPT = """You are an expert fire alarm estimator analyzing construction documents.
-Analyze these document pages and return a JSON object with EXACTLY these fields:
+Analyze these document pages AS A COMPLETE SET and return a JSON object with EXACTLY these fields.
+Do not output results for individual pages; synthesize your findings from all provided images into one single project assessment.
 
 {
   "requires_fire_alarm": true/false,
@@ -524,12 +527,17 @@ Analyze these document pages and return a JSON object with EXACTLY these fields:
 }
 
 Guidelines:
-- requires_fire_alarm: Does this project require fire alarm work? Cross-reference IBC/NFPA 72 codes if visible.
+- requires_fire_alarm: Does this project require fire alarm work?
 - system_type: "new" = brand new system, "existing" = existing system to remain/as-is, "modification" = changes to existing system
-- required_vendors: Any SPECIFIC vendor names listed as required/approved for fire alarm scope
-- required_manufacturers: Any SPECIFIC manufacturer names listed as required/approved for fire alarm equipment
-- deal_breakers: Issues that would prevent bidding (e.g., specific certifications required, prevailing wage, unusual bonding)
-- scope_score: Rate workload 0-100 (100 = massive fire alarm scope, 50 = moderate, 10 = minimal, 0 = no fire alarm)
+- required_vendors: *CRITICAL* List ANY specific fire alarm vendors/installers listed as "required", "approved", or "suggested". Return empty list [] if none found.
+- required_manufacturers: *CRITICAL* List ANY specific fire alarm equipment manufacturers listed as "required", "approved", or "basis of design". Return empty list [] if none found.
+- deal_breakers: List specific constraints that might prevent bidding (e.g., "Union Labor Required", "PLA", "Prevailing Wage" if clearly stated).
+- scope_score: Rate the attractiveness of this project (0-100):
+    * 0   = No Fire Alarm work required.
+    * 50  = Fire Alarm is required, but no specific manufacturers or vendors are listed (standard bid).
+    * 75  = Fire Alarm required + Specific Manufacturers listed (higher chance if we match).
+    * 90+ = Fire Alarm required + Specific Vendors listed (very high chance if we are on the list).
+    * Deduct points for "existing" systems or complex "modifications" if they look messy.
 - Focus ONLY on fire alarm / detection / notification / special systems scope
 
 Return ONLY valid JSON, no markdown fences."""
@@ -555,24 +563,48 @@ def _call_gemini(images, context=""):
         "generationConfig": {"temperature": 0.1},
     }
 
-    try:
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-        res = req.post(url, params={"key": api_key}, json=payload, timeout=120)
-        res.raise_for_status()
-        data = res.json()
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
-        # Strip markdown fences if Gemini wraps them
-        text = text.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```(?:json)?\s*", "", text)
-            text = re.sub(r"\s*```$", "", text)
-        return json.loads(text)
-    except json.JSONDecodeError:
-        logger.warning("Gemini returned non-JSON, using raw text as notes")
-        return {"notes": text}
-    except Exception as e:
-        logger.warning(f"Gemini call failed: {e}")
-        return None
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    
+    max_retries = 5
+    base_delay = 2.0
+
+    for attempt in range(max_retries):
+        try:
+            res = req.post(url, params={"key": api_key}, json=payload, timeout=120)
+            res.raise_for_status()
+            data = res.json()
+            # If successful, parse and return
+            if "candidates" in data and data["candidates"]:
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                # Strip markdown fences if Gemini wraps them
+                text = text.strip()
+                if text.startswith("```"):
+                    text = re.sub(r"^```(?:json)?\s*", "", text)
+                    text = re.sub(r"\s*```$", "", text)
+                try:
+                    return json.loads(text)
+                except json.JSONDecodeError:
+                    logger.warning("Gemini returned non-JSON, using raw text as notes")
+                    return {"notes": text}
+            else:
+                 logger.warning(f"Gemini response structure unexpected: {data}")
+                 return None
+
+        except req.exceptions.HTTPError as e:
+            if e.response.status_code == 429:
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(f"Gemini rate limit hit (429). Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(delay)
+                continue
+            else:
+                logger.error(f"Gemini HTTP error: {e}")
+                return None
+        except Exception as e:
+            logger.warning(f"Gemini call failed: {e}")
+            return None
+    
+    logger.error("Gemini failed after max retries due to rate limiting.")
+    return None
 
 
 def _heuristic_analysis(all_text):
@@ -642,21 +674,7 @@ def _compute_badges(analysis):
     return badges
 
 
-def _compute_bid_chance(analysis):
-    if analysis.get("deal_breakers"):
-        return "low"
-    if not analysis.get("requires_fire_alarm"):
-        return "low"
-    score = analysis.get("scope_score", 0)
-    if analysis.get("required_vendors") or analysis.get("required_manufacturers"):
-        if score >= 60:
-            return "medium"
-        return "low"
-    if score >= 60:
-        return "high"
-    if score >= 30:
-        return "medium"
-    return "low"
+
 
 
 # ---------------------------------------------------------------------------
@@ -905,7 +923,7 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
     lead = matched_lead
     if lead:
         badges = _compute_badges(aggregate)
-        bid_chance = _compute_bid_chance(aggregate)
+
 
         # Detect addendums
         addendums = _detect_addendums(project_dir)
@@ -919,7 +937,7 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
         lead["knowledge_notes"] = "\n".join(aggregate["notes"])[:2000]
         lead["knowledge_score"] = aggregate["scope_score"]
         lead["knowledge_badges"] = badges
-        lead["knowledge_bid_chance"] = bid_chance
+
         lead["knowledge_addendums"] = addendums[:10]  # Limit to 10 most recent
         lead["knowledge_file_count"] = len(plan_files) + len(spec_files) + len(other_files)
 
@@ -1102,18 +1120,15 @@ def rank_all_projects():
         return []
 
     # Sort by: bid_chance (high first), then score (descending)
-    chance_order = {"high": 0, "medium": 1, "low": 2}
-    scanned.sort(key=lambda l: (
-        chance_order.get(l.get("knowledge_bid_chance", "low"), 3),
-        -(l.get("knowledge_score", 0)),
-    ))
+    # Sort by score (descending)
+    scanned.sort(key=lambda l: -(l.get("knowledge_score", 0)))
 
     return [
         {
             "id": l.get("id"),
             "name": l.get("name"),
             "score": l.get("knowledge_score", 0),
-            "bid_chance": l.get("knowledge_bid_chance", "low"),
+
             "badges": l.get("knowledge_badges", []),
             "system_type": l.get("knowledge_system_type", "unknown"),
         }

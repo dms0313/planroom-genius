@@ -1,2 +1,3 @@
-2026/02/09-22:42:20.601 8430 Creating DB C:\Users\dms03\Development\planroom-genius\backend\playwright_profile\Default\shared_proto_db\metadata since it was missing.
-2026/02/09-22:42:20.606 8430 Reusing MANIFEST C:\Users\dms03\Development\planroom-genius\backend\playwright_profile\Default\shared_proto_db\metadata/MANIFEST-000001
+2026/02/11-14:00:41.772 289c Reusing MANIFEST C:\Users\dms03\Development\planroom-genius\backend\playwright_profile\Default\shared_proto_db\metadata/MANIFEST-000001
+2026/02/11-14:00:41.779 289c Recovering log #3
+2026/02/11-14:00:41.779 289c Reusing old log C:\Users\dms03\Development\planroom-genius\backend\playwright_profile\Default\shared_proto_db\metadata/000003.log 

@@ -20,7 +20,7 @@ except ImportError:
 
 # Import Google Drive service
 try:
-    from services.google_drive import upload_and_cleanup, should_use_gdrive, is_authenticated, get_status, authenticate
+    from services.google_drive import upload_and_cleanup, should_use_gdrive, is_authenticated, get_status, authenticate, check_file_exists
     GDRIVE_AVAILABLE = True
     print(f"[BC] Google Drive module loaded. Available: {GDRIVE_AVAILABLE}")
 except ImportError as e:
@@ -137,6 +137,48 @@ class BuildingConnectedTableScraper:
         print("[BC] Browser initialized successfully")
         print("[BC] NOTE: If not logged in, you'll need to log in manually once.")
 
+    async def _attempt_auto_login(self):
+        """Attempt to pass the Autodesk login screen using saved browser credentials."""
+        log_status("Attempting auto-login with saved credentials...")
+        try:
+            # Check for email field
+            email_input = await self.page.query_selector('input[id="userName"]')
+            if email_input:
+                val = await email_input.get_attribute('value')
+                if val:
+                    log_status(f"Found pre-filled email: {val}")
+                    # Click Next
+                    next_btn = await self.page.query_selector('button[id="verify_user_btn"]')
+                    if next_btn:
+                        log_status("Clicking 'Next' button...")
+                        await next_btn.click()
+                        await asyncio.sleep(5)  # Wait for password field animation
+                else:
+                    log_status("Email field found but empty.")
+
+            # Check for password field (might be on same page or next)
+            # We assume browser autofill might fill it, or we just need to click 'Sign In'
+            # Sometimes password field ID is 'password'
+            # Submit button often has id 'btnSubmit'
+            
+            sign_in_btn = await self.page.query_selector('button[id="btnSubmit"]')
+            if sign_in_btn:
+                log_status("Found 'Sign In' button. Clicking...")
+                await sign_in_btn.click()
+                await asyncio.sleep(5)
+                
+            # Check if we made it
+            if 'login' not in self.page.url and 'signin' not in self.page.url:
+                log_status("Auto-login appears successful!")
+                return True
+            else:
+                log_status("Auto-login finished but still on login page.")
+                return False
+
+        except Exception as e:
+            log_status(f"Auto-login failed: {e}")
+            return False
+
     async def navigate_to_pipeline(self):
         """Navigate to BuildingConnected bid board"""
         log_status("Navigating to pipeline...")
@@ -156,27 +198,37 @@ class BuildingConnectedTableScraper:
         if 'login' in current_url or 'signin' in current_url:
             log_status("=" * 40)
             log_status("LOGIN REQUIRED")
-            log_status("Please log in to BuildingConnected in the browser window")
-            log_status("=" * 40)
+            
+            # Attempt auto-login first
+            await self._attempt_auto_login()
+            
+            # Re-check URL
+            if 'login' in self.page.url or 'signin' in self.page.url:
+                log_status("Please log in to BuildingConnected in the browser window")
+                log_status("=" * 40)
 
-            # Wait for user to log in (check every 3 seconds for up to 5 minutes)
-            max_wait = 300  # 5 minutes
-            waited = 0
-            while waited < max_wait:
-                await asyncio.sleep(3)
-                waited += 3
+                # Wait for user to log in (check every 3 seconds for up to 5 minutes)
+                max_wait = 300  # 5 minutes
+                waited = 0
+                while waited < max_wait:
+                    await asyncio.sleep(3)
+                    waited += 3
+                    current_url = self.page.url
+                    if 'login' not in current_url and 'signin' not in current_url:
+                        log_status("Login detected! Continuing...")
+                        break
+                    
+                    # Try auto-login again every 15 seconds if we are still stuck
+                    if waited % 15 == 0:
+                        log_status(f"Still waiting for login... ({waited}s)")
+                        # Optional: retry clicking buttons? Maybe dangerous if user is typing.
+                        # Let's just wait.
+
+                # Check one more time
                 current_url = self.page.url
-                if 'login' not in current_url and 'signin' not in current_url:
-                    log_status("Login detected! Continuing...")
-                    break
-                if waited % 15 == 0:
-                    log_status(f"Still waiting for login... ({waited}s)")
-
-            # Check one more time
-            current_url = self.page.url
-            if 'login' in current_url or 'signin' in current_url:
-                log_status("ERROR: Login timeout - please try again")
-                raise Exception("Login timeout")
+                if 'login' in current_url or 'signin' in current_url:
+                    log_status("ERROR: Login timeout - please try again")
+                    raise Exception("Login timeout")
 
         log_status("Waiting for virtual table to load...")
         await asyncio.sleep(3)
@@ -1223,6 +1275,37 @@ class BuildingConnectedTableScraper:
         Download files for a specific project (Pass 2) using Playwright.
         """
         print(f"\n[BC] [Pass 2] Downloading files for: {project['name']}")
+
+        # PRE-CHECK: Check if file already exists in Google Drive
+        if GDRIVE_AVAILABLE and should_use_gdrive():
+            try:
+                # Construct expected filename same as we do during upload
+                # Note: BuildingConnected downloads usually don't have a predictable name until downloaded,
+                # BUT we rename them to `ProjectName.zip` (or similar) before uploading.
+                # So we check for that renamed file.
+                safe_name = "".join(c for c in project['name'][:60] if c.isalnum() or c in ' -_').strip()
+                if not safe_name:
+                    safe_name = "project"
+                
+                # We assume .zip since BC always downloads a zip
+                expected_filename = f"{safe_name}.zip"
+                
+                print(f"[BC]    Checking for existing file in Drive: {expected_filename}...")
+                # Also check for _1.zip, _2.zip? No, just the main one is enough to skip.
+                existing = check_file_exists(expected_filename, source='BuildingConnected')
+                
+                if existing:
+                    print(f"[BC]    Found existing file in Drive! Skipping download.")
+                    project['gdrive_file_id'] = existing.get('file_id')
+                    project['gdrive_link'] = existing.get('web_link')
+                    project['gdrive_download_link'] = existing.get('download_link')
+                    project['download_link'] = existing.get('web_link')
+                    project['storage_type'] = 'gdrive'
+                    return True
+                else:
+                    print("[BC]    File not found in Drive, proceeding with download.")
+            except Exception as e:
+                print(f"[BC]    Error in Drive pre-check: {e}")
 
         try:
             if not project.get('name'):

@@ -203,6 +203,10 @@ def parse_agent_result(raw_result):
 
     return []
 
+BACKUP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "backups")
+if not os.path.exists(BACKUP_DIR):
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+
 def deduplicate_database():
     """
     Clean up existing duplicates in the database by merging them.
@@ -260,7 +264,8 @@ def deduplicate_database():
     # Save deduplicated leads
     try:
         # Backup first
-        backup_file = DB_FILE.replace('.json', f'_before_dedup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
+        backup_filename = f"leads_db_before_dedup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        backup_file = os.path.join(BACKUP_DIR, backup_filename)
         with open(backup_file, 'w') as f:
             json.dump(existing, f, indent=2)
         logger.info(f"Created backup: {backup_file}")
@@ -294,7 +299,8 @@ def clear_all_leads():
         count = len(existing)
         try:
             # Backup before clearing
-            backup_file = DB_FILE.replace('.json', f'_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
+            backup_filename = f"leads_db_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            backup_file = os.path.join(BACKUP_DIR, backup_filename)
             with open(backup_file, 'w') as f:
                 json.dump(existing, f, indent=2)
             logger.info(f"Created backup: {backup_file}")

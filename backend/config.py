@@ -150,7 +150,7 @@ class ScraperConfig:
     # Browser Settings
     # Default to HEADLESS=True on Linux (Pi), False on Windows unless override
     _is_linux = platform.system() == 'Linux'
-    HEADLESS = os.getenv("HEADLESS", str(_is_linux)).lower() == "true"
+    HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
     VIEWPORT_WIDTH = 1280
     VIEWPORT_HEIGHT = 720
 

@@ -51,15 +51,30 @@ check_pi5() {
 check_64bit() {
     echo -n "Checking OS architecture... "
     ARCH=$(uname -m)
-    if [[ "$ARCH" == "aarch64" ]] || [[ "$ARCH" == "arm64" ]]; then
-        echo -e "${GREEN}64-bit OS${NC}"
+    DPKG_ARCH=$(dpkg --print-architecture 2>/dev/null || echo "unknown")
+    KERNEL_BITS=$(getconf LONG_BIT 2>/dev/null || echo "unknown")
+
+    echo ""
+    echo "  uname -m: $ARCH"
+    echo "  dpkg arch: $DPKG_ARCH"
+    echo "  kernel bits: $KERNEL_BITS"
+
+    # Check multiple indicators for 64-bit
+    if [[ "$ARCH" == "aarch64" ]] || [[ "$ARCH" == "arm64" ]] || \
+       [[ "$DPKG_ARCH" == "arm64" ]] || [[ "$KERNEL_BITS" == "64" ]]; then
+        echo -e "  ${GREEN}64-bit OS confirmed${NC}"
     else
-        echo -e "${RED}32-bit OS detected${NC}"
+        echo -e "  ${YELLOW}Warning: Could not confirm 64-bit OS${NC}"
         echo ""
-        echo "ERROR: 64-bit Raspberry Pi OS is required for optimal performance."
-        echo "Please reinstall with Raspberry Pi OS (64-bit) from:"
-        echo "  https://www.raspberrypi.com/software/"
-        exit 1
+        echo "  Your system reports: $ARCH / $DPKG_ARCH / ${KERNEL_BITS}-bit"
+        echo "  Pi 5 requires 64-bit for optimal performance."
+        echo ""
+        echo "  Continue anyway? (y/n)"
+        read -r response
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            echo "Setup cancelled."
+            exit 1
+        fi
     fi
 }
 

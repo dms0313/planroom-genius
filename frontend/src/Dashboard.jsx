@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen } from 'lucide-react';
 
 export default function LeadDashboard() {
   const [leads, setLeads] = useState([]);
@@ -38,11 +38,15 @@ export default function LeadDashboard() {
   // Knowledge scan state
   const [knowledgeStatus, setKnowledgeStatus] = useState(null);
   const [knowledgeScanning, setKnowledgeScanning] = useState(false);
-  const [knowledgeSort, setKnowledgeSort] = useState('score'); // score, chance, name
   const [knowledgeFilter, setKnowledgeFilter] = useState('all'); // all, scanned, unscanned
-  const [knowledgeExpanded, setKnowledgeExpanded] = useState(null); // expanded project id
   const [pointToFileModal, setPointToFileModal] = useState(null); // {lead_id, files}
   const [pointToFileLoading, setPointToFileLoading] = useState(false);
+  const [scanningIds, setScanningIds] = useState(new Set());
+  const [folderBrowserModal, setFolderBrowserModal] = useState(false);
+  const [folderBrowserPath, setFolderBrowserPath] = useState('');
+  const [folderBrowserItems, setFolderBrowserItems] = useState([]);
+  const [folderBrowserLoading, setFolderBrowserLoading] = useState(false);
+
 
   // Form state for add/edit
   const emptyForm = {
@@ -185,13 +189,26 @@ export default function LeadDashboard() {
   };
 
   const triggerSingleScan = async (leadId) => {
+    setScanningIds(prev => new Set(prev).add(leadId));
     try {
       await fetch(`${API_BASE}/knowledge/scan/${leadId}`, { method: 'POST' });
       // Poll briefly
       setTimeout(() => fetchLeads(), 5000);
-      setTimeout(() => fetchLeads(), 12000);
+      setTimeout(() => {
+        fetchLeads();
+        setScanningIds(prev => {
+          const next = new Set(prev);
+          next.delete(leadId);
+          return next;
+        });
+      }, 12000);
     } catch (e) {
       console.error("Failed to trigger single scan", e);
+      setScanningIds(prev => {
+        const next = new Set(prev);
+        next.delete(leadId);
+        return next;
+      });
     }
   };
 
@@ -392,6 +409,52 @@ export default function LeadDashboard() {
     }
   };
 
+  const triggerFolderPicker = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/system/pick-folder`, { method: 'POST' });
+      const data = await res.json();
+      if (data.path) {
+        setFormData(prev => ({ ...prev, files_link: data.path }));
+      }
+    } catch (e) {
+      console.error("Failed to pick folder", e);
+    }
+  };
+
+  const openFolderBrowser = async () => {
+    setFolderBrowserModal(true); setFolderBrowserLoading(true);
+    try {
+      const r = await fetch(API_BASE + '/browse-directory', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: '' })
+      });
+      const d = await r.json();
+      setFolderBrowserPath(d.current || ''); setFolderBrowserItems(d.items || []);
+    } catch (e) { console.error('Fail:', e); }
+    setFolderBrowserLoading(false);
+  };
+  const browseTo = async (p) => {
+    setFolderBrowserLoading(true);
+    try {
+      const r = await fetch(API_BASE + '/browse-directory', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: p })
+      });
+      const d = await r.json();
+      setFolderBrowserPath(d.current || ''); setFolderBrowserItems(d.items || []);
+    } catch (e) { console.error('Fail:', e); alert('Access denied'); }
+    setFolderBrowserLoading(false);
+  };
+  const selectFolder = () => {
+    if (folderBrowserPath) setFormData(prev => ({ ...prev, files_link: folderBrowserPath }));
+    setFolderBrowserModal(false);
+  };
+  const goUpDirectory = () => {
+    if (!folderBrowserPath) { browseTo(''); return; }
+    const ps = folderBrowserPath.split(/[\\\/]/).filter(Boolean);
+    if (ps.length <= 1) browseTo('');
+    else { ps.pop(); const isWin = folderBrowserPath.includes(String.fromCharCode(92)); browseTo(ps.join(isWin ? String.fromCharCode(92) : '/') || '/'); }
+  };
   // Poll logs
   useEffect(() => {
     let interval;
@@ -430,26 +493,24 @@ export default function LeadDashboard() {
     try { const d = new Date(bidDate); const t = new Date(); t.setHours(0, 0, 0, 0); return d < t; } catch { return false; }
   };
 
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Derive unique site names for filter buttons
   const uniqueSites = [...new Set(leads.map(l => l.site).filter(Boolean))];
-  const filteredLeads = siteFilter === 'all' ? leads : leads.filter(l => l.site === siteFilter);
 
-  // Knowledge sorted/filtered leads
-  const getKnowledgeLeads = () => {
-    let filtered = [...leads];
-    if (knowledgeFilter === 'scanned') filtered = filtered.filter(l => l.knowledge_last_scanned);
-    else if (knowledgeFilter === 'unscanned') filtered = filtered.filter(l => !l.knowledge_last_scanned);
-
-    const chanceOrder = { high: 0, medium: 1, low: 2 };
-    if (knowledgeSort === 'score') {
-      filtered.sort((a, b) => (b.knowledge_score || 0) - (a.knowledge_score || 0));
-    } else if (knowledgeSort === 'chance') {
-      filtered.sort((a, b) => (chanceOrder[a.knowledge_bid_chance] ?? 3) - (chanceOrder[b.knowledge_bid_chance] ?? 3));
-    } else if (knowledgeSort === 'name') {
-      filtered.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const filteredLeads = useMemo(() => {
+    let data = siteFilter === 'all' ? leads : leads.filter(l => l.site === siteFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      data = data.filter(l =>
+        (l.name && l.name.toLowerCase().includes(q)) ||
+        (l.company && l.company.toLowerCase().includes(q)) ||
+        (l.gc && l.gc.toLowerCase().includes(q)) ||
+        (l.description && l.description.toLowerCase().includes(q))
+      );
     }
-    return filtered;
-  };
+    return data;
+  }, [leads, siteFilter, searchQuery]);
 
   // Score color
   const scoreColor = (score) => {
@@ -462,11 +523,7 @@ export default function LeadDashboard() {
     if (score >= 30) return 'bg-yellow-500';
     return 'bg-red-500';
   };
-  const chanceColor = (chance) => {
-    if (chance === 'high') return 'bg-green-500/20 text-green-400 border-green-500/30';
-    if (chance === 'medium') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-    return 'bg-red-500/20 text-red-400 border-red-500/30';
-  };
+
   const badgeColor = (badge) => {
     if (badge === 'NO FA') return 'bg-red-500/20 text-red-400 border-red-500/30';
     if (badge === 'DEAL BREAKER') return 'bg-red-600/20 text-red-300 border-red-600/30';
@@ -485,6 +542,7 @@ export default function LeadDashboard() {
 
   const LeadTable = ({ title, data, showSiteFilter }) => {
     const [currentPage, setCurrentPage] = useState(1);
+    const [expandedLeadId, setExpandedLeadId] = useState(null);
     const itemsPerPage = 50;
     const totalPages = Math.ceil(data.length / itemsPerPage);
     useEffect(() => { setCurrentPage(1); }, [data.length]);
@@ -499,15 +557,21 @@ export default function LeadDashboard() {
               {title}
               <span className="bg-slate-800 text-slate-400 text-xs px-2 py-1 rounded-full">{data.length}</span>
             </h2>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <span>Page {currentPage} of {totalPages}</span>
-                <div className="flex gap-1">
-                  <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronLeft size={16} /></button>
-                  <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronRight size={16} /></button>
+            <div className="flex items-center gap-4">
+              <button onClick={triggerKnowledgeScan} disabled={knowledgeScanning} className="flex items-center gap-1.5 px-3 py-1 bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-600/30 rounded-lg text-xs font-semibold transition">
+                {knowledgeScanning ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
+                {knowledgeScanning ? 'Scanning...' : 'AI Scan All'}
+              </button>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <span>Page {currentPage} of {totalPages}</span>
+                  <div className="flex gap-1">
+                    <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronLeft size={16} /></button>
+                    <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronRight size={16} /></button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
           {showSiteFilter && uniqueSites.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
@@ -539,72 +603,111 @@ export default function LeadDashboard() {
                 const highlightClass = getHighlightBg(lead.highlight);
                 const strikeClass = lead.strikethrough ? 'opacity-50' : '';
                 return (
-                  <tr key={lead.id || i} className={`hover:bg-slate-800/30 transition group ${expired ? 'opacity-40' : ''} ${highlightClass} ${strikeClass}`}>
-                    {/* Status/Highlight column - LEFT side */}
-                    <td className="px-2 py-2">
-                      <div className="flex gap-0.5">
-                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700 hover:bg-green-600'}`} title="Green"><Circle size={8} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
-                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'yellow' ? null : 'yellow')} className={`p-1 rounded ${lead.highlight === 'yellow' ? 'bg-yellow-600' : 'bg-slate-700 hover:bg-yellow-600'}`} title="Yellow"><Circle size={8} className="text-yellow-400" fill={lead.highlight === 'yellow' ? 'currentColor' : 'none'} /></button>
-                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'red' ? null : 'red')} className={`p-1 rounded ${lead.highlight === 'red' ? 'bg-red-600' : 'bg-slate-700 hover:bg-red-600'}`} title="Red"><Circle size={8} className="text-red-400" fill={lead.highlight === 'red' ? 'currentColor' : 'none'} /></button>
-                        <button onClick={() => toggleLeadStyle(lead, 'strikethrough', !lead.strikethrough)} className={`p-1 rounded ${lead.strikethrough ? 'bg-slate-500' : 'bg-slate-700 hover:bg-slate-500'}`} title="Mark reviewed"><Minus size={8} className="text-slate-300" /></button>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors max-w-xs">
-                      <button onClick={() => setDescriptionPopup(lead)} className="text-left hover:text-orange-400 transition-colors" title="Click for description">
-                        <div className="truncate max-w-[200px]">{lead.name}</div>
-                      </button>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
-                        {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
-                        {lead.sprinklered && <span className="text-[10px] bg-red-500/10 text-red-500 px-1.5 py-0.5 rounded border border-red-500/20">SPRINKLERED</span>}
-                        {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
-                          <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor(b)}`}>{b}</span>
-                        ))}
-                        {lead.knowledge_score != null && lead.knowledge_score > 0 && (
-                          <span className={`text-[10px] font-mono font-bold ${scoreColor(lead.knowledge_score)}`}>{lead.knowledge_score}</span>
-                        )}
-                        <span className="text-[10px] text-slate-600">{lead.site}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2">
-                      <button onClick={() => setCompanyPopup(lead)} className="flex flex-col text-left hover:bg-slate-800/50 p-1 rounded transition-colors w-full" title="Click for details">
-                        <span className="text-slate-300 truncate max-w-[150px] hover:text-orange-400 transition-colors">{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
-                        <span className="text-[10px] text-slate-500 truncate max-w-[150px]">{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
-                      </button>
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-slate-300 truncate max-w-[150px]">{lead.contact_name !== "N/A" ? lead.contact_name : <span className="text-slate-600 italic">-</span>}</span>
-                        {lead.contact_email && (
-                          <a href={`mailto:${lead.contact_email}`} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-orange-400 transition-colors">
-                            <Mail size={10} /><span className="truncate max-w-[140px]">{lead.contact_email}</span>
-                          </a>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 text-slate-400 truncate max-w-[120px]" title={lead.location}>{lead.location || "N/A"}</td>
-                    <td className={`px-4 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{lead.bid_date}</td>
-                    <td className="px-4 py-2 text-center">
-                      <div className="flex justify-center gap-1">
-                        {lead.gdrive_link ? (
-                          <a href={lead.gdrive_link} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-blue-500 hover:bg-blue-400 text-white rounded transition-colors flex items-center gap-1" title="View on Google Drive"><Cloud size={12} /></a>
-                        ) : lead.files_link ? (
-                          <button onClick={() => fetch(`${API_BASE}/open-folder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: lead.files_link }) })} className="p-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors" title={`Open Local Folder: ${lead.files_link}`}><ExternalLink size={12} /></button>
-                        ) : lead.local_file_path ? (
-                          <a href={`${API_BASE}${lead.local_file_path}`} download className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors" title="Download Local File"><Download size={12} /></a>
-                        ) : (
-                          <span className="text-slate-600 text-[10px]">-</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      <div className="flex justify-center gap-1">
-                        <button onClick={() => triggerSingleScan(lead.id)} className="p-1.5 bg-slate-700 hover:bg-violet-600 text-slate-400 hover:text-white rounded transition-colors" title="Force Knowledge Scan"><Brain size={12} /></button>
-                        <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
-                        <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
-                      </div>
-                    </td>
-                  </tr>
+                  <React.Fragment key={lead.id || i}>
+                    <tr className={`hover:bg-slate-800/30 transition group ${expired ? 'opacity-40' : ''} ${highlightClass} ${strikeClass}`}>
+                      {/* Status/Highlight column - LEFT side */}
+                      <td className="px-2 py-2">
+                        <div className="flex gap-0.5">
+                          <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700 hover:bg-green-600'}`} title="Green"><Circle size={8} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
+                          <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'yellow' ? null : 'yellow')} className={`p-1 rounded ${lead.highlight === 'yellow' ? 'bg-yellow-600' : 'bg-slate-700 hover:bg-yellow-600'}`} title="Yellow"><Circle size={8} className="text-yellow-400" fill={lead.highlight === 'yellow' ? 'currentColor' : 'none'} /></button>
+                          <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'red' ? null : 'red')} className={`p-1 rounded ${lead.highlight === 'red' ? 'bg-red-600' : 'bg-slate-700 hover:bg-red-600'}`} title="Red"><Circle size={8} className="text-red-400" fill={lead.highlight === 'red' ? 'currentColor' : 'none'} /></button>
+                          <button onClick={() => toggleLeadStyle(lead, 'strikethrough', !lead.strikethrough)} className={`p-1 rounded ${lead.strikethrough ? 'bg-slate-500' : 'bg-slate-700 hover:bg-slate-500'}`} title="Mark reviewed"><Minus size={8} className="text-slate-300" /></button>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors max-w-xs">
+                        <button onClick={() => setExpandedLeadId(expandedLeadId === lead.id ? null : lead.id)} className="text-left hover:text-orange-400 transition-colors flex items-center gap-2" title="Click to expand">
+                          {expandedLeadId === lead.id ? <ChevronUp size={14} className="text-orange-400" /> : <ChevronDown size={14} className="text-slate-500" />}
+                          <div className="truncate max-w-[200px]">{lead.name}</div>
+                        </button>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
+                          {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
+                          {lead.knowledge_score != null && lead.knowledge_score > 0 && (
+                            <span className={`text-[10px] font-mono font-bold ${scoreColor(lead.knowledge_score)}`}>{lead.knowledge_score}</span>
+                          )}
+                          <span className="text-[10px] text-slate-600">{lead.site}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <button onClick={() => setCompanyPopup(lead)} className="flex flex-col text-left hover:bg-slate-800/50 p-1 rounded transition-colors w-full" title="Click for details">
+                          <span className="text-slate-300 truncate max-w-[150px] hover:text-orange-400 transition-colors">{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
+                          <span className="text-[10px] text-slate-500 truncate max-w-[150px]">{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
+                        </button>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-slate-300 truncate max-w-[150px]">{lead.contact_name !== "N/A" ? lead.contact_name : <span className="text-slate-600 italic">-</span>}</span>
+                          {lead.contact_email && (
+                            <a href={`mailto:${lead.contact_email}`} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-orange-400 transition-colors">
+                              <Mail size={10} /><span className="truncate max-w-[140px]">{lead.contact_email}</span>
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 text-slate-400 truncate max-w-[120px]" title={lead.location}>{lead.location || "N/A"}</td>
+                      <td className={`px-4 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{lead.bid_date}</td>
+                      <td className="px-4 py-2 text-center">
+                        <div className="flex justify-center gap-1">
+                          {lead.gdrive_link ? (
+                            <a href={lead.gdrive_link} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-blue-500 hover:bg-blue-400 text-white rounded transition-colors flex items-center gap-1" title="View on Google Drive"><Cloud size={12} /></a>
+                          ) : lead.files_link ? (
+                            <button onClick={() => fetch(`${API_BASE}/open-folder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: lead.files_link }) })} className="p-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors" title={`Open Local Folder: ${lead.files_link}`}><ExternalLink size={12} /></button>
+                          ) : lead.local_file_path ? (
+                            <a href={`${API_BASE}${lead.local_file_path}`} download className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors" title="Download Local File"><Download size={12} /></a>
+                          ) : (
+                            <span className="text-slate-600 text-[10px]">-</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 text-center">
+                        <div className="flex justify-center gap-1">
+                          <button onClick={() => triggerSingleScan(lead.id)} disabled={scanningIds.has(lead.id)} className="p-1.5 bg-slate-700 hover:bg-violet-600 text-slate-400 hover:text-white rounded transition-colors disabled:opacity-70 disabled:cursor-not-allowed" title="Force Knowledge Scan">
+                            {scanningIds.has(lead.id) ? (
+                              <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            ) : (
+                              <Brain size={12} />
+                            )}
+                          </button>
+                          <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
+                          <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedLeadId === lead.id && (
+                      <tr key={`expanded-${lead.id}`} className="bg-slate-800/40 border-l-4 border-orange-500 animate-in slide-in-from-left-2 duration-200">
+                        <td colSpan="8" className="px-6 py-4">
+                          <div className="flex flex-col gap-4">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                                  {lead.name}
+                                  <span className="text-xs font-normal text-slate-500">Project Summary</span>
+                                </h4>
+                                <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
+                                  {lead.knowledge_notes ? (
+                                    lead.knowledge_notes.split('\n')[0].substring(0, 300) + (lead.knowledge_notes.length > 300 ? '...' : '')
+                                  ) : lead.description ? (
+                                    lead.description.substring(0, 300) + (lead.description.length > 300 ? '...' : '')
+                                  ) : <span className="text-slate-500 italic">No summary available. Run AI scan for details.</span>}
+                                </p>
+                                <div className="flex gap-2 mt-3 flex-wrap">
+                                  {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
+                                    <span key={idx} className={`text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)}`}>{b}</span>
+                                  ))}
+                                  {lead.sprinklered && <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full border border-red-500/20">Sprinklered</span>}
+                                </div>
+                              </div>
+                              <div>
+                                <button onClick={() => setDescriptionPopup(lead)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
+                                  <Eye size={14} /> View Full Details
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
               {data.length === 0 && (
@@ -613,17 +716,19 @@ export default function LeadDashboard() {
             </tbody>
           </table>
         </div>
-        {totalPages > 1 && (
-          <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center text-xs text-slate-400">
-            <span>Showing {paginatedData.length} of {data.length} leads</span>
-            <div className="flex gap-2">
-              <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Previous</button>
-              <span className="flex items-center px-2">Page {currentPage} of {totalPages}</span>
-              <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next</button>
+        {
+          totalPages > 1 && (
+            <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center text-xs text-slate-400">
+              <span>Showing {paginatedData.length} of {data.length} leads</span>
+              <div className="flex gap-2">
+                <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Previous</button>
+                <span className="flex items-center px-2">Page {currentPage} of {totalPages}</span>
+                <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next</button>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )
+        }
+      </div >
     );
   };
 
@@ -640,6 +745,16 @@ export default function LeadDashboard() {
               Planroom<span className="text-[#ed2028]">Genius</span> v2.0
             </h1>
             <div className="flex gap-2 items-center">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search leads..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-slate-800 text-slate-200 pl-10 pr-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-600 w-64"
+                />
+              </div>
               <button onClick={openAddModal} className="px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-500 transition flex items-center gap-1.5"><Plus size={16} />Add Lead</button>
               <button onClick={fetchLeads} disabled={loading} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-400 text-sm font-semibold hover:bg-slate-700 transition">{loading ? '...' : 'Refresh'}</button>
               <button onClick={() => { setShowConsole(!showConsole); if (!showConsole) fetchConsoleLogs(); }} className={`p-2 rounded-lg transition flex items-center gap-1.5 text-sm ${showConsole ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`} title="Toggle Console">
@@ -688,9 +803,6 @@ export default function LeadDashboard() {
           <button onClick={() => setActiveTab('bid')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${activeTab === 'bid' ? 'bg-[#ed2028] text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
             <Building2 size={16} />Bid Board
           </button>
-          <button onClick={() => setActiveTab('knowledge')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${activeTab === 'knowledge' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
-            <Brain size={16} />Knowledge
-          </button>
           <button onClick={() => setActiveTab('takeoff')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${activeTab === 'takeoff' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
             <Zap size={16} />Takeoff
           </button>
@@ -699,177 +811,6 @@ export default function LeadDashboard() {
         {/* =================== BID BOARD TAB =================== */}
         <div className={activeTab === 'bid' ? '' : 'hidden'}>
           <LeadTable title="All Active Opportunities" data={filteredLeads} showSiteFilter={true} />
-        </div>
-
-        {/* =================== KNOWLEDGE TAB =================== */}
-        <div className={activeTab === 'knowledge' ? '' : 'hidden'}>
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
-            {/* Knowledge Header */}
-            <div className="p-6 border-b border-slate-800">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                    <Brain className="text-purple-400" size={22} />Knowledge Scanner
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-1">AI-powered fire alarm scope analysis of downloaded project documents</p>
-                </div>
-                <button onClick={triggerKnowledgeScan} disabled={knowledgeScanning} className="px-5 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold disabled:opacity-50 flex items-center gap-2 transition">
-                  {knowledgeScanning ? (
-                    <><svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Scanning...</>
-                  ) : (<><Zap size={16} />Run Knowledge Scan</>)}
-                </button>
-              </div>
-
-              {/* Status bar */}
-              <div className="flex items-center gap-4 text-xs">
-                <span className={`flex items-center gap-1.5 ${knowledgeScanning ? 'text-purple-400' : 'text-slate-500'}`}>
-                  {knowledgeScanning && <span className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></span>}
-                  {knowledgeScanning ? `Scanning: ${knowledgeStatus?.current_project || '...'}` : 'Idle'}
-                </span>
-                <span className="text-slate-600">|</span>
-                <span className="text-slate-400">Scanned: <span className="text-white font-semibold">{knowledgeStatus?.scanned || 0}</span></span>
-                <span className="text-slate-400">Skipped: <span className="text-white font-semibold">{knowledgeStatus?.skipped || 0}</span></span>
-                <span className="text-slate-400">Total: <span className="text-white font-semibold">{knowledgeStatus?.total || 0}</span></span>
-                {knowledgeStatus?.last_error && <span className="text-red-400 truncate max-w-[300px]">Error: {knowledgeStatus.last_error}</span>}
-              </div>
-
-              {/* Sort & filter controls */}
-              <div className="flex items-center gap-3 mt-4">
-                <span className="text-xs text-slate-500 uppercase tracking-wide">Sort:</span>
-                {[['score', 'Score'], ['chance', 'Bid Chance'], ['name', 'Name']].map(([val, label]) => (
-                  <button key={val} onClick={() => setKnowledgeSort(val)} className={`px-3 py-1 rounded text-xs font-semibold transition ${knowledgeSort === val ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{label}</button>
-                ))}
-                <span className="text-slate-700 mx-1">|</span>
-                <span className="text-xs text-slate-500 uppercase tracking-wide">Filter:</span>
-                {[['all', 'All'], ['scanned', 'Scanned'], ['unscanned', 'Not Scanned']].map(([val, label]) => (
-                  <button key={val} onClick={() => setKnowledgeFilter(val)} className={`px-3 py-1 rounded text-xs font-semibold transition ${knowledgeFilter === val ? 'bg-purple-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{label}</button>
-                ))}
-              </div>
-            </div>
-
-            {/* Knowledge Project List */}
-            <div className="divide-y divide-slate-800/50">
-              {getKnowledgeLeads().map((lead) => {
-                const expanded = knowledgeExpanded === lead.id;
-                const scanned = !!lead.knowledge_last_scanned;
-                return (
-                  <div key={lead.id} className="hover:bg-slate-800/20 transition">
-                    {/* Main row */}
-                    <div className="px-6 py-4 flex items-center gap-4 cursor-pointer" onClick={() => setKnowledgeExpanded(expanded ? null : lead.id)}>
-                      {/* Score gauge */}
-                      <div className="w-14 h-14 flex-shrink-0 relative">
-                        <svg viewBox="0 0 36 36" className="w-14 h-14 -rotate-90">
-                          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#1e293b" strokeWidth="3" />
-                          <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke={lead.knowledge_score >= 70 ? '#22c55e' : lead.knowledge_score >= 30 ? '#eab308' : '#ef4444'} strokeWidth="3" strokeDasharray={`${scanned ? lead.knowledge_score || 0 : 0}, 100`} strokeLinecap="round" />
-                        </svg>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className={`text-sm font-bold ${scanned ? scoreColor(lead.knowledge_score || 0) : 'text-slate-600'}`}>{scanned ? (lead.knowledge_score ?? '-') : '-'}</span>
-                        </div>
-                      </div>
-
-                      {/* Project info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-white truncate">{lead.name}</h3>
-                          {lead.knowledge_bid_chance && (
-                            <span className={`text-[10px] px-2 py-0.5 rounded border font-bold uppercase ${chanceColor(lead.knowledge_bid_chance)}`}>{lead.knowledge_bid_chance}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
-                            <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor(b)}`}>{b}</span>
-                          ))}
-                          {!scanned && <span className="text-[10px] text-slate-600 italic">Not scanned</span>}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-1">
-                          {lead.company !== 'N/A' && <span>{lead.company} &middot; </span>}
-                          {lead.location !== 'N/A' && <span>{lead.location} &middot; </span>}
-                          <span>Bid: {lead.bid_date}</span>
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button onClick={(e) => { e.stopPropagation(); triggerSingleScan(lead.id); }} className="p-2 rounded bg-slate-800 hover:bg-purple-600 text-slate-400 hover:text-white transition text-xs" title="Rescan this project"><RefreshCw size={14} /></button>
-                        <button onClick={(e) => { e.stopPropagation(); openPointToFile(lead.id); }} className="p-2 rounded bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white transition text-xs" title="Point to File"><Eye size={14} /></button>
-                        {expanded ? <ChevronUp size={16} className="text-slate-500" /> : <ChevronDown size={16} className="text-slate-500" />}
-                      </div>
-                    </div>
-
-                    {/* Expanded detail */}
-                    {expanded && scanned && (
-                      <div className="px-6 pb-5 pt-1 border-t border-slate-800/30">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
-                          <div className="bg-slate-800/50 rounded-lg p-3">
-                            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">System Type</div>
-                            <div className="text-sm font-semibold text-white capitalize">{lead.knowledge_system_type || 'Unknown'}</div>
-                          </div>
-                          <div className="bg-slate-800/50 rounded-lg p-3">
-                            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Fire Alarm Required</div>
-                            <div className={`text-sm font-semibold ${lead.knowledge_requires_fire_alarm ? 'text-green-400' : 'text-red-400'}`}>
-                              {lead.knowledge_requires_fire_alarm ? 'Yes' : 'No'}
-                            </div>
-                          </div>
-                          <div className="bg-slate-800/50 rounded-lg p-3">
-                            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Scope Score</div>
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
-                                <div className={`h-full rounded-full ${scoreBg(lead.knowledge_score || 0)}`} style={{ width: `${lead.knowledge_score || 0}%` }}></div>
-                              </div>
-                              <span className={`text-sm font-bold ${scoreColor(lead.knowledge_score || 0)}`}>{lead.knowledge_score}</span>
-                            </div>
-                          </div>
-                          <div className="bg-slate-800/50 rounded-lg p-3">
-                            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Bid Chance</div>
-                            <div className={`text-sm font-semibold uppercase ${lead.knowledge_bid_chance === 'high' ? 'text-green-400' : lead.knowledge_bid_chance === 'medium' ? 'text-yellow-400' : 'text-red-400'}`}>
-                              {lead.knowledge_bid_chance || 'Unknown'}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Vendors / Manufacturers / Deal Breakers */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                          {lead.knowledge_required_vendors?.length > 0 && (
-                            <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-3">
-                              <div className="text-[10px] text-orange-400 uppercase tracking-wide mb-1 flex items-center gap-1"><AlertTriangle size={10} />Required Vendors</div>
-                              <div className="text-xs text-orange-300">{lead.knowledge_required_vendors.join(', ')}</div>
-                            </div>
-                          )}
-                          {lead.knowledge_required_manufacturers?.length > 0 && (
-                            <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-3">
-                              <div className="text-[10px] text-orange-400 uppercase tracking-wide mb-1 flex items-center gap-1"><Shield size={10} />Required Manufacturers</div>
-                              <div className="text-xs text-orange-300">{lead.knowledge_required_manufacturers.join(', ')}</div>
-                            </div>
-                          )}
-                          {lead.knowledge_deal_breakers?.length > 0 && (
-                            <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">
-                              <div className="text-[10px] text-red-400 uppercase tracking-wide mb-1 flex items-center gap-1"><AlertCircle size={10} />Deal Breakers</div>
-                              <div className="text-xs text-red-300">{lead.knowledge_deal_breakers.join(', ')}</div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Notes */}
-                        {lead.knowledge_notes && (
-                          <div className="bg-slate-800/30 rounded-lg p-3">
-                            <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">AI Notes</div>
-                            <div className="text-xs text-slate-300 whitespace-pre-wrap max-h-32 overflow-y-auto">{lead.knowledge_notes}</div>
-                          </div>
-                        )}
-
-                        <div className="text-[10px] text-slate-600 mt-2">Last scanned: {lead.knowledge_last_scanned}</div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {getKnowledgeLeads().length === 0 && (
-                <div className="px-6 py-16 text-center text-slate-600 italic">
-                  {knowledgeFilter === 'scanned' ? 'No projects have been scanned yet. Click "Run Knowledge Scan" to begin.' : 'No leads found.'}
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* =================== TAKEOFF TAB =================== */}
@@ -984,6 +925,9 @@ export default function LeadDashboard() {
                       <ExternalLink size={12} /> Open Project
                     </a>
                   )}
+                  <button onClick={() => { setActiveTab('takeoff'); setDescriptionPopup(null); }} className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white px-3 py-1 rounded-full transition-colors">
+                    <Zap size={12} /> Run Takeoff
+                  </button>
                   <button onClick={() => setDescriptionPopup(null)} className="text-slate-400 hover:text-white transition-colors"><X size={20} /></button>
                 </div>
               </div>
@@ -1032,12 +976,7 @@ export default function LeadDashboard() {
                         <span className="text-slate-500">System Type:</span>
                         <span className="ml-1 text-white capitalize">{descriptionPopup.knowledge_system_type || 'Unknown'}</span>
                       </div>
-                      <div className="bg-slate-800/50 rounded p-2">
-                        <span className="text-slate-500">Bid Chance:</span>
-                        <span className={`ml-1 font-semibold ${chanceColor(descriptionPopup.knowledge_bid_chance)}`}>
-                          {descriptionPopup.knowledge_bid_chance || 'Unknown'}
-                        </span>
-                      </div>
+
                     </div>
 
                     {descriptionPopup.knowledge_required_vendors && descriptionPopup.knowledge_required_vendors.length > 0 && (
@@ -1229,7 +1168,18 @@ export default function LeadDashboard() {
                 <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Location</label><input type="text" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="City, State" /></div>
                 <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Full Address</label><input type="text" value={formData.full_address} onChange={(e) => setFormData({ ...formData, full_address: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="123 Main St, City, State ZIP" /></div>
                 <div className="col-span-2"><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Description</label><textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none h-20 resize-none" placeholder="Project description..." /></div>
-                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Files Link</label><input type="url" value={formData.files_link} onChange={(e) => setFormData({ ...formData, files_link: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="https://..." /></div>
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Files Link</label>
+                  <div className="flex gap-2">
+                    <input type="text" value={formData.files_link} onChange={(e) => setFormData({ ...formData, files_link: e.target.value })} className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="https://... or C:\..." />
+                    <button onClick={triggerFolderPicker} className="bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white px-3 rounded-lg transition-colors" title="Native Folder Picker">
+                      <FolderOpen size={18} />
+                    </button>
+                    <button onClick={openFolderBrowser} className="bg-blue-700 hover:bg-blue-600 text-slate-300 hover:text-white px-3 rounded-lg transition-colors" title="Browse Server Folders">
+                      <Search size={18} />
+                    </button>
+                  </div>
+                </div>
                 <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Download Link</label><input type="url" value={formData.download_link} onChange={(e) => setFormData({ ...formData, download_link: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="https://..." /></div>
                 <div className="col-span-2 flex gap-6">
                   <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.sprinklered} onChange={(e) => setFormData({ ...formData, sprinklered: e.target.checked })} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500" /><span className="text-sm text-slate-300">Sprinklered</span></label>
@@ -1239,6 +1189,44 @@ export default function LeadDashboard() {
               <div className="flex gap-3 mt-6">
                 <button onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors">Cancel</button>
                 <button onClick={editModal ? updateLead : addLead} disabled={!formData.name} className="flex-1 bg-[#ed2028] hover:bg-red-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors">{editModal ? 'Update Lead' : 'Add Lead'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =================== FOLDER BROWSER MODAL =================== */}
+        {folderBrowserModal && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setFolderBrowserModal(false)}>
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <FolderOpen className="text-blue-500" size={20} />Browse Folders
+                </h3>
+                <button onClick={() => setFolderBrowserModal(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
+              </div>
+              <div className="bg-slate-800 rounded-lg p-2 mb-4 flex items-center gap-2">
+                <button onClick={goUpDirectory} disabled={!folderBrowserPath} className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white px-3 py-1 rounded transition-colors">
+                  <ChevronUp size={18} />
+                </button>
+                <span className="text-slate-300 text-sm truncate flex-1">{folderBrowserPath || '(Root)'}</span>
+              </div>
+              <div className="bg-slate-800 rounded-lg max-h-64 overflow-y-auto">
+                {folderBrowserLoading ? (
+                  <div className="text-center py-8 text-slate-400">Loading...</div>
+                ) : folderBrowserItems.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500">No folders found</div>
+                ) : (
+                  folderBrowserItems.map((item, i) => (
+                    <button key={i} onClick={() => browseTo(item.path)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-700 text-left text-white transition-colors border-b border-slate-700 last:border-0">
+                      <FolderOpen size={16} className="text-yellow-500" />
+                      <span className="truncate">{item.name}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="flex gap-3 mt-4">
+                <button onClick={() => setFolderBrowserModal(false)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 rounded-lg transition-colors">Cancel</button>
+                <button onClick={selectFolder} disabled={!folderBrowserPath} className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-2 rounded-lg transition-colors">Select This Folder</button>
               </div>
             </div>
           </div>

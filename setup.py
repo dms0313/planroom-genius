@@ -45,11 +45,36 @@ def get_platform():
 
 def get_pi_info():
     """Get Raspberry Pi hardware info for optimization"""
+    # Check multiple indicators for 64-bit
+    machine = platform.machine()
+    is_64bit = machine in ('aarch64', 'arm64')
+
+    # Also check dpkg architecture (more reliable on Debian/Raspberry Pi OS)
+    if not is_64bit:
+        try:
+            result = subprocess.run(['dpkg', '--print-architecture'],
+                                    capture_output=True, text=True)
+            if result.returncode == 0 and 'arm64' in result.stdout:
+                is_64bit = True
+        except:
+            pass
+
+    # Also check getconf for kernel bits
+    if not is_64bit:
+        try:
+            result = subprocess.run(['getconf', 'LONG_BIT'],
+                                    capture_output=True, text=True)
+            if result.returncode == 0 and '64' in result.stdout:
+                is_64bit = True
+        except:
+            pass
+
     info = {
         "model": "unknown",
         "ram_gb": 0,
-        "is_64bit": platform.machine() in ('aarch64', 'arm64'),
-        "has_active_cooler": False
+        "is_64bit": is_64bit,
+        "has_active_cooler": False,
+        "machine": machine
     }
 
     try:
@@ -154,6 +179,7 @@ def setup_raspberry_pi_5():
     pi_info = get_pi_info()
     print(f"\nDetected: {pi_info['model']}")
     print(f"RAM: {pi_info['ram_gb']} GB")
+    print(f"Architecture: {pi_info.get('machine', 'unknown')}")
     print(f"64-bit OS: {'Yes' if pi_info['is_64bit'] else 'No'}")
     print(f"Active Cooler: {'Detected' if pi_info['has_active_cooler'] else 'Not detected'}")
 

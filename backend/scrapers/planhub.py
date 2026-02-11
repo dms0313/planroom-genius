@@ -14,7 +14,7 @@ from config import PlanHubConfig
 
 # Import Google Drive service
 try:
-    from services.google_drive import upload_and_cleanup, should_use_gdrive, is_authenticated, get_status
+    from services.google_drive import upload_and_cleanup, should_use_gdrive, is_authenticated, get_status, check_file_exists
     GDRIVE_AVAILABLE = True
     print(f"[PH] Google Drive module loaded. Available: {GDRIVE_AVAILABLE}")
 except ImportError as e:
@@ -432,6 +432,34 @@ class PlanHubScraper(BaseScraper):
         5. Click 'Download Files'
         """
         print(f"\n[PH] [Pass 2] Processing: {lead['name'][:40]}...")
+
+        # PRE-CHECK: Check if file already exists in Google Drive
+        if GDRIVE_AVAILABLE and should_use_gdrive():
+            try:
+                # Construct expected filename same as we do during upload
+                project_name_clean = "".join(c for c in lead['name'][:60] if c.isalnum() or c in ' -_').strip()
+                # We assume .zip since PlanHub is almost always a zip, but if it varies we might miss it.
+                # However, this is a safe optimization.
+                expected_filename = f"{project_name_clean}.zip"
+                
+                print(f"[PH]    Checking for existing file in Drive: {expected_filename}...")
+                existing = check_file_exists(expected_filename, source='PlanHub')
+                
+                if existing:
+                    print(f"[PH]    Found existing file in Drive! Skipping download.")
+                    lead['gdrive_file_id'] = existing.get('file_id')
+                    lead['gdrive_link'] = existing.get('web_link')
+                    lead['gdrive_download_link'] = existing.get('download_link')
+                    lead['download_link'] = existing.get('web_link')
+                    lead['storage_type'] = 'gdrive'
+                    
+                    # Still populate GC info if possible
+                    await self.extract_gc_info(lead)
+                    return True
+                else:
+                    print("[PH]    File not found in Drive, proceeding with download.")
+            except Exception as e:
+                print(f"[PH]    Error in Drive pre-check: {e}")
 
         try:
             # Click the row to open project details

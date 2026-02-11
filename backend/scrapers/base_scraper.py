@@ -100,6 +100,32 @@ class BaseScraper(ABC):
         else:
             print(f"[OK] Found Chrome at: {chrome_path}")
 
+        # CLEANUP: Kill stale Chrome processes and remove SingletonLock
+        # This is critical for headless mode stability on Windows
+        try:
+            # Kill ONLY the specific chrome processes for this user data dir
+            if os.name == 'nt':
+                # Use PowerShell to find processes with the specific user data directory in command line
+                user_data_dir_name = os.path.basename(self.config.CHROME_USER_DATA_DIR)
+                ps_cmd = (
+                    f"Get-CimInstance Win32_Process | "
+                    f"Where-Object {{ $_.Name -eq 'chrome.exe' -and $_.CommandLine -like '*{user_data_dir_name}*' }} | "
+                    f"Stop-Process -Force"
+                )
+                subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True)
+                await asyncio.sleep(1) # Wait for release
+            
+            # Remove SingletonLock if it exists
+            lock_file = os.path.join(self.config.CHROME_USER_DATA_DIR, 'SingletonLock')
+            if os.path.exists(lock_file):
+                try:
+                    os.remove(lock_file)
+                    print(f" Removed stale lock file: {lock_file}")
+                except Exception as e:
+                    print(f" Warning: Could not remove lock file: {e}")
+        except Exception as e:
+            print(f" Cleanup warning: {e}")
+
         print(f"\n======== CHROME PROFILE CONFIG ========")
         print(f"User Data Dir:   {self.config.CHROME_USER_DATA_DIR}")
         print(f"Profile Name:    {self.config.CHROME_PROFILE_NAME}")
@@ -119,6 +145,8 @@ class BaseScraper(ABC):
                 '--disable-blink-features=AutomationControlled',
                 '--disable-gpu',
                 '--disable-software-rasterizer',
+                '--disable-features=VizDisplayCompositor',
+                '--mute-audio',
             ],
         }
 
@@ -126,7 +154,16 @@ class BaseScraper(ABC):
         if chrome_path:
             launch_options['executablePath'] = chrome_path
 
-        self.browser = await launch(**launch_options)
+        # Retry launch logic
+        for attempt in range(3):
+            try:
+                self.browser = await launch(**launch_options)
+                break
+            except Exception as e:
+                print(f"   Browser launch failed (attempt {attempt+1}/3): {e}")
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(2)
 
         self.page = await self.browser.newPage()
 

@@ -287,6 +287,58 @@ def get_source_folder(source):
     return get_or_create_folder(folder_name, parent_id=root_id)
 
 
+def check_file_exists(filename, source='BuildingConnected'):
+    """
+    Check if a file with the given name already exists in the source folder.
+
+    Args:
+        filename: Name of the file to check
+        source: 'BuildingConnected' or 'PlanHub'
+
+    Returns:
+        dict with 'file_id', 'web_link', 'download_link' if found, else None
+    """
+    if not GOOGLE_DRIVE_AVAILABLE:
+        return None
+
+    service = get_service()
+    if not service:
+        return None
+
+    # Get folder for this source
+    folder_id = get_source_folder(source)
+    if not folder_id:
+        # If we can't find the source folder, we can't be sure it exists there
+        return None
+
+    try:
+        # Escape single quotes in filename
+        safe_filename = filename.replace("'", "\\'")
+        query = f"name = '{safe_filename}' and trashed = false and '{folder_id}' in parents"
+        
+        results = service.files().list(
+            q=query, 
+            fields='files(id, name, webViewLink, webContentLink)',
+            pageSize=1
+        ).execute()
+        
+        files = results.get('files', [])
+        if files:
+            file = files[0]
+            file_id = file.get('id')
+            return {
+                'file_id': file_id,
+                'web_link': file.get('webViewLink') or f"https://drive.google.com/file/d/{file_id}/view",
+                'download_link': file.get('webContentLink') or f"https://drive.google.com/uc?id={file_id}&export=download",
+                'filename': filename
+            }
+        return None
+
+    except Exception as e:
+        logger.error(f"Error checking for file existence: {e}")
+        return None
+
+
 def upload_file(local_path, filename=None, source='BuildingConnected'):
     """
     Upload a file to Google Drive and return shareable link.

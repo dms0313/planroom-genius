@@ -3,6 +3,8 @@ Gemini Analyzer Module
 Handles AI-powered analysis of fire alarm specifications using Google's Gemini API
 """
 
+from __future__ import annotations
+
 import copy
 import io
 import logging
@@ -14,13 +16,79 @@ from dataclasses import dataclass
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 
-import google.generativeai as genai # Keep for types if needed, but we are migrating. Actually, standard is `from google import genai`.
+from PIL import Image
 from google import genai
 from google.genai import types
 
-# ... (rest of imports)
+from google.api_core import exceptions as core_exceptions
+from .pdf_processor import PDFProcessor
+from .takeoff_config import (
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    GEMINI_MODEL_CHOICES,
+)
 
-# ... (class definition)
+DEFAULT_SYSTEM_INSTRUCTIONS = (
+    "You are an expert Fire Alarm Sales Estimator and NFPA Code Consultant. Your goal is to review construction "
+    "documents (floorplans/blueprints and specifications) to extract a precise scope of work and estimated labor involved "
+    "to install a code-compliant commercial fire alarm system. You must filter out all non-relevant information "
+    "(e.g., landscaping, civil, structural, plumbing, architectural) and focus strictly on project specific Fire Alarm requirements.\\n\\n"
+    "You are deeply knowledgeable in:\\n"
+    "   • Fire alarm system design and highly experienced in installation\\n"
+    "   • Experienced in all MEP related trades, especially when related to fire alarm systems\\n"
+    "   • NFPA 72 & 101 (Life Safety Code)\\n"
+    "   • IBC (International Building Code)\\n"
+    "   • Common pitfalls and problems that could arise during installation\\n\\n"
+    "CRITICAL ANALYSIS RULES:\\n"
+    "1. Identify the overall project scope, particularly relating to electronic-based fire alarm systems.\\n"
+    "2. Identify the applicable code versions (e.g., NFPA 72, NFPA 101, IBC), and compare the project requirements against the code requirements to determine the best approach.\\n"
+    "3. Always inform me when the project requirements either go above and beyond what is required by code, or when they fall short of what is required by code.\\n" 
+    "4. Identify if there are any possible ways to have an advantage with my bid over other contractors, such as omitting devices that are not required by code, or suggesting alternative solutions that meet code requirements but are less expensive.\\n"
+    "5. Always review Mechanical/HVAC plans:\\n"
+    "   • Always review general notes and keyed notes shown on mechanical/hvac pages to determine if there is any fire alarm required, particularly duct detectors and fire/smoke dampers.\\n"
+    "   • Always review mechanical schedule tables and provide the CFM and identifier/name for all HVAC equipment.\\n"
+    "   • Extract specific RTU names (e.g., 'RTU-1') and their CFM values if listed. ALWAYS note which RTU a duct detector is for.\\n"
+    "   • Review the HVAC schedule table for a count of any HVAC equipment over 2,000CFM. If CFM is over 2,000, HIGHLIGHT that in your response.\\n"
+    "6. When cross-referencing project requirements with NFPA code requirements, determine if the following is required, even if not specified in the drawings:\\n"
+    "   • Voice evacuation/voice panel\\n"
+    "   • CO detection: Consider the occupancy type (residential vs. non-residential) and presence of gas/fuel-burning appliances. State clearly if CO detection is REQUIRED, NOT REQUIRED, or UNCLEAR based on these factors.\\n"
+    "   • Explosion proof equipment\\n"
+    "7. Access Control Integration: If access control information is shown on plans, provide details or a list/count of doors with electric strikes that need to release on fire alarm, per code requirements.\\n"
+    "8. Device Placement Intelligence: Keep in mind that just because the symbol legend shows a specific type of device, it does not mean it's included in that current set of drawings. Only report devices that are actually shown on the plans.\\n"
+    "9. Competitive Advantage: If you recognize a potential way to gain an edge over competing bidders, provide advice or recommendations to have an advantage.\\n"
+    "10. Keyed & General Notes: Extract a list of all Keyed Notes or General Notes that specifically reference fire alarm requirements. Cite the page number for each note.\\n"
+    "11. Page Detection: Provide the specific page number(s) where fire alarm devices or requirements are found for every finding.\\n"
+)
+
+logger = logging.getLogger("fire-alarm-analyzer")
+
+
+class GeminiPromptBlocked(RuntimeError):
+    """Raised when Gemini blocks a prompt due to safety or policy filters."""
+
+    def __init__(self, message: str, prompt_feedback: Any = None):
+        super().__init__(message)
+        self.prompt_feedback = prompt_feedback
+
+
+class GeminiRequestFailed(RuntimeError):
+    """Raised when Gemini consistently fails to generate a response."""
+
+    def __init__(self, message: str, prompt_feedback: Any = None):
+        super().__init__(message)
+        self.prompt_feedback = prompt_feedback
+
+
+@dataclass
+class ModelTextResult:
+    """Container for Gemini text generation results, including errors."""
+
+    text: Optional[str] = None
+    error: Optional[str] = None
+    prompt_feedback: Optional[Dict[str, Any]] = None
+    blocked: bool = False
+    empty_response: bool = False
+    model: Optional[str] = None
 
 class GeminiFireAlarmAnalyzer:
     """AI-powered fire alarm specification analyzer using Gemini"""
@@ -243,7 +311,7 @@ class GeminiFireAlarmAnalyzer:
 
     def _generate_model_text(
         self, prompt: str, images: Optional[List[Dict[str, Any]]] = None
-    ) -> ModelTextResult:
+    ) -> "ModelTextResult":
         """Call Gemini with retries and return structured results."""
 
         if not self.client:
@@ -422,7 +490,7 @@ class GeminiFireAlarmAnalyzer:
                             logger.info("Retrying Gemini request with fallback model %s", fallback_model)
                             continue
 
-                    self.model = None
+                    self.client = None
                     last_error = permission_msg
                     break
 
@@ -512,6 +580,14 @@ class GeminiFireAlarmAnalyzer:
             "fac",
             "smoke control",
             "FA101",
+            "code footprint",
+            "fire protection system",
+            "nfpa 72",
+            "nfpa",
+            "ibc",
+            "fire marshal",
+            "fire alarm system",
+            "fire alarm riser"
         ]
 
         return any(keyword in text_lower for keyword in keywords)
@@ -618,19 +694,18 @@ class GeminiFireAlarmAnalyzer:
         electrical_keywords = [
             "electrical",
             "e-",
+            "e101",
             "one line",
             "single line",
             "power plan",
             "special systems",
             "electrical overview",
             "panel schedule",
-            "code footprint",
             "life safety",
             "fire strategy",
             "electrical general notes",
             "electrical notes",
-            "general electrical notes",
-            "symbol legend",
+            "general electrical notes"
         ]
 
         return any(keyword in text_lower for keyword in electrical_keywords)
@@ -647,6 +722,8 @@ class GeminiFireAlarmAnalyzer:
             "fsd",
             "fire alarm control panel",
             "f.a.c.p",
+            "facp",
+            "rtu",
             "fan shutdown",
             "fire alarm control",
             "mechanical general notes",
@@ -689,19 +766,27 @@ class GeminiFireAlarmAnalyzer:
             text_lower = text.lower()
             page_number = page.get("page_number")
 
-            # Check for explicit lighting/fixture plans first and exclude unless FA is present
+            # Updated: Keep all electrical pages (including lighting) if they match our broad definition
+            if self._is_electrical_page(text_lower):
+                filtered_pages.append(page)
+                priority_kept.append(f"Page {page_number}: electrical/special systems/lighting/code context")
+                continue
+
+            # Keep HVAC floor plans (already filtered to exclude pure schedules by _is_mechanical_page)
+            if self._is_mechanical_page(text_lower):
+                filtered_pages.append(page)
+                priority_kept.append(f"Page {page_number}: mechanical floor plan")
+                continue
+
+            # Check for explicit lighting/fixture plans - if it fell through electrical check (unlikely), exclude if no FA
             if self._is_lighting_page(text_lower) and not self._has_fire_alarm_signals(text_lower):
                 dropped_reasons.append(f"Page {page_number}: lighting/fixture plan without fire alarm content")
                 continue
 
-            if self._is_electrical_overview_page(text_lower):
-                filtered_pages.append(page)
-                priority_kept.append(f"Page {page_number}: electrical/special systems/code context")
-                continue
-
+            # Fallback for mechanical pages with FA info that aren't plans (e.g. notes or schedules)
             if self._is_mechanical_fire_related_page(text_lower):
                 filtered_pages.append(page)
-                priority_kept.append(f"Page {page_number}: mechanical fire devices or notes")
+                priority_kept.append(f"Page {page_number}: mechanical fire devices/notes/schedule")
                 continue
 
             if self._is_landscaping_page(text_lower):
@@ -889,6 +974,8 @@ class GeminiFireAlarmAnalyzer:
 
         return (
             "\n\nIMAGE CONTEXT: PDF pages are attached as rendered PNG images. "
+            "Treat these images as a SINGLE COHESIVE SET of construction documents. "
+            "Synthesize your findings across ALL provided images rather than analyzing each page in isolation. "
             "Use the drawings directly rather than relying on OCR text."
         )
 
@@ -900,6 +987,7 @@ class GeminiFireAlarmAnalyzer:
         if not pages_text:
             return []
 
+        # 1. Identify critical pages
         cover_pages = [
             page.get("page_number")
             for page in pages_text[:3]
@@ -908,6 +996,7 @@ class GeminiFireAlarmAnalyzer:
 
         electrical_pages: List[int] = []
         mechanical_pages: List[int] = []
+        fire_alarm_pages: List[int] = []
 
         for page in pages_text:
             text_lower = (page.get("text") or "").lower()
@@ -915,46 +1004,81 @@ class GeminiFireAlarmAnalyzer:
             if page_number is None:
                 continue
 
-            if self._is_electrical_power_or_special_system_page(text_lower):
+            # Prioritize pages specifically mentioning fire alarm systems
+            if self._has_fire_alarm_signals(text_lower):
+                fire_alarm_pages.append(page_number)
+            elif self._is_electrical_page(text_lower):
                 electrical_pages.append(page_number)
-                continue
-
-            if self._is_mechanical_page(text_lower):
+            elif self._is_mechanical_page(text_lower):
                 mechanical_pages.append(page_number)
 
-        ordered_unique = self._unique_page_order([
-            *cover_pages,
-            *electrical_pages,
-            *mechanical_pages,
-        ])
+        # 2. Build prioritized list
+        # Order: Context(3) -> Fire Alarm -> Electrical -> Mechanical
+        
+        # Start with context
+        final_list = list(cover_pages)
+        
+        # Add Fire Alarm pages (Highest priority)
+        for p in fire_alarm_pages:
+            if p not in final_list:
+                final_list.append(p)
+        
+        # Add Electrical pages (Medium priority)
+        for p in electrical_pages:
+            if p not in final_list:
+                final_list.append(p)
+                
+        # Add Mechanical pages (Lower priority, but important for ducts)
+        for p in mechanical_pages:
+            if p not in final_list:
+                final_list.append(p)
+                
+        # 3. Apply Limit
+        limit = self.max_image_pages
+        if len(final_list) > limit:
+            logger.info("Capping image pages from %s to %s", len(final_list), limit)
+            final_list = final_list[:limit]
+            
+        # 4. Sort for reading order
+        ordered_unique = self._unique_page_order(final_list)
 
         logger.info(
-            "Attaching %s page images to Gemini (first three + electrical/mechanical pages): %s",
+            "Attaching %s page images to Gemini (max %s): %s",
             len(ordered_unique),
+            limit,
             ordered_unique,
         )
         return ordered_unique
 
     @staticmethod
-    def _is_electrical_power_or_special_system_page(text_lower: str) -> bool:
-        """Return True for electrical power plan or special systems pages."""
+    def _is_electrical_page(text_lower: str) -> bool:
+        """Return True for any electrical/fire alarm page (Power, Lighting, Systems)."""
 
         electrical_markers = [
             "electrical",
-            "power plan",
-            "power & signal",
-            "power/signal",
+            "power",
+            "lighting",
             "special systems",
+            "fire alarm",
+            "symbol list",
+            "legend",
+            "abbreviation",
+            "low voltage",
+            "communications",
+            "telecom",
+            "technology",
+            "E101"
         ]
 
-        has_power_or_special = any(keyword in text_lower for keyword in electrical_markers)
-        has_plan_context = "plan" in text_lower or "sheet" in text_lower
+        has_marker = any(keyword in text_lower for keyword in electrical_markers)
+        # Check for drawing/sheet identifiers to avoid pure specs if mixed in
+        has_plan_context = any(k in text_lower for k in ["plan", "sheet", "drawing", "level", "detail", "riser", "schedule"])
 
-        return has_power_or_special and has_plan_context
+        return has_marker and has_plan_context
 
     @staticmethod
     def _is_mechanical_page(text_lower: str) -> bool:
-        """Return True for mechanical or HVAC pages."""
+        """Return True for mechanical/HVAC floor plans OR schedules."""
 
         mechanical_keywords = {
             "mechanical",
@@ -964,9 +1088,21 @@ class GeminiFireAlarmAnalyzer:
             "air handler",
             "rtu",
             "ahu",
+            "diffuser",
+            "vav",
+            "mechanical roof plan",
+            "schedule",
+            "equipment list"
         }
 
-        return any(keyword in text_lower for keyword in mechanical_keywords)
+        if not any(keyword in text_lower for keyword in mechanical_keywords):
+            return False
+
+        # Must be a floor plan/layout OR a schedule
+        is_plan = any(k in text_lower for k in ["plan", "layout", "level", "floor", "drawing"])
+        is_schedule = any(k in text_lower for k in ["schedule", "table", "equipment list", "matrix"])
+        
+        return is_plan or is_schedule
 
     @staticmethod
     def _has_unique_fire_alarm_details(text_lower: str) -> bool:
@@ -1220,11 +1356,14 @@ class GeminiFireAlarmAnalyzer:
                 'layout_page_provided': None,
                 'voice_required': None,
                 'co_required': None,
+                'co_reasoning': None,
                 'fire_doors_present': None,
                 'fire_barriers_present': None,
+                'general_notes': [],
             },
             'hvac_mechanical': {
                 'hvac_equipment': [],
+                'duct_detectors': [],
                 'fire_smoke_dampers_present': None,
                 'smoke_dampers_present': None,
                 'access_control_doors': [],
@@ -1281,8 +1420,13 @@ class GeminiFireAlarmAnalyzer:
 
         prompt = self._add_system_instruction(
             f"""You are a fire alarm estimator AI. Using the consolidated project context and optional spec excerpts, extract
-all requested details in a single structured JSON response. Keep answers concise and only include information directly
-supported by the provided pages. Always cite page numbers when referencing notes, devices, or layouts. Fire alarm-focused
+all requested details in a single structured JSON response.
+
+CRITICAL INSTRUCTION: Synthesize findings from ALL provided pages and images. Do not analyze pages in isolation.
+Cross-reference information across sheets (e.g., if a device is shown on Page 5 but the key note is on Page 3, combine that info).
+Treat the provided content as a complete package.
+
+Keep answers concise and only include information directly supported by the provided pages. Always cite page numbers when referencing notes, devices, or layouts. Fire alarm-focused
 pages identified by rules: {fa_pages}. Drawings are the primary source—use spec excerpts only as backup context and only for
 Division 28 addressable fire alarm control panel requirements.
 
@@ -1324,16 +1468,19 @@ NEW STANDARDIZED FIELDS (for improved organization):
    - fire_alarm_required: "yes" or "no"
    - sprinkler_status: "yes" or "no"
    - panel_status: "new", "existing to remain", "retrofit", etc.
-   - existing_panel_manufacturer: Manufacturer name if existing panel (Common: Honeywell, Siemens, Johnson Controls, JCI, Simplex, Notifier, Gamewell-FCI, Silent Knight, ADT, Tyco, Bosch, FireLite, Potter, Mircom) or null
-   - layout_page_provided: "Yes" or "No". If yes, include page number (e.g., "Yes - FA101"). Indicate if FA devices are shown on power plan or other pages.
+   - existing_panel_manufacturer: Manufacturer name if existing panel (Common: Honeywell, Siemens, JCI, etc.) or null
+   - layout_page_provided: "Yes" or "No". If yes, include page number.
    - voice_required: "yes" or "no"
-   - co_required: "yes" or "no"
+   - co_required: "YES", "NO", or "UNCLEAR" based on occupancy (e.g., residential vs business) and gas/fuel sources.
+   - co_reasoning: Brief explanation of why CO is/is not required (e.g., "Business occupancy with no fuel-burning appliances").
    - fire_doors_present: "yes" or "no"
    - fire_barriers_present: "yes" or "no"
+   - general_notes: array of strings. Copy any General Notes or Keyed Notes that strictly pertain to fire alarm. Cite page number for each (e.g., "Key Note 4: Connect duct detector to FACP (Pg M1.1)").
 }}
 
 4. hvac_mechanical: {{
-   - hvac_equipment: array of objects with {{model: string, cfm: number, over_2000_cfm: boolean, page: number}}. HIGHLIGHT units with CFM over 2,000.
+   - hvac_equipment: array of objects with {{model: string, cfm: number, over_2000_cfm: boolean, page: number}}
+   - duct_detectors: array of objects with {{rtu_name: string, cfm: number, notes: string, page: number}}. Extract specifically which RTU (e.g., RTU-1) needs a detector.
    - fire_smoke_dampers_present: "yes" or "no" or null
    - smoke_dampers_present: "yes" or "no" or null
    - access_control_doors: array of objects with {{location: string, door_count: number, electric_strike_release_required: boolean, page: number}}
@@ -1347,8 +1494,8 @@ CRITICAL RULES:
 - Keep strings short (<= 280 characters) and preserve key terminology from the source pages.
 - Remember: Just because the symbol legend shows a device type doesn't mean it's actually shown in the drawings. Only report what is ACTUALLY present.
 - HVAC equipment over 2,000 CFM must be flagged with over_2000_cfm: true
+- Extract Keyed/General Notes accurately with page citations.
 - Do not repeat the same pitfall or note in multiple fields; deduplicate wording and cite context briefly when helpful.
-- If there are no project-specific items for a field, leave arrays empty instead of adding placeholders.
 """
         )
 
@@ -1375,7 +1522,7 @@ CRITICAL RULES:
     def analyze_pdf_text(self, pages_text: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Run Gemini analysis when page text has already been extracted."""
 
-        if not self.model:
+        if not self.client:
             return {
                 'success': False,
                 'error': 'Gemini AI not initialized. Check API key.'
@@ -1424,7 +1571,7 @@ CRITICAL RULES:
     ) -> Dict[str, Any]:
         """Use Gemini to answer follow-up questions with project context."""
 
-        if not self.model:
+        if not self.client:
             return {'success': False, 'error': 'Gemini AI not initialized. Check API key.'}
 
         if not question or not question.strip():
@@ -1543,7 +1690,7 @@ Return JSON with keys: answer (string), referenced_pages (array of ints), co_det
         """
         Comprehensive fire alarm analysis of construction bid set PDF
         """
-        if not self.model:
+        if not self.client:
             return {
                 'success': False,
                 'error': 'Gemini AI not initialized. Check API key.'
@@ -1689,15 +1836,20 @@ Extract the following information:
             'fire alarm control', 'facp', 'control panel', 'annunciator',
             'special systems', 'power plan', 'electrical plan',
             'life safety plan', 'fire alarm general notes', 'fire alarm riser',
-            'special systems plan', 'fire protection plan', 'fa', 'nfpa', 'ann'
+            'special systems plan', 'fire protection plan', 'fa', 'nfpa', 'ann',
+            'low voltage', 'telecom', 'security', 'data', 'technology', 'communications',
+            'lv ', ' t-', 'tn-', 'ty-', 'ts-'
         ]
         
         for page in pages_text:
             page_text_lower = page['text'].lower()
             
+            # primary check
             if any(keyword in page_text_lower for keyword in fa_keywords):
+                # exclusion check for typical non-relevant text if needed, 
+                # but for now we want to be inclusive for Low Voltage
                 if 'mounting height' not in page_text_lower or \
-                   'fire alarm' in page_text_lower:
+                   'fire alarm' in page_text_lower or 'low voltage' in page_text_lower:
                     fa_pages.append(page['page_number'])
         
         return sorted(list(set(fa_pages))) # Return unique, sorted list
@@ -1706,7 +1858,7 @@ Extract the following information:
         self,
         pages_text: List[Dict[str, Any]],
         fa_pages: List[int],
-        max_pages: int = 30,
+        max_pages: int = 40,
     ) -> List[Dict[str, Any]]:
         """Return a trimmed list of representative pages to keep prompts fast."""
 
@@ -1720,19 +1872,36 @@ Extract the following information:
             seen_pages.add(page_number)
             prioritized.append(page)
 
-        # Always include the first few pages for project context
-        for page in pages_text[:5]:
+        # 1. Always include the first few pages for project context (Cover/Index)
+        for page in pages_text[:4]:
             add_page(page)
 
-        # Bring in pages the rule-based detector tagged as fire alarm related
+        # 2. Bring in ALL pages the rule-based detector tagged as fire alarm/low voltage
+        # We prioritize these above all else.
         for page in pages_text:
             if page.get('page_number') in fa_pages:
                 add_page(page)
 
-        # Grab mechanical/HVAC-heavy pages because they often influence FA scope
-        mechanical_keywords = {'mechanical', 'hvac', 'duct', 'damper', 'air handler', 'rtu', 'ahu'}
+        # 3. Explicitly grab Electrical (E-series) and MEP pages if not already caught
+        # Look for "E-" in page labels if available, or "Electrical" in text
+        # Also include MEP, ME, Mechanical and Electrical sections
+        electrical_keywords = {
+            'electrical', 'lighting', 'power', 'E-', 'E0', 'E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8', 'E9',
+            'mep', 'me-', 'me1', 'me2', 'me3', 'mechanical and electrical'
+        }
         for page in pages_text:
-            if len(prioritized) >= max_pages:
+            if len(seen_pages) >= max_pages:
+                break
+            if page.get('page_number') in seen_pages:
+                continue
+            text = (page.get('text') or '').lower()
+            if any(k in text for k in electrical_keywords):
+                 add_page(page)
+
+        # 4. Grab mechanical/HVAC-heavy pages because they often influence FA scope
+        mechanical_keywords = {'mechanical', 'hvac', 'duct', 'damper', 'air handler', 'rtu', 'ahu', 'M-', 'M0', 'M1'}
+        for page in pages_text:
+            if len(seen_pages) >= max_pages:
                 break
             if page.get('page_number') in seen_pages:
                 continue
@@ -1740,7 +1909,7 @@ Extract the following information:
             if any(keyword in text for keyword in mechanical_keywords):
                 add_page(page)
 
-        # Fill remaining slots with the earliest pages to preserve document order
+        # 5. Fill remaining slots with the earliest pages to preserve document order
         for page in pages_text:
             if len(prioritized) >= max_pages:
                 break
@@ -1935,6 +2104,9 @@ Extract:
 3. HIGH AIRFLOW HVAC: Any HVAC equipment over 2000 CFM from the schedule with airflow, ID, and whether a duct detector or relay is
    required.
 
+   Synthesize your findings across all mechanical pages to ensure no duplicate devices are listed unless they are distinct.
+   If a schedule is on one page and the plan view on another, combine the information.
+
 For each device, extract:
 - page: page number
 - device_type: specific type (e.g., "Duct Smoke Detector", "Fire Damper")
@@ -1999,6 +2171,8 @@ PAGES TEXT:
 {fa_text[:16000]}
 
 {image_note}
+
+Review the ENTIRE SET of provided pages to understand the overall fire alarm design intent.
 
 Extract the following and ALWAYS provide page numbers where available:
 1) PRIMARY DEVICE PAGE: Identify the single page/sheet where the most fire alarm devices are shown or called out. Provide the page number and a short reason (e.g., "main FA floor plan" or "device matrix"). Do NOT list each device individually.
