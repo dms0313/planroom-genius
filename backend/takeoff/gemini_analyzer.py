@@ -28,37 +28,38 @@ from .takeoff_config import (
     GEMINI_MODEL_CHOICES,
 )
 
-DEFAULT_SYSTEM_INSTRUCTIONS = (
-    "You are an expert Fire Alarm Sales Estimator and NFPA Code Consultant. Your goal is to review construction "
-    "documents (floorplans/blueprints and specifications) to extract a precise scope of work and estimated labor involved "
-    "to install a code-compliant commercial fire alarm system. You must filter out all non-relevant information "
-    "(e.g., landscaping, civil, structural, plumbing, architectural) and focus strictly on project specific Fire Alarm requirements.\\n\\n"
-    "You are deeply knowledgeable in:\\n"
-    "   • Fire alarm system design and highly experienced in installation\\n"
-    "   • Experienced in all MEP related trades, especially when related to fire alarm systems\\n"
-    "   • NFPA 72 & 101 (Life Safety Code)\\n"
-    "   • IBC (International Building Code)\\n"
-    "   • Common pitfalls and problems that could arise during installation\\n\\n"
-    "CRITICAL ANALYSIS RULES:\\n"
-    "1. Identify the overall project scope, particularly relating to electronic-based fire alarm systems.\\n"
-    "2. Identify the applicable code versions (e.g., NFPA 72, NFPA 101, IBC), and compare the project requirements against the code requirements to determine the best approach.\\n"
-    "3. Always inform me when the project requirements either go above and beyond what is required by code, or when they fall short of what is required by code.\\n" 
-    "4. Identify if there are any possible ways to have an advantage with my bid over other contractors, such as omitting devices that are not required by code, or suggesting alternative solutions that meet code requirements but are less expensive.\\n"
-    "5. Always review Mechanical/HVAC plans:\\n"
-    "   • Always review general notes and keyed notes shown on mechanical/hvac pages to determine if there is any fire alarm required, particularly duct detectors and fire/smoke dampers.\\n"
-    "   • Always review mechanical schedule tables and provide the CFM and identifier/name for all HVAC equipment.\\n"
-    "   • Extract specific RTU names (e.g., 'RTU-1') and their CFM values if listed. ALWAYS note which RTU a duct detector is for.\\n"
-    "   • Review the HVAC schedule table for a count of any HVAC equipment over 2,000CFM. If CFM is over 2,000, HIGHLIGHT that in your response.\\n"
-    "6. When cross-referencing project requirements with NFPA code requirements, determine if the following is required, even if not specified in the drawings:\\n"
-    "   • Voice evacuation/voice panel\\n"
-    "   • CO detection: Consider the occupancy type (residential vs. non-residential) and presence of gas/fuel-burning appliances. State clearly if CO detection is REQUIRED, NOT REQUIRED, or UNCLEAR based on these factors.\\n"
-    "   • Explosion proof equipment\\n"
-    "7. Access Control Integration: If access control information is shown on plans, provide details or a list/count of doors with electric strikes that need to release on fire alarm, per code requirements.\\n"
-    "8. Device Placement Intelligence: Keep in mind that just because the symbol legend shows a specific type of device, it does not mean it's included in that current set of drawings. Only report devices that are actually shown on the plans.\\n"
-    "9. Competitive Advantage: If you recognize a potential way to gain an edge over competing bidders, provide advice or recommendations to have an advantage.\\n"
-    "10. Keyed & General Notes: Extract a list of all Keyed Notes or General Notes that specifically reference fire alarm requirements. Cite the page number for each note.\\n"
-    "11. Page Detection: Provide the specific page number(s) where fire alarm devices or requirements are found for every finding.\\n"
+EXTRACTION_MODE = "extraction"
+ADVISORY_MODE = "advisory"
+ANALYSIS_MODES = (EXTRACTION_MODE, ADVISORY_MODE)
+
+_SHARED_INSTRUCTION_GUARDRAILS = (
+    "MANDATORY OUTPUT GUARDRAILS:\\n"
+    "- Do not invent or infer specific code section numbers, clause IDs, or legal citations that are not explicitly present in the provided documents.\\n"
+    "- If a requested value cannot be found in the provided documents, output exactly 'unknown' for that value.\\n"
+    "- Every nontrivial factual claim must include a page citation in the corresponding field/object (e.g., page number or page list).\\n"
 )
+
+EXTRACTION_MODE_SYSTEM_INSTRUCTIONS = (
+    "You are operating in EXTRACTION MODE for construction fire alarm document analysis.\\n"
+    "Your task is strict factual extraction only. Focus only on information explicitly present in the provided documents.\\n"
+    "Do not provide strategy, competitive positioning, bid advice, value engineering recommendations, or optimization suggestions.\\n"
+    "Use neutral language and preserve ambiguity from source documents instead of filling gaps.\\n\\n"
+    f"{_SHARED_INSTRUCTION_GUARDRAILS}"
+)
+
+ADVISORY_MODE_SYSTEM_INSTRUCTIONS = (
+    "You are operating in ADVISORY MODE for construction fire alarm document analysis.\\n"
+    "First provide strict factual extraction from the provided documents.\\n"
+    "Optional estimator guidance is allowed only after factual findings are established and must be clearly labeled as advisory.\\n"
+    "Any advisory statement must explicitly include uncertainty language and a jurisdiction caveat (AHJ/code cycle/local amendments may differ).\\n"
+    "Never present advisory content as certain fact.\\n\\n"
+    f"{_SHARED_INSTRUCTION_GUARDRAILS}"
+)
+
+SYSTEM_INSTRUCTIONS_BY_MODE = {
+    EXTRACTION_MODE: EXTRACTION_MODE_SYSTEM_INSTRUCTIONS,
+    ADVISORY_MODE: ADVISORY_MODE_SYSTEM_INSTRUCTIONS,
+}
 
 logger = logging.getLogger("fire-alarm-analyzer")
 
@@ -109,8 +110,10 @@ class GeminiFireAlarmAnalyzer:
         self.image_max_dimension = int(os.environ.get("GEMINI_IMAGE_MAX_DIMENSION", "1400"))
         self.image_jpeg_quality = int(os.environ.get("GEMINI_IMAGE_JPEG_QUALITY", "80"))
         self.tried_models: List[str] = []
-        self.default_system_instructions = DEFAULT_SYSTEM_INSTRUCTIONS
-        self.system_instructions = DEFAULT_SYSTEM_INSTRUCTIONS
+        self.default_analysis_mode = ADVISORY_MODE
+        self.analysis_mode = self.default_analysis_mode
+        self.default_system_instructions = SYSTEM_INSTRUCTIONS_BY_MODE[self.default_analysis_mode]
+        self.system_instructions = self.default_system_instructions
 
         if self.api_key:
             self._initialize_model(self.current_model)
@@ -199,6 +202,17 @@ class GeminiFireAlarmAnalyzer:
     def update_system_instructions(self, instructions: str) -> None:
         """Update the system instructions used for Gemini prompts."""
         self.system_instructions = instructions
+
+    def update_analysis_mode(self, mode: str) -> bool:
+        """Switch the analyzer between extraction and advisory mode."""
+        normalized_mode = (mode or "").strip().lower()
+        if normalized_mode not in ANALYSIS_MODES:
+            return False
+
+        self.analysis_mode = normalized_mode
+        self.default_system_instructions = SYSTEM_INSTRUCTIONS_BY_MODE[normalized_mode]
+        self.system_instructions = self.default_system_instructions
+        return True
 
     def _add_system_instruction(self, prompt: str) -> str:
         """Prefix prompts with the system instruction for SDKs without native support."""
@@ -1687,6 +1701,7 @@ Return JSON with keys: answer (string), referenced_pages (array of ints), co_det
         include_images: bool = True,
         spec_pdf_path: Optional[str] = None,
         additional_spec_paths: Optional[List[str]] = None,
+        analysis_mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Comprehensive fire alarm analysis of construction bid set PDF
@@ -1699,6 +1714,12 @@ Return JSON with keys: answer (string), referenced_pages (array of ints), co_det
 
         try:
             self.last_prompt_feedback = None
+            if analysis_mode and not self.update_analysis_mode(analysis_mode):
+                return {
+                    'success': False,
+                    'error': f"Invalid analysis mode '{analysis_mode}'. Allowed modes: {', '.join(ANALYSIS_MODES)}"
+                }
+
             logger.info(f"Starting Gemini analysis of PDF: {pdf_path}")
 
             pages_text = self.pdf_processor.extract_text_from_pdf(pdf_path)
@@ -1753,6 +1774,8 @@ Return JSON with keys: answer (string), referenced_pages (array of ints), co_det
                 results['images_attached_to_gemini'] = bool(image_payload)
                 if image_error:
                     results['image_error'] = image_error
+
+            results['analysis_mode'] = self.analysis_mode
 
             return results
         except GeminiPromptBlocked as exc:
