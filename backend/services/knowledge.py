@@ -947,75 +947,92 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
         _status["skipped"] += 1
         return False
 
-    # Analyze each PDF
-    aggregate = {
-        "requires_fire_alarm": False,
-        "system_type": "unknown",
-        "required_vendors": [],
-        "required_manufacturers": [],
-        "deal_breakers": [],
-        "notes": [],
-        "scope_score": 0,
-    }
-    score_sum = 0
-    score_count = 0
+    # Collect selected pages/images across all candidate PDFs first,
+    # then send one consolidated project-level Gemini request.
+    project_images = []
+    project_text_chunks = []
+    project_context_files = []
+    diagnostics = []
 
     for i, pdf_path in enumerate(candidates):
         if not _status["running"]:
             break
-            
+
         filename = os.path.basename(pdf_path)
-        
+
         # SKIP LOGIC: Filter out irrelevant disciplines and demo plans
         if _should_skip_file(filename):
             logger.info(f"Skipping irrelevant file: {filename}")
             continue
 
         _status["current_project"] = f"{folder_name} ({filename} - {i+1}/{len(candidates)})"
-        logger.info(f"Analyzing file: {filename}")
+        logger.info(f"Collecting relevant pages from: {filename}")
+
         try:
             texts = _extract_page_texts(pdf_path)
             if not texts:
+                diagnostics.append({"file": filename, "selected_pages": [], "reason": "no_text"})
                 continue
 
             pages = _select_relevant_pages(texts)
             if not pages:
+                diagnostics.append({"file": filename, "selected_pages": [], "reason": "no_relevant_pages"})
                 continue
 
-            # Prefer images for AI analysis
+            # Collect text for fallback heuristic and context payload
+            selected_text = "\n".join(texts[p] for p in pages if p < len(texts))
+            project_text_chunks.append(selected_text)
+
+            project_context_files.append({
+                "file": os.path.relpath(pdf_path, project_dir),
+                "page_indices": pages,
+            })
+
+            # Render selected pages and annotate with file/page metadata
             images = _render_pages(pdf_path, pages)
-            context = f"File: {os.path.basename(pdf_path)}, Pages: {pages}"
+            for img in images:
+                project_images.append({
+                    "file": os.path.relpath(pdf_path, project_dir),
+                    "page_index": img.get("page_index"),
+                    "png_bytes": img.get("png_bytes"),
+                })
 
-            analysis = None
-            if images:
-                analysis = _call_gemini(images, context)
-
-            if not analysis:
-                # Heuristic fallback using text from selected pages
-                selected_text = " ".join(texts[p] for p in pages if p < len(texts))
-                analysis = _heuristic_analysis(selected_text)
-
-            # Merge into aggregate
-            if analysis.get("requires_fire_alarm"):
-                aggregate["requires_fire_alarm"] = True
-            st = analysis.get("system_type")
-            if st and st != "unknown" and aggregate["system_type"] == "unknown":
-                aggregate["system_type"] = st
-            aggregate["required_vendors"].extend(analysis.get("required_vendors") or [])
-            aggregate["required_manufacturers"].extend(analysis.get("required_manufacturers") or [])
-            aggregate["deal_breakers"].extend(analysis.get("deal_breakers") or [])
-            if analysis.get("notes"):
-                aggregate["notes"].append(str(analysis["notes"]))
-            sc = analysis.get("scope_score")
-            if isinstance(sc, (int, float)):
-                score_sum += int(sc)
-                score_count += 1
+            diagnostics.append({"file": filename, "selected_pages": pages, "reason": "included"})
 
         except Exception as e:
-            logger.warning(f"Error analyzing {pdf_path}: {e}")
+            logger.warning(f"Error collecting pages for {pdf_path}: {e}")
+            diagnostics.append({"file": filename, "selected_pages": [], "reason": f"error: {e}"})
 
-    if score_count:
-        aggregate["scope_score"] = int(score_sum / score_count)
+    project_context = {
+        "project": folder_name,
+        "files": project_context_files,
+    }
+
+    model_analysis = None
+    if project_images:
+        # Single consolidated Gemini request for project-level decision.
+        model_analysis = _call_gemini(project_images, json.dumps(project_context, separators=(",", ":")))
+
+    heuristic_analysis = _heuristic_analysis("\n".join(project_text_chunks))
+    aggregate = model_analysis or heuristic_analysis
+
+    # Keep model-provided project score primary; fallback to heuristic score if missing.
+    if not isinstance(aggregate.get("scope_score"), (int, float)):
+        aggregate["scope_score"] = heuristic_analysis.get("scope_score", 0)
+
+    # Ensure normalized output shape and include optional diagnostics only in notes.
+    aggregate["requires_fire_alarm"] = bool(aggregate.get("requires_fire_alarm", heuristic_analysis.get("requires_fire_alarm", False)))
+    aggregate["system_type"] = aggregate.get("system_type") or heuristic_analysis.get("system_type", "unknown")
+    aggregate["required_vendors"] = list(aggregate.get("required_vendors") or heuristic_analysis.get("required_vendors") or [])
+    aggregate["required_manufacturers"] = list(aggregate.get("required_manufacturers") or heuristic_analysis.get("required_manufacturers") or [])
+    aggregate["deal_breakers"] = list(aggregate.get("deal_breakers") or heuristic_analysis.get("deal_breakers") or [])
+    notes = aggregate.get("notes") or ""
+    if isinstance(notes, list):
+        notes = "\n".join(str(n) for n in notes)
+    if diagnostics:
+        notes = f"{notes}\n[diagnostics] files_processed={len(diagnostics)}, files_with_selected_pages={len(project_context_files)}".strip()
+    aggregate["notes"] = [str(notes)] if notes else []
+    aggregate["scope_score"] = int(aggregate.get("scope_score", 0))
 
     # Match to lead and update (if not provided)
     lead = matched_lead
