@@ -376,7 +376,8 @@ async def update_lead(lead_id: str, lead_data: dict):
             "contact_phone", "location", "full_address", "bid_date",
             "description", "site", "sprinklered", "has_budget",
             "files_link", "download_link", "url",
-            "highlight", "strikethrough"  # Row styling fields
+            "highlight", "strikethrough",  # Row styling fields
+            "hidden", "comments", "short_comment", "tags"  # New management fields
         ]
 
         for field in updatable_fields:

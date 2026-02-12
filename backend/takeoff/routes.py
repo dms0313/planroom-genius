@@ -29,7 +29,10 @@ from .models import FireAlarmDevice, PageAnalysis
 from .gemini_report_builder import build_gemini_report
 from .history_store import HistoryStore
 from .notion_client import NotionClient
-from .gemini_analyzer import GeminiFireAlarmAnalyzer as GeminiAnalyzer
+from .gemini_analyzer import (
+    GeminiFireAlarmAnalyzer as GeminiAnalyzer,
+    ANALYSIS_MODES,
+)
 from .pdf_processor import PDFProcessor
 from .visualizer import DetectionVisualizer
 
@@ -155,6 +158,8 @@ async def check_status():
         'available_gemini_models': getattr(config, 'GEMINI_MODEL_CHOICES', []),
         'gemini_system_instructions': getattr(analyzer.gemini_analyzer, 'system_instructions', ''),
         'gemini_default_system_instructions': getattr(analyzer.gemini_analyzer, 'default_system_instructions', ''),
+        'gemini_analysis_mode': getattr(analyzer.gemini_analyzer, 'analysis_mode', None),
+        'gemini_allowed_analysis_modes': list(ANALYSIS_MODES),
         'notion_configured': notion_client.is_configured(),
     }
 
@@ -205,6 +210,30 @@ async def set_gemini_instructions(request: Request):
         'gemini_system_instructions': analyzer.gemini_analyzer.system_instructions,
     })
 
+@router.post("/api/set_gemini_mode")
+async def set_gemini_mode(request: Request):
+    """Update Gemini analysis mode at runtime."""
+    payload = await request.json()
+    mode = (payload.get('mode') or '').strip().lower()
+
+    if mode not in ANALYSIS_MODES:
+        return JSONResponse(
+            content={
+                'success': False,
+                'error': f"Mode must be one of: {', '.join(ANALYSIS_MODES)}",
+            },
+            status_code=400,
+        )
+
+    analyzer = get_analyzer()
+    analyzer.gemini_analyzer.update_analysis_mode(mode)
+    return JSONResponse(content={
+        'success': True,
+        'gemini_analysis_mode': analyzer.gemini_analyzer.analysis_mode,
+        'gemini_system_instructions': analyzer.gemini_analyzer.system_instructions,
+    })
+
+
 
 # =============================================================================
 # PREVIEW PAGES
@@ -249,7 +278,6 @@ async def preview_pages(pdf: UploadFile = File(...)):
     """Generate low-res thumbnails for PDF pages."""
     if not pdf.filename:
         return JSONResponse(content={'success': False, 'error': 'Empty filename'}, status_code=400)
-
     temp_dir = None
     pdf_path = None
     preview_token = None
@@ -374,7 +402,8 @@ async def analyze_gemini(
     pdf: UploadFile = File(...),
     send_images: str = Form("true"),
     spec_pdf: Optional[UploadFile] = File(None),
-    additional_files: Optional[List[UploadFile]] = File(None)
+    additional_files: Optional[List[UploadFile]] = File(None),
+    analysis_mode: str = Form("advisory"),
 ):
     """Analyze PDF using Gemini AI."""
     analyzer = get_analyzer()
@@ -384,6 +413,13 @@ async def analyze_gemini(
 
     if not pdf.filename:
         return JSONResponse(content={'success': False, 'error': 'Empty filename'}, status_code=400)
+
+    selected_mode = (analysis_mode or '').strip().lower()
+    if selected_mode not in ANALYSIS_MODES:
+        return JSONResponse(
+            content={'success': False, 'error': f"Invalid analysis_mode. Allowed: {', '.join(ANALYSIS_MODES)}"},
+            status_code=400,
+        )
 
     # Save uploaded file
     job_id = str(uuid.uuid4())
@@ -422,6 +458,7 @@ async def analyze_gemini(
             include_images=(send_images.lower() == 'true'),
             spec_pdf_path=spec_path,
             additional_spec_paths=additional_spec_paths,
+            analysis_mode=selected_mode,
         )
         results['job_id'] = job_id
 
@@ -514,7 +551,7 @@ async def gemini_follow_up(request: Request):
 
 
 @router.post("/api/run_gemini_from_history/{job_id}")
-async def run_gemini_from_history(job_id: str):
+async def run_gemini_from_history(job_id: str, request: Request):
     """Re-run Gemini analysis for a stored history entry."""
     analyzer = get_analyzer()
     
@@ -529,6 +566,19 @@ async def run_gemini_from_history(job_id: str):
     if not pdf_path or not os.path.exists(pdf_path):
         return JSONResponse(content={'success': False, 'error': 'Original PDF file not found in history'}, status_code=404)
 
+    selected_mode = 'advisory'
+    try:
+        payload = await request.json()
+        selected_mode = ((payload or {}).get('analysis_mode') or selected_mode).strip().lower()
+    except Exception:
+        selected_mode = 'advisory'
+
+    if selected_mode not in ANALYSIS_MODES:
+        return JSONResponse(
+            content={'success': False, 'error': f"Invalid analysis_mode. Allowed: {', '.join(ANALYSIS_MODES)}"},
+            status_code=400,
+        )
+
     try:
         logger.info(f"Starting Gemini analysis for history job {job_id}")
         original_filename = entry.get('original_filename', 'history_reanalysis.pdf')
@@ -538,6 +588,7 @@ async def run_gemini_from_history(job_id: str):
             include_images=True,
             spec_pdf_path=None,
             additional_spec_paths=[],
+            analysis_mode=selected_mode,
         )
         results['job_id'] = job_id
 

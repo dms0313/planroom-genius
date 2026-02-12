@@ -512,10 +512,11 @@ def render_first_page_thumbnail(pdf_path, dpi=72):
 # Gemini AI analysis
 # ---------------------------------------------------------------------------
 
-_GEMINI_PROMPT = """You are an expert fire alarm estimator analyzing construction documents.
-Analyze these document pages AS A COMPLETE SET and return a JSON object with EXACTLY these fields.
-Do not output results for individual pages; synthesize your findings from all provided images into one single project assessment.
+_GEMINI_PROMPT = """You are an expert fire alarm preconstruction estimator.
+Analyze these document pages AS A COMPLETE SET and return ONE project-level qualification assessment.
+Do not output per-page results.
 
+Return ONLY valid JSON with EXACTLY this schema:
 {
   "requires_fire_alarm": true/false,
   "system_type": "new" | "existing" | "modification" | "unknown",
@@ -523,36 +524,121 @@ Do not output results for individual pages; synthesize your findings from all pr
   "required_manufacturers": ["mfr1", "mfr2"],
   "required_codes": ["NFPA 72-2019"],
   "deal_breakers": ["item1"],
-  "evidence": {
-    "required_vendors": [{"claim": "vendor1", "page": 12, "quote": "Approved installer: vendor1"}],
-    "required_manufacturers": [{"claim": "mfr1", "page": 33, "quote": "Basis of design: mfr1"}],
-    "required_codes": [{"claim": "NFPA 72-2019", "page": 2, "quote": "Comply with NFPA 72-2019"}],
-    "deal_breakers": [{"claim": "Union labor required", "page": 5, "quote": "Project labor agreement is mandatory"}]
+  "bid_risk_flags": ["union-only", "proprietary vendor lock", "short timeline"],
+  "scope_signals": {
+    "new_install": true/false,
+    "retrofit": true/false,
+    "monitoring": true/false,
+    "voice_evac": true/false,
+    "duct_detectors": true/false,
+    "access_control_interface": true/false
   },
-  "validation_warnings": ["optional warnings"],
-  "notes": "Brief analysis summary (2-3 sentences)",
+  "evidence": [
+    {
+      "claim": "short statement of a qualification-relevant fact",
+      "page_reference": "file/page reference if available",
+      "quote": "short exact quote from documents"
+    }
+  ],
+  "confidence_score": 0.0,
+  "recommended_next_action": "bid" | "review" | "skip",
+  "notes": "Brief qualification summary (2-4 sentences)",
   "scope_score": 0-100
 }
 
 Guidelines:
-- requires_fire_alarm: Does this project require fire alarm work?
-- system_type: "new" = brand new system, "existing" = existing system to remain/as-is, "modification" = changes to existing system
-- required_vendors: *CRITICAL* List ANY specific fire alarm vendors/installers listed as "required", "approved", or "suggested". Return empty list [] if none found.
-- required_manufacturers: *CRITICAL* List ANY specific fire alarm equipment manufacturers listed as "required", "approved", or "basis of design". Return empty list [] if none found.
-- required_codes: List specific fire-alarm-relevant code requirements/editions that materially affect scope. Return [] if none found.
-- deal_breakers: List specific constraints that might prevent bidding (e.g., "Union Labor Required", "PLA", "Prevailing Wage" if clearly stated).
-- MANDATORY EVIDENCE: For every high-impact claim in required_vendors, required_manufacturers, required_codes, and deal_breakers, include a matching evidence item with page number and short quote/snippet.
-- Evidence format must be: {"claim": string, "page": integer, "quote": string}. Keep quote <= 200 chars.
-- If evidence is not present for a claim, DO NOT include that claim in the claim array.
-- scope_score: Rate the attractiveness of this project (0-100):
-    * 0   = No Fire Alarm work required.
-    * 50  = Fire Alarm is required, but no specific manufacturers or vendors are listed (standard bid).
-    * 75  = Fire Alarm required + Specific Manufacturers listed (higher chance if we match).
-    * 90+ = Fire Alarm required + Specific Vendors listed (very high chance if we are on the list).
-    * Deduct points for "existing" systems or complex "modifications" if they look messy.
-- Focus ONLY on fire alarm / detection / notification / special systems scope
+- Focus on qualification, bid viability, and risk (not just fire alarm detection).
+- confidence_score must be 0.0 to 1.0 and reflect evidence quality and ambiguity.
+- evidence must include concrete support for key conclusions; use [] if no reliable support found.
+- bid_risk_flags should include known bid constraints (labor restrictions, proprietary requirements, compressed schedule, unusual coordination burden, etc.).
+- scope_signals booleans should reflect whether each signal appears in plans/specs.
+- recommended_next_action:
+    * "bid" when scope is clear and winnable.
+    * "review" when viable but uncertain/risky and needs human estimator review.
+    * "skip" when poor fit, no FA scope, or hard constraints.
+- required_vendors/required_manufacturers/deal_breakers should remain concise factual lists.
+- scope_score remains a 0-100 attractiveness score.
 
-Return ONLY valid JSON, no markdown fences."""
+Return ONLY JSON, no markdown fences or extra text."""
+
+
+def _default_analysis_result(notes=""):
+    return {
+        "requires_fire_alarm": False,
+        "system_type": "unknown",
+        "required_vendors": [],
+        "required_manufacturers": [],
+        "deal_breakers": [],
+        "bid_risk_flags": [],
+        "scope_signals": {
+            "new_install": False,
+            "retrofit": False,
+            "monitoring": False,
+            "voice_evac": False,
+            "duct_detectors": False,
+            "access_control_interface": False,
+        },
+        "evidence": [],
+        "confidence_score": 0.0,
+        "recommended_next_action": "review",
+        "notes": notes,
+        "scope_score": 0,
+    }
+
+
+def _normalize_analysis_result(raw, fallback_notes=""):
+    """Backfill missing keys and sanitize malformed Gemini responses."""
+    normalized = _default_analysis_result(notes=fallback_notes)
+    if not isinstance(raw, dict):
+        return normalized
+
+    normalized["requires_fire_alarm"] = bool(raw.get("requires_fire_alarm", normalized["requires_fire_alarm"]))
+
+    system_type = str(raw.get("system_type", normalized["system_type"]))
+    if system_type in {"new", "existing", "modification", "unknown"}:
+        normalized["system_type"] = system_type
+
+    for key in ("required_vendors", "required_manufacturers", "deal_breakers", "bid_risk_flags"):
+        value = raw.get(key)
+        if isinstance(value, list):
+            normalized[key] = [str(item).strip() for item in value if str(item).strip()]
+
+    scope_signals = raw.get("scope_signals")
+    if isinstance(scope_signals, dict):
+        for signal in normalized["scope_signals"]:
+            if signal in scope_signals:
+                normalized["scope_signals"][signal] = bool(scope_signals.get(signal))
+
+    evidence = raw.get("evidence")
+    if isinstance(evidence, list):
+        cleaned = []
+        for item in evidence:
+            if not isinstance(item, dict):
+                continue
+            cleaned.append({
+                "claim": str(item.get("claim", "")).strip(),
+                "page_reference": str(item.get("page_reference", "")).strip(),
+                "quote": str(item.get("quote", "")).strip(),
+            })
+        normalized["evidence"] = cleaned
+
+    confidence = raw.get("confidence_score")
+    if isinstance(confidence, (int, float)):
+        normalized["confidence_score"] = max(0.0, min(1.0, float(confidence)))
+
+    action = str(raw.get("recommended_next_action", normalized["recommended_next_action"]))
+    if action in {"bid", "review", "skip"}:
+        normalized["recommended_next_action"] = action
+
+    notes = raw.get("notes")
+    if notes is not None:
+        normalized["notes"] = str(notes)
+
+    score = raw.get("scope_score")
+    if isinstance(score, (int, float)):
+        normalized["scope_score"] = max(0, min(100, int(score)))
+
+    return normalized
 
 
 def _normalize_claim_text(claim):
@@ -662,13 +748,14 @@ def _call_gemini(images, context=""):
                     text = re.sub(r"^```(?:json)?\s*", "", text)
                     text = re.sub(r"\s*```$", "", text)
                 try:
-                    return _validate_analysis_claim_evidence(json.loads(text))
+                    parsed = json.loads(text)
+                    return _normalize_analysis_result(parsed)
                 except json.JSONDecodeError:
-                    logger.warning("Gemini returned non-JSON, using raw text as notes")
-                    return {"notes": text}
+                    logger.warning("Gemini returned non-JSON, using deterministic fallback structure")
+                    return _normalize_analysis_result({}, fallback_notes=text)
             else:
                  logger.warning(f"Gemini response structure unexpected: {data}")
-                 return None
+                 return _normalize_analysis_result({}, fallback_notes="Gemini response structure unexpected")
 
         except req.exceptions.HTTPError as e:
             if e.response.status_code == 429:
@@ -678,13 +765,13 @@ def _call_gemini(images, context=""):
                 continue
             else:
                 logger.error(f"Gemini HTTP error: {e}")
-                return None
+                return _normalize_analysis_result({}, fallback_notes=f"Gemini HTTP error: {e}")
         except Exception as e:
             logger.warning(f"Gemini call failed: {e}")
-            return None
+            return _normalize_analysis_result({}, fallback_notes=f"Gemini call failed: {e}")
     
     logger.error("Gemini failed after max retries due to rate limiting.")
-    return None
+    return _normalize_analysis_result({}, fallback_notes="Gemini rate-limited after retries")
 
 
 def _heuristic_analysis(all_text):
@@ -719,7 +806,7 @@ def _heuristic_analysis(all_text):
         if system_type == "existing":
             score = max(20, score - 20)
 
-    return {
+    return _normalize_analysis_result({
         "requires_fire_alarm": requires,
         "system_type": system_type,
         "required_vendors": vendors,
@@ -735,7 +822,7 @@ def _heuristic_analysis(all_text):
         "validation_warnings": [],
         "notes": "Heuristic analysis (Gemini API key not configured)",
         "scope_score": score,
-    }
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -937,87 +1024,92 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
         _status["skipped"] += 1
         return False
 
-    # Analyze each PDF
-    aggregate = {
-        "requires_fire_alarm": False,
-        "system_type": "unknown",
-        "required_vendors": [],
-        "required_manufacturers": [],
-        "required_codes": [],
-        "deal_breakers": [],
-        "evidence": {
-            "required_vendors": [],
-            "required_manufacturers": [],
-            "required_codes": [],
-            "deal_breakers": [],
-        },
-        "validation_warnings": [],
-        "notes": [],
-        "scope_score": 0,
-    }
-    score_sum = 0
-    score_count = 0
+    # Collect selected pages/images across all candidate PDFs first,
+    # then send one consolidated project-level Gemini request.
+    project_images = []
+    project_text_chunks = []
+    project_context_files = []
+    diagnostics = []
 
     for i, pdf_path in enumerate(candidates):
         if not _status["running"]:
             break
-            
+
         filename = os.path.basename(pdf_path)
-        
+
         # SKIP LOGIC: Filter out irrelevant disciplines and demo plans
         if _should_skip_file(filename):
             logger.info(f"Skipping irrelevant file: {filename}")
             continue
 
         _status["current_project"] = f"{folder_name} ({filename} - {i+1}/{len(candidates)})"
-        logger.info(f"Analyzing file: {filename}")
+        logger.info(f"Collecting relevant pages from: {filename}")
+
         try:
             texts = _extract_page_texts(pdf_path)
             if not texts:
+                diagnostics.append({"file": filename, "selected_pages": [], "reason": "no_text"})
                 continue
 
             pages = _select_relevant_pages(texts)
             if not pages:
+                diagnostics.append({"file": filename, "selected_pages": [], "reason": "no_relevant_pages"})
                 continue
 
-            # Prefer images for AI analysis
+            # Collect text for fallback heuristic and context payload
+            selected_text = "\n".join(texts[p] for p in pages if p < len(texts))
+            project_text_chunks.append(selected_text)
+
+            project_context_files.append({
+                "file": os.path.relpath(pdf_path, project_dir),
+                "page_indices": pages,
+            })
+
+            # Render selected pages and annotate with file/page metadata
             images = _render_pages(pdf_path, pages)
-            context = f"File: {os.path.basename(pdf_path)}, Pages: {pages}"
+            for img in images:
+                project_images.append({
+                    "file": os.path.relpath(pdf_path, project_dir),
+                    "page_index": img.get("page_index"),
+                    "png_bytes": img.get("png_bytes"),
+                })
 
-            analysis = None
-            if images:
-                analysis = _call_gemini(images, context)
-
-            if not analysis:
-                # Heuristic fallback using text from selected pages
-                selected_text = " ".join(texts[p] for p in pages if p < len(texts))
-                analysis = _heuristic_analysis(selected_text)
-
-            # Merge into aggregate
-            if analysis.get("requires_fire_alarm"):
-                aggregate["requires_fire_alarm"] = True
-            st = analysis.get("system_type")
-            if st and st != "unknown" and aggregate["system_type"] == "unknown":
-                aggregate["system_type"] = st
-            aggregate["required_vendors"].extend(analysis.get("required_vendors") or [])
-            aggregate["required_manufacturers"].extend(analysis.get("required_manufacturers") or [])
-            aggregate["required_codes"].extend(analysis.get("required_codes") or [])
-            aggregate["deal_breakers"].extend(analysis.get("deal_breakers") or [])
-            for key in ("required_vendors", "required_manufacturers", "required_codes", "deal_breakers"):
-                aggregate["evidence"][key].extend((analysis.get("evidence") or {}).get(key) or [])
-            aggregate["validation_warnings"].extend(analysis.get("validation_warnings") or [])
-            if analysis.get("notes"):
-                aggregate["notes"].append(str(analysis["notes"]))
-            sc = analysis.get("scope_score")
-            if isinstance(sc, (int, float)):
-                score_sum += int(sc)
-                score_count += 1
+            diagnostics.append({"file": filename, "selected_pages": pages, "reason": "included"})
 
         except Exception as e:
-            logger.warning(f"Error analyzing {pdf_path}: {e}")
+            logger.warning(f"Error collecting pages for {pdf_path}: {e}")
+            diagnostics.append({"file": filename, "selected_pages": [], "reason": f"error: {e}"})
 
-    if score_count:
-        aggregate["scope_score"] = int(score_sum / score_count)
+    project_context = {
+        "project": folder_name,
+        "files": project_context_files,
+    }
+
+    model_analysis = None
+    if project_images:
+        # Single consolidated Gemini request for project-level decision.
+        model_analysis = _call_gemini(project_images, json.dumps(project_context, separators=(",", ":")))
+
+    heuristic_analysis = _heuristic_analysis("\n".join(project_text_chunks))
+    aggregate = model_analysis or heuristic_analysis
+
+    # Keep model-provided project score primary; fallback to heuristic score if missing.
+    if not isinstance(aggregate.get("scope_score"), (int, float)):
+        aggregate["scope_score"] = heuristic_analysis.get("scope_score", 0)
+
+    # Ensure normalized output shape and include optional diagnostics only in notes.
+    aggregate["requires_fire_alarm"] = bool(aggregate.get("requires_fire_alarm", heuristic_analysis.get("requires_fire_alarm", False)))
+    aggregate["system_type"] = aggregate.get("system_type") or heuristic_analysis.get("system_type", "unknown")
+    aggregate["required_vendors"] = list(aggregate.get("required_vendors") or heuristic_analysis.get("required_vendors") or [])
+    aggregate["required_manufacturers"] = list(aggregate.get("required_manufacturers") or heuristic_analysis.get("required_manufacturers") or [])
+    aggregate["deal_breakers"] = list(aggregate.get("deal_breakers") or heuristic_analysis.get("deal_breakers") or [])
+    notes = aggregate.get("notes") or ""
+    if isinstance(notes, list):
+        notes = "\n".join(str(n) for n in notes)
+    if diagnostics:
+        notes = f"{notes}\n[diagnostics] files_processed={len(diagnostics)}, files_with_selected_pages={len(project_context_files)}".strip()
+    aggregate["notes"] = [str(notes)] if notes else []
+    aggregate["scope_score"] = int(aggregate.get("scope_score", 0))
 
     # Match to lead and update (if not provided)
     lead = matched_lead
