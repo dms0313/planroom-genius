@@ -463,11 +463,54 @@ class PlanHubScraper(BaseScraper):
 
         try:
             # Click the row to open project details
+            clicked = False
+
             if row_element:
                 print("[PH]    Clicking row to open details...")
-                await row_element.click()
-            else:
-                # Fallback: find by name
+
+                # First choice: captured row handle click
+                try:
+                    await self.page.evaluate('''(row) => {
+                        row.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+                    }''', row_element)
+                except Exception as e:
+                    print(f"[PH]    Row scroll failed (captured handle): {e}")
+
+                for attempt in range(2):
+                    try:
+                        await row_element.click()
+                        print(f"[PH]    Click path: row_handle_click (attempt {attempt + 1})")
+                        clicked = True
+                        break
+                    except Exception as e:
+                        err = str(e).lower()
+                        print(f"[PH]    Captured handle click attempt {attempt + 1} failed: {e}")
+                        if 'detached' in err or 'not attached' in err:
+                            break
+                        await asyncio.sleep(0.4)
+
+            # Second choice: reacquire row handle by text and click handle
+            if not clicked:
+                try:
+                    candidate_rows = await self.page.querySelectorAll('planhub-project-table tbody tr')
+                    for row in candidate_rows:
+                        try:
+                            row_text = await self.page.evaluate('(el) => el.textContent || ""', row)
+                            if lead['name'] in row_text:
+                                await self.page.evaluate('''(el) => {
+                                    el.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
+                                }''', row)
+                                await row.click()
+                                print("[PH]    Click path: reacquired_handle_click")
+                                clicked = True
+                                break
+                        except Exception:
+                            continue
+                except Exception as e:
+                    print(f"[PH]    Reacquire by text failed: {e}")
+
+            # Last resort: JS fallback click
+            if not clicked:
                 safe_name = lead['name'].replace('"', '\\"').replace("'", "\\'")
                 clicked = await self.page.evaluate(f'''() => {{
                     const rows = document.querySelectorAll('planhub-project-table tbody tr');
@@ -479,9 +522,12 @@ class PlanHubScraper(BaseScraper):
                     }}
                     return false;
                 }}''')
-                if not clicked:
-                    print("[PH]    Could not find project row")
-                    return False
+                if clicked:
+                    print("[PH]    Click path: js_fallback_click")
+
+            if not clicked:
+                print("[PH]    Could not find project row")
+                return False
 
             # Wait for details page to load
             print("[PH]    Waiting for details page...")
@@ -1017,8 +1063,7 @@ class PlanHubScraper(BaseScraper):
                 log_status(f"Processing {i+1}/{len(valid_leads)}: {lead.get('name', '')[:30]}")
 
                 # Download files (this also extracts full address)
-                # Pass row_element=None to force finding by name, which is more robust after navigation
-                success = await self.download_files_for_lead(lead, row_element=None)
+                success = await self.download_files_for_lead(lead, row_element=row_elements[i])
 
                 if success:
                     log_status(f"Completed download for project {i+1}")
