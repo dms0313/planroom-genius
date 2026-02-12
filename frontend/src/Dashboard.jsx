@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen } from 'lucide-react';
+import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, EyeOff, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen } from 'lucide-react';
 
 // Utility functions moved outside to prevent re-creation
 const isExpired = (bidDate) => {
@@ -80,6 +80,8 @@ export default function LeadDashboard() {
   const [knowledgeStatus, setKnowledgeStatus] = useState(null);
   const [knowledgeScanning, setKnowledgeScanning] = useState(false);
   const [knowledgeFilter, setKnowledgeFilter] = useState('all'); // all, scanned, unscanned
+  const [showHidden, setShowHidden] = useState(false);
+  const [sortConfig, setSortConfig] = useState({ key: 'bid_date', direction: 'asc' });
   const [searchQuery, setSearchQuery] = useState('');
   const [pointToFileModal, setPointToFileModal] = useState(null); // {lead_id, files}
   const [pointToFileLoading, setPointToFileLoading] = useState(false);
@@ -126,6 +128,9 @@ export default function LeadDashboard() {
     // Site filter
     if (siteFilter !== 'all') result = result.filter(l => l.site === siteFilter);
 
+    // Hidden filter
+    if (!showHidden) result = result.filter(l => !l.hidden);
+
     // Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -133,12 +138,34 @@ export default function LeadDashboard() {
         l.name?.toLowerCase().includes(q) ||
         l.company?.toLowerCase().includes(q) ||
         l.gc?.toLowerCase().includes(q) ||
-        l.description?.toLowerCase().includes(q)
+        l.description?.toLowerCase().includes(q) ||
+        l.tags?.some(t => t.label.toLowerCase().includes(q))
       );
     }
 
+    // Sorting
+    result.sort((a, b) => {
+      let aVal = a[sortConfig.key];
+      let bVal = b[sortConfig.key];
+
+      // Handle nulls
+      if (aVal === null || aVal === undefined) aVal = '';
+      if (bVal === null || bVal === undefined) bVal = '';
+
+      // Special handling for dates
+      if (sortConfig.key === 'bid_date') {
+        const da = new Date(aVal === 'TBD' || aVal === 'N/A' || !aVal ? '2099-12-31' : aVal);
+        const db = new Date(bVal === 'TBD' || bVal === 'N/A' || !bVal ? '2099-12-31' : bVal);
+        return sortConfig.direction === 'asc' ? da - db : db - da;
+      }
+
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
     return result;
-  }, [leads, knowledgeFilter, siteFilter, searchQuery]);
+  }, [leads, knowledgeFilter, siteFilter, searchQuery, showHidden, sortConfig]);
 
   const API_BASE = `http://${window.location.hostname}:8000`;
 
@@ -584,6 +611,10 @@ export default function LeadDashboard() {
                   className="bg-slate-800 text-slate-200 pl-10 pr-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-600 w-64"
                 />
               </div>
+              <button onClick={() => setShowHidden(!showHidden)} className={`px-3 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-1.5 ${showHidden ? 'bg-slate-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                {showHidden ? <Eye size={16} /> : <EyeOff size={16} />}
+                {showHidden ? 'Hide Hidden' : 'Show Hidden'}
+              </button>
               <button onClick={openAddModal} className="px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-500 transition flex items-center gap-1.5"><Plus size={16} />Add Lead</button>
               <button onClick={fetchLeads} disabled={loading} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-400 text-sm font-semibold hover:bg-slate-700 transition">{loading ? '...' : 'Refresh'}</button>
               <button onClick={() => { setShowConsole(!showConsole); if (!showConsole) fetchConsoleLogs(); }} className={`p-2 rounded-lg transition flex items-center gap-1.5 text-sm ${showConsole ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`} title="Toggle Console">
@@ -646,6 +677,8 @@ export default function LeadDashboard() {
             uniqueSites={uniqueSites}
             siteFilter={siteFilter}
             setSiteFilter={setSiteFilter}
+            sortConfig={sortConfig}
+            setSortConfig={setSortConfig}
             triggerKnowledgeScan={triggerKnowledgeScan}
             knowledgeScanning={knowledgeScanning}
             triggerSingleScan={triggerSingleScan}
@@ -1088,12 +1121,31 @@ const LeadTable = ({
   title, data, showSiteFilter, uniqueSites, siteFilter, setSiteFilter,
   triggerKnowledgeScan, knowledgeScanning, triggerSingleScan, scanningIds,
   toggleLeadStyle, openEditModal, deleteLead, setCompanyPopup,
-  setDescriptionPopup, API_BASE
+  setDescriptionPopup, API_BASE, sortConfig, setSortConfig
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedLeadId, setExpandedLeadId] = useState(null);
   const itemsPerPage = 50;
   const totalPages = Math.ceil(data.length / itemsPerPage);
+
+  const handleSort = (key) => {
+    let direction = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const SortHeader = ({ label, sortKey, className }) => (
+    <th className={`px-4 py-3 cursor-pointer hover:text-slate-300 transition-colors select-none ${className}`} onClick={() => handleSort(sortKey)}>
+      <div className={`flex items-center gap-1 ${className?.includes('text-center') ? 'justify-center' : ''}`}>
+        {label}
+        {sortConfig.key === sortKey && (
+          <ArrowUpDown size={12} className={sortConfig.direction === 'asc' ? 'text-orange-400 rotate-180' : 'text-orange-400'} />
+        )}
+      </div>
+    </th>
+  );
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages);
@@ -1141,11 +1193,11 @@ const LeadTable = ({
           <thead className="bg-slate-950/50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
             <tr>
               <th className="px-2 py-3 w-24"></th>
-              <th className="px-4 py-3">Project</th>
-              <th className="px-4 py-3">Company / GC</th>
-              <th className="px-4 py-3">Contact</th>
-              <th className="px-4 py-3">Location</th>
-              <th className="px-4 py-3 w-24">Bid Date</th>
+              <SortHeader label="Project" sortKey="name" />
+              <SortHeader label="Company / GC" sortKey="company" />
+              <SortHeader label="Contact" sortKey="contact_name" />
+              <SortHeader label="Location" sortKey="location" />
+              <SortHeader label="Bid Date" sortKey="bid_date" className="w-24" />
               <th className="px-4 py-3 text-center w-20">Files</th>
               <th className="px-4 py-3 text-center w-24">Actions</th>
             </tr>
@@ -1155,9 +1207,10 @@ const LeadTable = ({
               const expired = isExpired(lead.bid_date);
               const highlightClass = getHighlightBg(lead.highlight);
               const strikeClass = lead.strikethrough ? 'opacity-50' : '';
+              const hiddenClass = lead.hidden ? 'opacity-30 grayscale' : '';
               return (
                 <React.Fragment key={lead.id || i}>
-                  <tr className={`hover:bg-slate-800/30 transition group ${expired ? 'opacity-40' : ''} ${highlightClass} ${strikeClass}`}>
+                  <tr className={`hover:bg-slate-800/30 transition group ${expired ? 'opacity-40' : ''} ${hiddenClass} ${highlightClass} ${strikeClass}`}>
                     <td className="px-2 py-2">
                       <div className="flex gap-0.5">
                         <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700 hover:bg-green-600'}`} title="Green"><Circle size={8} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
@@ -1178,6 +1231,31 @@ const LeadTable = ({
                           <span className={`text-[10px] font-mono font-bold ${scoreColor(lead.knowledge_score)}`}>{lead.knowledge_score}</span>
                         )}
                         <span className="text-[10px] text-slate-600">{lead.site}</span>
+                        {/* Tags */}
+                        {lead.tags && lead.tags.map((tag, idx) => (
+                          <span key={idx} title={tag.hover} className={`text-[10px] px-1.5 py-0.5 rounded border ${tag.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                            tag.color === 'red' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                              tag.color === 'blue' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                                tag.color === 'orange' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
+                                  tag.color === 'purple' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                                    tag.color === 'yellow' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                                      tag.color === 'teal' ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' :
+                                        'bg-slate-700 text-slate-300 border-slate-600'
+                            }`}>
+                            {tag.label}
+                          </span>
+                        ))}
+                      </div>
+                      {/* Short In-line Comment */}
+                      <div className="mt-1">
+                        <input
+                          type="text"
+                          defaultValue={lead.short_comment || ''}
+                          onBlur={(e) => toggleLeadStyle(lead, 'short_comment', e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                          placeholder="Add comment..."
+                          className="bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] text-slate-400 focus:text-slate-200 placeholder-slate-700 w-full focus:outline-none transition-colors"
+                        />
                       </div>
                     </td>
                     <td className="px-4 py-2">
@@ -1221,6 +1299,9 @@ const LeadTable = ({
                           )}
                         </button>
                         <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
+                        <button onClick={() => toggleLeadStyle(lead, 'hidden', !lead.hidden)} className={`p-1.5 rounded transition-colors ${lead.hidden ? 'bg-slate-600 text-slate-300 hover:bg-slate-500' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title={lead.hidden ? "Unhide" : "Hide"}>
+                          {lead.hidden ? <Eye size={12} /> : <EyeOff size={12} />}
+                        </button>
                         <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
                       </div>
                     </td>
@@ -1249,16 +1330,29 @@ const LeadTable = ({
                                 {lead.sprinklered && <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full border border-red-500/20">Sprinklered</span>}
                               </div>
                             </div>
+
                             <div>
                               <button onClick={() => setDescriptionPopup(lead)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
                                 <Eye size={14} /> View Full Details
                               </button>
                             </div>
                           </div>
+
+                          {/* Internal Comments */}
+                          <div className="mt-2">
+                            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Internal Comments</h4>
+                            <textarea
+                              defaultValue={lead.comments || ''}
+                              onBlur={(e) => toggleLeadStyle(lead, 'comments', e.target.value)}
+                              placeholder="Add internal notes about this project (autosaves on blur)..."
+                              className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 text-xs text-slate-300 placeholder-slate-600 focus:ring-1 focus:ring-blue-500 focus:outline-none resize-y min-h-[60px]"
+                            />
+                          </div>
                         </div>
                       </td>
                     </tr>
-                  )}
+                  )
+                  }
                 </React.Fragment>
               );
             })}
@@ -1268,16 +1362,18 @@ const LeadTable = ({
           </tbody>
         </table>
       </div>
-      {totalPages > 1 && (
-        <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center text-xs text-slate-400">
-          <span>Showing {paginatedData.length} of {data.length} leads</span>
-          <div className="flex gap-2">
-            <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Previous</button>
-            <span className="flex items-center px-2">Page {currentPage} of {totalPages}</span>
-            <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next</button>
+      {
+        totalPages > 1 && (
+          <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center text-xs text-slate-400">
+            <span>Showing {paginatedData.length} of {data.length} leads</span>
+            <div className="flex gap-2">
+              <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Previous</button>
+              <span className="flex items-center px-2">Page {currentPage} of {totalPages}</span>
+              <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next</button>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 };

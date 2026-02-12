@@ -1295,7 +1295,9 @@ class GeminiFireAlarmAnalyzer:
             'project_details': project_details,
             'fire_alarm_details': fire_alarm_details,
             'hvac_mechanical': hvac_mechanical,
+            'hvac_mechanical': hvac_mechanical,
             'competitive_advantages': competitive_advantages,
+            'project_tags': composite_response.get('project_tags', []) or [],
             # Common fields
             'spec_book_context': None,
             'total_pages': len(pages_text),
@@ -1370,6 +1372,7 @@ class GeminiFireAlarmAnalyzer:
                 'access_control_doors': [],
             },
             'competitive_advantages': [],
+            'project_tags': [],
         }
 
     def _compile_page_context(
@@ -1488,6 +1491,31 @@ NEW STANDARDIZED FIELDS (for improved organization):
 }}
 
 5. competitive_advantages: array of strings containing advice or recommendations to gain an edge over competing bidders
+
+6. project_tags: array of objects {{ "label": string, "color": string, "hover": string }}.
+   - GENERATE TAGS BASED ON THESE RULES:
+     - MANUFACTURERS:
+       - "Gamewell-FCI", "Silent Knight", "Firelite" -> color: "green", hover: "Preferred Manufacturer"
+       - "Simplex", "Notifier", "EST", "Edwards", "GE", "Kiddie" -> color: "red", hover: "Proprietary/Restricted Manufacturer"
+     - DEAL BREAKERS:
+       - "Buy American", "BABA", "AIS" -> color: "red", hover: "Buy American Act Requirement"
+       - "Union Required", "PLA", "Prevailing Wage" -> color: "orange", hover: "Labor Requirement"
+       - "Minority/Women Owned Req" -> color: "red", hover: "WBE/MBE Requirement"
+     - SCOPE:
+       - "New System" -> color: "blue", hover: "New Construction"
+       - "Existing to Remain" -> color: "yellow", hover: "Existing System"
+       - "Design Build" -> color: "purple", hover: "Design Build Contract"
+       - "Phased" -> color: "orange", hover: "Phased Project"
+       - "No FA" -> color: "gray", hover: "No Fire Alarm Scope Found"
+       - "Voice" -> color: "blue", hover: "Voice Evacuation Required"
+     - LOCATION TYPE:
+       - "Apartment", "Multi-Family" -> color: "teal", hover: "Residential"
+       - "Retail", "Mercantile" -> color: "teal", hover: "Retail"
+       - "Warehouse", "Industrial" -> color: "teal", hover: "Industrial"
+       - "Office" -> color: "teal", hover: "Commercial Office"
+       - "School", "Education", "University" -> color: "teal", hover: "Educational"
+       - "Hospital", "Healthcare" -> color: "teal", hover: "Healthcare"
+       - "Government", "Military" -> color: "teal", hover: "Government"
 
 CRITICAL RULES:
 - If a field is unknown, use null, an empty array, or an empty object as appropriate.
