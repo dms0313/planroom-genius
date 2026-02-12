@@ -512,35 +512,132 @@ def render_first_page_thumbnail(pdf_path, dpi=72):
 # Gemini AI analysis
 # ---------------------------------------------------------------------------
 
-_GEMINI_PROMPT = """You are an expert fire alarm estimator analyzing construction documents.
-Analyze these document pages AS A COMPLETE SET and return a JSON object with EXACTLY these fields.
-Do not output results for individual pages; synthesize your findings from all provided images into one single project assessment.
+_GEMINI_PROMPT = """You are an expert fire alarm preconstruction estimator.
+Analyze these document pages AS A COMPLETE SET and return ONE project-level qualification assessment.
+Do not output per-page results.
 
+Return ONLY valid JSON with EXACTLY this schema:
 {
   "requires_fire_alarm": true/false,
   "system_type": "new" | "existing" | "modification" | "unknown",
   "required_vendors": ["vendor1", "vendor2"],
   "required_manufacturers": ["mfr1", "mfr2"],
   "deal_breakers": ["item1"],
-  "notes": "Brief analysis summary (2-3 sentences)",
+  "bid_risk_flags": ["union-only", "proprietary vendor lock", "short timeline"],
+  "scope_signals": {
+    "new_install": true/false,
+    "retrofit": true/false,
+    "monitoring": true/false,
+    "voice_evac": true/false,
+    "duct_detectors": true/false,
+    "access_control_interface": true/false
+  },
+  "evidence": [
+    {
+      "claim": "short statement of a qualification-relevant fact",
+      "page_reference": "file/page reference if available",
+      "quote": "short exact quote from documents"
+    }
+  ],
+  "confidence_score": 0.0,
+  "recommended_next_action": "bid" | "review" | "skip",
+  "notes": "Brief qualification summary (2-4 sentences)",
   "scope_score": 0-100
 }
 
 Guidelines:
-- requires_fire_alarm: Does this project require fire alarm work?
-- system_type: "new" = brand new system, "existing" = existing system to remain/as-is, "modification" = changes to existing system
-- required_vendors: *CRITICAL* List ANY specific fire alarm vendors/installers listed as "required", "approved", or "suggested". Return empty list [] if none found.
-- required_manufacturers: *CRITICAL* List ANY specific fire alarm equipment manufacturers listed as "required", "approved", or "basis of design". Return empty list [] if none found.
-- deal_breakers: List specific constraints that might prevent bidding (e.g., "Union Labor Required", "PLA", "Prevailing Wage" if clearly stated).
-- scope_score: Rate the attractiveness of this project (0-100):
-    * 0   = No Fire Alarm work required.
-    * 50  = Fire Alarm is required, but no specific manufacturers or vendors are listed (standard bid).
-    * 75  = Fire Alarm required + Specific Manufacturers listed (higher chance if we match).
-    * 90+ = Fire Alarm required + Specific Vendors listed (very high chance if we are on the list).
-    * Deduct points for "existing" systems or complex "modifications" if they look messy.
-- Focus ONLY on fire alarm / detection / notification / special systems scope
+- Focus on qualification, bid viability, and risk (not just fire alarm detection).
+- confidence_score must be 0.0 to 1.0 and reflect evidence quality and ambiguity.
+- evidence must include concrete support for key conclusions; use [] if no reliable support found.
+- bid_risk_flags should include known bid constraints (labor restrictions, proprietary requirements, compressed schedule, unusual coordination burden, etc.).
+- scope_signals booleans should reflect whether each signal appears in plans/specs.
+- recommended_next_action:
+    * "bid" when scope is clear and winnable.
+    * "review" when viable but uncertain/risky and needs human estimator review.
+    * "skip" when poor fit, no FA scope, or hard constraints.
+- required_vendors/required_manufacturers/deal_breakers should remain concise factual lists.
+- scope_score remains a 0-100 attractiveness score.
 
-Return ONLY valid JSON, no markdown fences."""
+Return ONLY JSON, no markdown fences or extra text."""
+
+
+def _default_analysis_result(notes=""):
+    return {
+        "requires_fire_alarm": False,
+        "system_type": "unknown",
+        "required_vendors": [],
+        "required_manufacturers": [],
+        "deal_breakers": [],
+        "bid_risk_flags": [],
+        "scope_signals": {
+            "new_install": False,
+            "retrofit": False,
+            "monitoring": False,
+            "voice_evac": False,
+            "duct_detectors": False,
+            "access_control_interface": False,
+        },
+        "evidence": [],
+        "confidence_score": 0.0,
+        "recommended_next_action": "review",
+        "notes": notes,
+        "scope_score": 0,
+    }
+
+
+def _normalize_analysis_result(raw, fallback_notes=""):
+    """Backfill missing keys and sanitize malformed Gemini responses."""
+    normalized = _default_analysis_result(notes=fallback_notes)
+    if not isinstance(raw, dict):
+        return normalized
+
+    normalized["requires_fire_alarm"] = bool(raw.get("requires_fire_alarm", normalized["requires_fire_alarm"]))
+
+    system_type = str(raw.get("system_type", normalized["system_type"]))
+    if system_type in {"new", "existing", "modification", "unknown"}:
+        normalized["system_type"] = system_type
+
+    for key in ("required_vendors", "required_manufacturers", "deal_breakers", "bid_risk_flags"):
+        value = raw.get(key)
+        if isinstance(value, list):
+            normalized[key] = [str(item).strip() for item in value if str(item).strip()]
+
+    scope_signals = raw.get("scope_signals")
+    if isinstance(scope_signals, dict):
+        for signal in normalized["scope_signals"]:
+            if signal in scope_signals:
+                normalized["scope_signals"][signal] = bool(scope_signals.get(signal))
+
+    evidence = raw.get("evidence")
+    if isinstance(evidence, list):
+        cleaned = []
+        for item in evidence:
+            if not isinstance(item, dict):
+                continue
+            cleaned.append({
+                "claim": str(item.get("claim", "")).strip(),
+                "page_reference": str(item.get("page_reference", "")).strip(),
+                "quote": str(item.get("quote", "")).strip(),
+            })
+        normalized["evidence"] = cleaned
+
+    confidence = raw.get("confidence_score")
+    if isinstance(confidence, (int, float)):
+        normalized["confidence_score"] = max(0.0, min(1.0, float(confidence)))
+
+    action = str(raw.get("recommended_next_action", normalized["recommended_next_action"]))
+    if action in {"bid", "review", "skip"}:
+        normalized["recommended_next_action"] = action
+
+    notes = raw.get("notes")
+    if notes is not None:
+        normalized["notes"] = str(notes)
+
+    score = raw.get("scope_score")
+    if isinstance(score, (int, float)):
+        normalized["scope_score"] = max(0, min(100, int(score)))
+
+    return normalized
 
 
 def _call_gemini(images, context=""):
@@ -582,13 +679,14 @@ def _call_gemini(images, context=""):
                     text = re.sub(r"^```(?:json)?\s*", "", text)
                     text = re.sub(r"\s*```$", "", text)
                 try:
-                    return json.loads(text)
+                    parsed = json.loads(text)
+                    return _normalize_analysis_result(parsed)
                 except json.JSONDecodeError:
-                    logger.warning("Gemini returned non-JSON, using raw text as notes")
-                    return {"notes": text}
+                    logger.warning("Gemini returned non-JSON, using deterministic fallback structure")
+                    return _normalize_analysis_result({}, fallback_notes=text)
             else:
                  logger.warning(f"Gemini response structure unexpected: {data}")
-                 return None
+                 return _normalize_analysis_result({}, fallback_notes="Gemini response structure unexpected")
 
         except req.exceptions.HTTPError as e:
             if e.response.status_code == 429:
@@ -598,13 +696,13 @@ def _call_gemini(images, context=""):
                 continue
             else:
                 logger.error(f"Gemini HTTP error: {e}")
-                return None
+                return _normalize_analysis_result({}, fallback_notes=f"Gemini HTTP error: {e}")
         except Exception as e:
             logger.warning(f"Gemini call failed: {e}")
-            return None
+            return _normalize_analysis_result({}, fallback_notes=f"Gemini call failed: {e}")
     
     logger.error("Gemini failed after max retries due to rate limiting.")
-    return None
+    return _normalize_analysis_result({}, fallback_notes="Gemini rate-limited after retries")
 
 
 def _heuristic_analysis(all_text):
@@ -639,7 +737,7 @@ def _heuristic_analysis(all_text):
         if system_type == "existing":
             score = max(20, score - 20)
 
-    return {
+    return _normalize_analysis_result({
         "requires_fire_alarm": requires,
         "system_type": system_type,
         "required_vendors": vendors,
@@ -647,7 +745,7 @@ def _heuristic_analysis(all_text):
         "deal_breakers": breakers,
         "notes": "Heuristic analysis (Gemini API key not configured)",
         "scope_score": score,
-    }
+    })
 
 
 # ---------------------------------------------------------------------------
