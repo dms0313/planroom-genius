@@ -1,11 +1,2 @@
-=== Scraper Run Started: 2026-02-11T16:52:28.510772 ===
-[16:52:28] PlanHub: Initializing browser
-[16:54:03] PlanHub: Complete - Found 5 leads
-[16:54:03] Bidplanroom: Initializing browser
-[16:54:32] Bidplanroom: Complete - Found 1 leads
-[16:54:32] LoydBuildsBetter: Initializing browser
-[16:54:42] LoydBuildsBetter: Complete - Found 0 leads
-[16:54:42] BuildingConnected: Initializing browser
-[17:00:29] BuildingConnected: Complete - Found 21 leads
-[17:00:29] Saving results to database
-[17:00:29] Scraper run complete - BC: 21 | PH: 5 | BPR: 1 | LBB: 0
+=== Scraper Run Started: 2026-02-12T10:11:48.031574 ===
+[10:11:48] PlanHub: Initializing browser

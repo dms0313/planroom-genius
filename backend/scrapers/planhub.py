@@ -462,90 +462,131 @@ class PlanHubScraper(BaseScraper):
                 print(f"[PH]    Error in Drive pre-check: {e}")
 
         try:
-            # Click the row to open project details
-            clicked = False
+            # Extract project URL from the row and navigate directly
+            print("[PH]    Extracting project URL from row...")
 
+            project_url = None
+            safe_name = lead['name'].replace('"', '\\"').replace("'", "\\'")
+
+            # Try to extract project URL/ID from the row
             if row_element:
-                print("[PH]    Clicking row to open details...")
+                project_url = await self.page.evaluate('''(row) => {
+                    // Look for any link in the row that points to project details
+                    const links = row.querySelectorAll('a[href*="/project/"]');
+                    for (const link of links) {
+                        const href = link.getAttribute('href');
+                        if (href && !href.includes('/list')) {
+                            return href.startsWith('http') ? href : 'https://supplier.planhub.com' + href;
+                        }
+                    }
+                    // Look for data attributes with project ID
+                    const projectId = row.getAttribute('data-project-id') ||
+                                      row.querySelector('[data-project-id]')?.getAttribute('data-project-id') ||
+                                      row.getAttribute('data-id');
+                    if (projectId) {
+                        return `https://supplier.planhub.com/project/${projectId}`;
+                    }
+                    // Look for routerLink attribute
+                    const routerLink = row.querySelector('[routerlink*="/project/"]');
+                    if (routerLink) {
+                        const rl = routerLink.getAttribute('routerlink');
+                        return rl.startsWith('http') ? rl : 'https://supplier.planhub.com' + rl;
+                    }
+                    return null;
+                }''', row_element)
 
-                # First choice: captured row handle click
-                try:
-                    await self.page.evaluate('''(row) => {
-                        row.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
-                    }''', row_element)
-                except Exception as e:
-                    print(f"[PH]    Row scroll failed (captured handle): {e}")
+            # Fallback: search all rows by project name
+            if not project_url:
+                project_url = await self.page.evaluate(f'''() => {{
+                    const rows = document.querySelectorAll('planhub-project-table tbody tr');
+                    for (const row of rows) {{
+                        if (row.textContent.includes("{safe_name}")) {{
+                            // Look for link
+                            const links = row.querySelectorAll('a[href*="/project/"]');
+                            for (const link of links) {{
+                                const href = link.getAttribute('href');
+                                if (href && !href.includes('/list')) {{
+                                    return href.startsWith('http') ? href : 'https://supplier.planhub.com' + href;
+                                }}
+                            }}
+                            // Look for data-project-id
+                            const projectId = row.getAttribute('data-project-id') ||
+                                              row.querySelector('[data-project-id]')?.getAttribute('data-project-id');
+                            if (projectId) {{
+                                return `https://supplier.planhub.com/project/${{projectId}}`;
+                            }}
+                        }}
+                    }}
+                    return null;
+                }}''')
 
-                for attempt in range(2):
-                    try:
-                        await row_element.click()
-                        print(f"[PH]    Click path: row_handle_click (attempt {attempt + 1})")
-                        clicked = True
-                        break
-                    except Exception as e:
-                        err = str(e).lower()
-                        print(f"[PH]    Captured handle click attempt {attempt + 1} failed: {e}")
-                        if 'detached' in err or 'not attached' in err:
-                            break
-                        await asyncio.sleep(0.4)
+            # Last fallback: Look in the entire page for project links matching the name
+            if not project_url:
+                project_url = await self.page.evaluate(f'''() => {{
+                    // Find any anchor that contains the project name and links to /project/
+                    const allLinks = document.querySelectorAll('a[href*="/project/"]');
+                    for (const link of allLinks) {{
+                        if (link.textContent.includes("{safe_name}") && !link.href.includes('/list')) {{
+                            return link.href;
+                        }}
+                    }}
+                    // Try to find project ID from Angular state or window object
+                    if (window.__PLANHUB_PROJECTS__) {{
+                        for (const p of window.__PLANHUB_PROJECTS__) {{
+                            if (p.name && p.name.includes("{safe_name}")) {{
+                                return `https://supplier.planhub.com/project/${{p.id}}`;
+                            }}
+                        }}
+                    }}
+                    return null;
+                }}''')
 
-            # Second choice: reacquire row handle by text and click handle
-            if not clicked:
-                try:
-                    candidate_rows = await self.page.querySelectorAll('planhub-project-table tbody tr')
-                    for row in candidate_rows:
-                        try:
-                            row_text = await self.page.evaluate('(el) => el.textContent || ""', row)
-                            if lead['name'] in row_text:
-                                await self.page.evaluate('''(el) => {
-                                    el.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'nearest' });
-                                }''', row)
-                                await row.click()
-                                print("[PH]    Click path: reacquired_handle_click")
-                                clicked = True
-                                break
-                        except Exception:
-                            continue
-                except Exception as e:
-                    print(f"[PH]    Reacquire by text failed: {e}")
-
-            # Last resort: JS fallback click
-            if not clicked:
-                safe_name = lead['name'].replace('"', '\\"').replace("'", "\\'")
+            if project_url:
+                print(f"[PH]    Found project URL: {project_url}")
+                await self.page.goto(project_url, {'waitUntil': 'networkidle2', 'timeout': 30000})
+                await asyncio.sleep(2)
+            else:
+                print("[PH]    Could not extract project URL, trying click fallback...")
+                # Click fallback
                 clicked = await self.page.evaluate(f'''() => {{
                     const rows = document.querySelectorAll('planhub-project-table tbody tr');
                     for (const row of rows) {{
                         if (row.textContent.includes("{safe_name}")) {{
-                            row.click();
+                            const nameCell = row.querySelector('td.mat-column-project_name span, .project-name');
+                            if (nameCell) nameCell.click();
+                            else row.click();
                             return true;
                         }}
                     }}
                     return false;
                 }}''')
-                if clicked:
-                    print("[PH]    Click path: js_fallback_click")
-
-            if not clicked:
-                print("[PH]    Could not find project row")
-                return False
-
-            # Wait for details page to load
-            print("[PH]    Waiting for details page...")
-            await asyncio.sleep(3)
+                if not clicked:
+                    print("[PH]    Could not find project row")
+                    return False
+                await asyncio.sleep(3)
 
             # Verify we're on details page
+            print("[PH]    Verifying details page loaded...")
+            current_url = self.page.url
+            print(f"[PH]    Current URL: {current_url}")
+
             details_selector = 'app-project-details-v2'
             try:
                 await self.page.waitForSelector(details_selector, {'timeout': 10000})
                 print("[PH]    Details page loaded")
             except:
-                print("[PH]    Details page did not load, taking screenshot...")
-                try:
-                    debug_path = os.path.join(self.download_dir, 'ph_details_fail.png')
-                    await self.page.screenshot({'path': debug_path, 'fullPage': True})
-                except:
-                    pass
-                return False
+                # Check URL as fallback
+                if '/project/' in current_url and '/list' not in current_url:
+                    print("[PH]    URL indicates details page, continuing...")
+                    await asyncio.sleep(2)
+                else:
+                    print("[PH]    Details page did not load, taking screenshot...")
+                    try:
+                        debug_path = os.path.join(self.download_dir, 'ph_details_fail.png')
+                        await self.page.screenshot({'path': debug_path, 'fullPage': True})
+                    except:
+                        pass
+                    return False
 
             # Extract full address
             address_selector = 'app-project-details-overview div.project-details div.description'
