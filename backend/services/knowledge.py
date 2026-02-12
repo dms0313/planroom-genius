@@ -522,6 +522,7 @@ Return ONLY valid JSON with EXACTLY this schema:
   "system_type": "new" | "existing" | "modification" | "unknown",
   "required_vendors": ["vendor1", "vendor2"],
   "required_manufacturers": ["mfr1", "mfr2"],
+  "required_codes": ["NFPA 72-2019"],
   "deal_breakers": ["item1"],
   "bid_risk_flags": ["union-only", "proprietary vendor lock", "short timeline"],
   "scope_signals": {
@@ -640,6 +641,74 @@ def _normalize_analysis_result(raw, fallback_notes=""):
     return normalized
 
 
+def _normalize_claim_text(claim):
+    return re.sub(r"\s+", " ", str(claim or "").strip().lower())
+
+
+def _validate_analysis_claim_evidence(analysis):
+    """Reject unsupported high-impact claims and capture validation warnings."""
+    if not isinstance(analysis, dict):
+        return analysis
+
+    evidence = analysis.get("evidence")
+    if not isinstance(evidence, dict):
+        evidence = {}
+
+    warnings = analysis.get("validation_warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+
+    claim_fields = ("required_vendors", "required_manufacturers", "required_codes", "deal_breakers")
+    sanitized_evidence = {}
+
+    for field in claim_fields:
+        claims = analysis.get(field)
+        if not isinstance(claims, list):
+            claims = []
+
+        field_evidence = evidence.get(field)
+        if not isinstance(field_evidence, list):
+            field_evidence = []
+
+        valid_claims = []
+        valid_evidence = []
+        for claim in claims:
+            normalized_claim = _normalize_claim_text(claim)
+            if not normalized_claim:
+                continue
+
+            match = None
+            for item in field_evidence:
+                if not isinstance(item, dict):
+                    continue
+                ev_claim = _normalize_claim_text(item.get("claim"))
+                page = item.get("page")
+                quote = str(item.get("quote") or "").strip()
+                if ev_claim != normalized_claim:
+                    continue
+                if not isinstance(page, int) or page < 1 or not quote:
+                    continue
+                match = {
+                    "claim": str(claim).strip(),
+                    "page": page,
+                    "quote": quote[:200],
+                }
+                break
+
+            if match:
+                valid_claims.append(str(claim).strip())
+                valid_evidence.append(match)
+            else:
+                warnings.append(f"Dropped {field} claim without evidence: {claim}")
+
+        analysis[field] = valid_claims
+        sanitized_evidence[field] = valid_evidence
+
+    analysis["evidence"] = sanitized_evidence
+    analysis["validation_warnings"] = warnings
+    return analysis
+
+
 def _call_gemini(images, context=""):
     api_key = os.getenv("GEMINI_API_KEY_PLANROOM_GENIUS", "").strip()
     if not api_key:
@@ -742,7 +811,15 @@ def _heuristic_analysis(all_text):
         "system_type": system_type,
         "required_vendors": vendors,
         "required_manufacturers": manufacturers,
+        "required_codes": [],
         "deal_breakers": breakers,
+        "evidence": {
+            "required_vendors": [],
+            "required_manufacturers": [],
+            "required_codes": [],
+            "deal_breakers": [],
+        },
+        "validation_warnings": [],
         "notes": "Heuristic analysis (Gemini API key not configured)",
         "scope_score": score,
     })
@@ -1048,7 +1125,10 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
         lead["knowledge_system_type"] = aggregate["system_type"]
         lead["knowledge_required_vendors"] = list(set(aggregate["required_vendors"]))
         lead["knowledge_required_manufacturers"] = list(set(aggregate["required_manufacturers"]))
+        lead["knowledge_required_codes"] = list(set(aggregate["required_codes"]))
         lead["knowledge_deal_breakers"] = list(set(aggregate["deal_breakers"]))
+        lead["knowledge_evidence"] = aggregate["evidence"]
+        lead["knowledge_validation_warnings"] = aggregate["validation_warnings"][:25]
         lead["knowledge_notes"] = "\n".join(aggregate["notes"])[:2000]
         lead["knowledge_score"] = aggregate["scope_score"]
         lead["knowledge_badges"] = badges

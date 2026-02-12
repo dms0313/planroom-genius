@@ -199,6 +199,79 @@ class GeminiFireAlarmAnalyzer:
                 logger.error("Failed to parse JSON even after attempting fixes.")
                 return default
 
+    @staticmethod
+    def _normalize_claim_text(claim: Any) -> str:
+        return re.sub(r"\s+", " ", str(claim or "").strip().lower())
+
+    def _validate_high_impact_claims(self, payload: Any) -> Any:
+        """Drop or flag high-impact claims that do not include required evidence."""
+        if not isinstance(payload, dict):
+            return payload
+
+        high_impact = payload.get('high_impact_claims')
+        if not isinstance(high_impact, dict):
+            return payload
+
+        evidence = high_impact.get('evidence')
+        if not isinstance(evidence, dict):
+            evidence = {}
+
+        warnings = high_impact.get('validation_warnings')
+        if not isinstance(warnings, list):
+            warnings = []
+
+        claim_fields = ('required_vendors', 'required_manufacturers', 'code_requirements', 'deal_breakers')
+        sanitized_evidence: Dict[str, List[Dict[str, Any]]] = {}
+
+        for field in claim_fields:
+            claims = high_impact.get(field)
+            if not isinstance(claims, list):
+                claims = []
+
+            field_evidence = evidence.get(field)
+            if not isinstance(field_evidence, list):
+                field_evidence = []
+
+            valid_claims: List[str] = []
+            valid_evidence: List[Dict[str, Any]] = []
+
+            for claim in claims:
+                normalized_claim = self._normalize_claim_text(claim)
+                if not normalized_claim:
+                    continue
+
+                match = None
+                for item in field_evidence:
+                    if not isinstance(item, dict):
+                        continue
+                    evidence_claim = self._normalize_claim_text(item.get('claim'))
+                    page = item.get('page')
+                    quote = str(item.get('quote') or '').strip()
+                    if evidence_claim != normalized_claim:
+                        continue
+                    if not isinstance(page, int) or page < 1 or not quote:
+                        continue
+                    match = {
+                        'claim': str(claim).strip(),
+                        'page': page,
+                        'quote': quote[:200],
+                    }
+                    break
+
+                if match:
+                    valid_claims.append(str(claim).strip())
+                    valid_evidence.append(match)
+                else:
+                    warnings.append(f"Dropped {field} claim without evidence: {claim}")
+
+            high_impact[field] = valid_claims
+            sanitized_evidence[field] = valid_evidence
+
+        high_impact['evidence'] = sanitized_evidence
+        high_impact['validation_warnings'] = warnings[:50]
+        payload['high_impact_claims'] = high_impact
+        return payload
+
     def update_system_instructions(self, instructions: str) -> None:
         """Update the system instructions used for Gemini prompts."""
         self.system_instructions = instructions
@@ -1280,6 +1353,7 @@ class GeminiFireAlarmAnalyzer:
         fire_alarm_details = composite_response.get('fire_alarm_details', {}) or {}
         hvac_mechanical = composite_response.get('hvac_mechanical', {}) or {}
         competitive_advantages = composite_response.get('competitive_advantages', []) or []
+        high_impact_claims = composite_response.get('high_impact_claims', {}) or {}
 
         # Step 9: If the documents show no FA content, derive code-based expectations
         logger.info("Deriving code-based expectations (if no fire alarm content is shown)...")
@@ -1467,6 +1541,7 @@ ORIGINAL FIELDS (maintain backward compatibility):
 - specifications: {{CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, WIRING_CLASS, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM, EXISTING_SYSTEM_PANEL_MODEL}}
 - possible_pitfalls: array of project-specific conflicts, omissions, or risks an estimator should flag (no canned checklists)
 - estimating_notes: array of coordination or estimating notes tailored to this project (do not duplicate pitfalls; keep concise and case-specific)
+- high_impact_claims: {{required_vendors, required_manufacturers, code_requirements, deal_breakers, evidence, validation_warnings}}
 
 NEW STANDARDIZED FIELDS (for improved organization):
 1. scope_summary: A concise 2-3 sentence summary of the project scope from a fire alarm perspective.
@@ -1539,6 +1614,8 @@ CRITICAL RULES:
 - HVAC equipment over 2,000 CFM must be flagged with over_2000_cfm: true
 - Extract Keyed/General Notes accurately with page citations.
 - Do not repeat the same pitfall or note in multiple fields; deduplicate wording and cite context briefly when helpful.
+- For EVERY item in required_vendors, required_manufacturers, code_requirements, and deal_breakers, you MUST include one matching evidence object with the same claim text, page number, and short quote/snippet from the documents.
+- If there is no evidence, omit the claim from that list.
 """
         )
 
@@ -1551,7 +1628,7 @@ CRITICAL RULES:
                 default_response['prompt_feedback'] = result.prompt_feedback
                 return default_response
 
-            parsed = self._parse_json(result.text, default_response)
+            parsed = self._validate_high_impact_claims(self._parse_json(result.text, default_response))
             return parsed if isinstance(parsed, dict) else default_response
         except GeminiPromptBlocked:
             raise

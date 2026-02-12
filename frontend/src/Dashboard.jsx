@@ -865,10 +865,60 @@ export default function LeadDashboard() {
                       </div>
                     )}
 
+                    {descriptionPopup.knowledge_required_manufacturers && descriptionPopup.knowledge_required_manufacturers.length > 0 && (
+                      <div className="text-xs mb-2">
+                        <span className="text-slate-500">Required Manufacturers:</span>
+                        <span className="ml-1 text-amber-300">{descriptionPopup.knowledge_required_manufacturers.join(', ')}</span>
+                      </div>
+                    )}
+
+                    {descriptionPopup.knowledge_required_codes && descriptionPopup.knowledge_required_codes.length > 0 && (
+                      <div className="text-xs mb-2">
+                        <span className="text-slate-500">Code Requirements:</span>
+                        <span className="ml-1 text-cyan-300">{descriptionPopup.knowledge_required_codes.join(', ')}</span>
+                      </div>
+                    )}
+
                     {descriptionPopup.knowledge_deal_breakers && descriptionPopup.knowledge_deal_breakers.length > 0 && (
                       <div className="text-xs mb-2">
                         <span className="text-red-400">⚠️ Deal Breakers:</span>
                         <span className="ml-1 text-red-300">{descriptionPopup.knowledge_deal_breakers.join(', ')}</span>
+                      </div>
+                    )}
+
+                    {descriptionPopup.knowledge_evidence && (
+                      <div className="mt-3 pt-3 border-t border-purple-500/20">
+                        <div className="text-xs text-slate-500 mb-2">Evidence (page + snippet)</div>
+                        <div className="space-y-1 text-[11px]">
+                          {Object.entries(descriptionPopup.knowledge_evidence).map(([category, entries]) => {
+                            if (!Array.isArray(entries) || entries.length === 0) return null;
+                            return (
+                              <div key={category} className="bg-slate-800/40 rounded p-2">
+                                <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">{category.replaceAll('_', ' ')}</div>
+                                <ul className="space-y-1">
+                                  {entries.map((entry, idx) => (
+                                    <li key={`${category}-${idx}`} className="text-slate-300">
+                                      <span className="text-purple-300 font-medium">{entry.claim || 'Claim'}</span>
+                                      <span className="text-slate-400"> — Pg {entry.page}: </span>
+                                      <span>{entry.quote || 'No quote provided'}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {descriptionPopup.knowledge_validation_warnings && descriptionPopup.knowledge_validation_warnings.length > 0 && (
+                      <div className="mt-2 text-[11px] bg-yellow-900/20 border border-yellow-500/30 rounded p-2 text-yellow-200">
+                        <div className="font-semibold mb-1">Evidence validation warnings</div>
+                        <ul className="list-disc list-inside space-y-0.5">
+                          {descriptionPopup.knowledge_validation_warnings.map((warning, idx) => (
+                            <li key={idx}>{warning}</li>
+                          ))}
+                        </ul>
                       </div>
                     )}
 
