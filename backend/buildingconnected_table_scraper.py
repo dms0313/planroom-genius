@@ -218,22 +218,34 @@ class BCAPIClient:
 
             page = ctx.pages[0] if ctx.pages else await ctx.new_page()
 
-            # Intercept API responses to capture pipeline data
+            # Intercept API responses to capture pipeline data and file-related endpoints
+            FILE_API_KEYWORDS = ("files", "download", "file-provider", "bid-package", "document")
+
             async def _on_response(response):
                 nonlocal captured_responses
                 url = response.url
                 if "/api/" not in url:
                     return
                 try:
+                    path = url.split("/api/")[1].split("?")[0] if "/api/" in url else url
+
                     if response.status == 200:
                         ct = response.headers.get("content-type", "")
                         if "json" in ct:
                             body = await response.json()
-                            # Store the response keyed by the API path
-                            path = url.split("/api/")[1].split("?")[0] if "/api/" in url else url
                             captured_responses[path] = body
                             if BC_DEBUG:
                                 log_status(f"DEBUG: intercepted /api/{path} ({type(body).__name__})")
+
+                    # Always log file-related endpoints (even non-200) for discovery
+                    if any(kw in path.lower() for kw in FILE_API_KEYWORDS):
+                        log_status(f"[FILE-API] {response.status} /api/{path}")
+                        if response.status == 200:
+                            try:
+                                body = await response.json()
+                                _debug_dump(f"file_api_{path.replace('/', '_')}", body)
+                            except Exception:
+                                pass
                 except Exception:
                     pass
 
@@ -516,19 +528,82 @@ class BCAPIClient:
         _debug_dump(f"opportunity_{opportunity_id}", data)
         return data
 
-    async def get_opportunity_files(self, opportunity_id: str):
-        """GET /api/opportunities/{id}/files or /bid-packages/{id}/files"""
-        # Try multiple possible endpoints
-        for path in [
-            f"/opportunities/{opportunity_id}/files",
-            f"/opportunities/{opportunity_id}/bid-packages",
-        ]:
+    async def get_opportunity_files(self, opportunity_id: str,
+                                    file_providers: dict | None = None,
+                                    extra_ids: set | None = None):
+        """
+        Try multiple API patterns to find downloadable files for an opportunity.
+
+        The actual BC file response format is:
+        {"items": [{"_id": "...", "name": "...", "type": "FILE"|"FOLDER",
+                     "downloadUrl": "/_/download/file/{fileId}/rfps/{projectId}/..."}]}
+
+        The correct endpoint is /api/opportunities/{opportunityId}/files but
+        the opportunityId may differ from the pipeline _id. We try all known IDs.
+
+        Args:
+            opportunity_id: The primary BC opportunity/project ID.
+            file_providers: Optional fileProviders dict from pipeline data.
+            extra_ids: Additional IDs to try (from detail response, pipeline, etc).
+        """
+        # Collect all IDs that might be used in file API paths
+        ids_to_try = set()
+        ids_to_try.add(opportunity_id)
+        if extra_ids:
+            ids_to_try.update(extra_ids)
+
+        if file_providers:
+            for provider_key in ("bidPackage", "project", "addenda", "plans", "specs", "documents"):
+                prov = file_providers.get(provider_key) or {}
+                for id_key in ("rootId", "projectId", "folderId", "_id"):
+                    val = prov.get(id_key)
+                    if val:
+                        ids_to_try.add(val)
+
+        log_status(f"[FILES] Trying {len(ids_to_try)} candidate IDs")
+
+        # The known working endpoint is /opportunities/{id}/files
+        # Try this first for each ID, then fall back to other patterns
+        endpoints = []
+        for pid in ids_to_try:
+            endpoints.append(f"/opportunities/{pid}/files")
+        for pid in ids_to_try:
+            endpoints.extend([
+                f"/opportunities/{pid}/bid-packages",
+                f"/opportunities/{pid}/documents",
+                f"/rfps/{pid}/files",
+            ])
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_endpoints = []
+        for ep in endpoints:
+            if ep not in seen:
+                seen.add(ep)
+                unique_endpoints.append(ep)
+
+        for path in unique_endpoints:
             url = f"{self.API_BASE}{path}"
+            log_status(f"[FILES] Trying: {path}")
             data = await self._request("GET", url)
             if data:
+                log_status(f"[FILES] Success: {path} -> {type(data).__name__}")
                 _debug_dump(f"files_{opportunity_id}", data)
                 return data
+            else:
+                log_status(f"[FILES] No data: {path}")
+
+        log_status(f"[FILES] All endpoints exhausted for {opportunity_id}")
         return None
+
+    def _download_headers(self):
+        """Headers for file downloads (not JSON API calls)."""
+        return {
+            "accept": "*/*",
+            "origin": "https://app.buildingconnected.com",
+            "referer": "https://app.buildingconnected.com/opportunities/pipeline",
+            "cookie": f"authorization={self._token}",
+        }
 
     async def download_file(self, url: str, dest_dir: str) -> str | None:
         """Stream-download a file into dest_dir."""
@@ -538,9 +613,11 @@ class BCAPIClient:
 
         for use_auth in (True, False):
             try:
-                headers = self._headers() if use_auth else {}
+                headers = self._download_headers() if use_auth else {}
+                log_status(f"[DL] {'with' if use_auth else 'without'} auth: {url[:80]}")
                 async with self._client.stream("GET", url, headers=headers, follow_redirects=True) as r:
                     if r.status_code >= 400:
+                        log_status(f"[DL] HTTP {r.status_code} ({'auth' if use_auth else 'no-auth'})")
                         if use_auth:
                             continue
                         return None
@@ -550,14 +627,24 @@ class BCAPIClient:
                         filename = cd.split("filename=")[-1].strip('" ')
 
                     dest = os.path.join(dest_dir, filename)
+                    total = 0
                     with open(dest, "wb") as f:
                         async for chunk in r.aiter_bytes(8192):
                             f.write(chunk)
+                            total += len(chunk)
 
-                    log_status(f"Downloaded: {filename}")
+                    if total < 100:
+                        log_status(f"[DL] File too small ({total} bytes), likely error page")
+                        os.remove(dest)
+                        if use_auth:
+                            continue
+                        return None
+
+                    log_status(f"Downloaded: {filename} ({total:,} bytes)")
                     return dest
             except Exception as e:
                 if use_auth:
+                    log_status(f"[DL] Auth attempt failed: {e}")
                     continue
                 log_status(f"Download failed: {e}")
                 return None
@@ -640,15 +727,32 @@ class BuildingConnectedTableScraper:
     # -- file handling -------------------------------------------------------
 
     async def _handle_files(self, lead, files_data):
-        """Download files and optionally upload to Google Drive."""
+        """Download files and optionally upload to Google Drive.
+
+        Handles the BC file API response format:
+        {"items": [{"name": "Plans", "type": "FOLDER", "downloadUrl": "/_/download/file/..."},
+                    {"name": "Specs.pdf", "type": "FILE", "downloadUrl": "/_/download/file/..."}]}
+        Download URLs may be relative (starting with /_/) and need the BC origin prepended.
+        """
         if not files_data:
             return
 
-        file_list = files_data if isinstance(files_data, list) else (
-            files_data.get("files") or files_data.get("data") or []
-        )
+        # Extract file list — BC returns {"items": [...]}
+        file_list = []
+        if isinstance(files_data, dict):
+            file_list = (
+                files_data.get("items")
+                or files_data.get("files")
+                or files_data.get("data")
+                or []
+            )
+        elif isinstance(files_data, list):
+            file_list = files_data
+
         if not isinstance(file_list, list) or not file_list:
             return
+
+        BC_ORIGIN = "https://app.buildingconnected.com"
 
         # Pre-check Google Drive
         if GDRIVE_AVAILABLE and should_use_gdrive():
@@ -668,27 +772,62 @@ class BuildingConnectedTableScraper:
             except Exception as e:
                 log_status(f"GDrive pre-check error: {e}")
 
-        # Find download URL from file list
-        download_url = None
+        # Collect all downloadable files (prefer actual FILEs over FOLDERs)
+        downloadable = []
         for f in file_list:
-            if isinstance(f, dict):
-                download_url = (
-                    f.get("downloadUrl")
-                    or f.get("download_url")
-                    or f.get("url")
-                    or f.get("signedUrl")
-                    or f.get("location")
-                )
-                if download_url:
-                    break
-            elif isinstance(f, str) and f.startswith("http"):
-                download_url = f
-                break
+            if not isinstance(f, dict):
+                continue
+            raw_url = (
+                f.get("downloadUrl")
+                or f.get("download_url")
+                or f.get("url")
+                or f.get("signedUrl")
+                or f.get("location")
+            )
+            if not raw_url:
+                continue
 
-        if not download_url:
-            log_status("No downloadable file URL found")
+            # Convert relative URLs to absolute
+            if raw_url.startswith("/_/") or raw_url.startswith("/api/"):
+                raw_url = f"{BC_ORIGIN}{raw_url}"
+
+            file_type = f.get("type", "FILE").upper()
+            file_name = f.get("name", "download")
+            file_size = f.get("size", 0)
+            downloadable.append({
+                "url": raw_url,
+                "name": file_name,
+                "type": file_type,
+                "size": file_size,
+            })
+
+        if not downloadable:
+            sample = file_list[0] if file_list else None
+            if isinstance(sample, dict):
+                log_status(f"[FILES] No download URL found. File keys: {list(sample.keys())}")
+                _debug_dump("files_no_url", file_list[:3])
+            else:
+                log_status(f"[FILES] No download URL found. File type: {type(sample).__name__}")
             return
 
+        # Sort: FILES first (actual documents), then FOLDERs (which download as zip)
+        downloadable.sort(key=lambda x: (0 if x["type"] == "FILE" else 1, -x["size"]))
+
+        log_status(f"[FILES] Found {len(downloadable)} downloadable items: "
+                   + ", ".join(f'{d["name"]} ({d["type"]})' for d in downloadable[:5]))
+
+        # Download the largest folder (contains all plans) or first file
+        # Prefer the biggest folder since it likely contains plans/drawings
+        best = None
+        for d in downloadable:
+            if d["type"] == "FOLDER" and d["size"] > 0:
+                best = d
+                break
+        if not best:
+            best = downloadable[0]
+
+        download_url = best["url"]
+        log_status(f"[FILES] Downloading '{best['name']}' ({best['size']:,} bytes) from: {download_url[:80]}...")
         local_path = await self._api.download_file(download_url, self.download_dir)
         if not local_path:
             return
@@ -892,6 +1031,7 @@ class BuildingConnectedTableScraper:
             }
 
             # 4. Enrich with details if requested
+            detail_data = None
             if include_details:
                 detail_data = await self._api.get_opportunity_detail(project_id)
                 if detail_data:
@@ -943,9 +1083,44 @@ class BuildingConnectedTableScraper:
 
             # 5. Handle files if requested
             if download_files:
-                files_data = await self._api.get_opportunity_files(project_id)
+                # Extract fileProviders — prefer from detail response, fall back to pipeline
+                file_providers = {}
+                if include_details and detail_data and isinstance(detail_data, dict):
+                    file_providers = detail_data.get("fileProviders") or {}
+                if not file_providers:
+                    file_providers = proj.get("fileProviders") or {}
+
+                # The pipeline _id may differ from the opportunity ID the files
+                # API expects. Collect all candidate IDs so get_opportunity_files
+                # can try each one.
+                extra_ids = set()
+                extra_ids.add(project_id)
+                # Detail response may have the real opportunity _id
+                if include_details and detail_data and isinstance(detail_data, dict):
+                    for key in ("_id", "id", "opportunityId", "opportunityLinkId"):
+                        val = detail_data.get(key)
+                        if val:
+                            extra_ids.add(str(val))
+                # Pipeline may have additional IDs
+                for key in ("opportunityId", "opportunityLinkId", "projectId"):
+                    val = proj.get(key)
+                    if val:
+                        extra_ids.add(str(val))
+
+                if i == 0:
+                    log_status(f"[DEBUG] fileProviders keys: {list(file_providers.keys()) if file_providers else 'NONE'}")
+                    log_status(f"[DEBUG] candidate IDs for files: {extra_ids}")
+                    _debug_dump(f"file_providers_{project_id}", file_providers)
+
+                files_data = await self._api.get_opportunity_files(
+                    project_id,
+                    file_providers=file_providers if file_providers else None,
+                    extra_ids=extra_ids,
+                )
                 if files_data:
                     await self._handle_files(lead, files_data)
+                else:
+                    log_status(f"  -> No files found for {name[:40]}")
                 await asyncio.sleep(0.3)
 
             self.leads.append(lead)

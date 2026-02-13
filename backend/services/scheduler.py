@@ -243,8 +243,8 @@ async def run_agents(runtime_settings=None):
             # Add timeout to prevent hanging forever
             try:
                 ph_leads = await asyncio.wait_for(
-                    ph_scraper.run(max_projects=None),  # No limit - scrape all
-                    timeout=600  # 10 minute timeout
+                    ph_scraper.run(max_projects=None, download_files=True),
+                    timeout=900  # 15 minute timeout (downloads take longer)
                 )
             except asyncio.TimeoutError:
                 print("\n[TIMEOUT] PlanHub scraper timed out after 10 minutes", flush=True)

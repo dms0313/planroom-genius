@@ -2,8 +2,9 @@
 Loyd Builds Better scraper - Playwright-based browser automation.
 URL: https://www.loydbuildsbetter.com/bids
 
-Public Squarespace site (no login required). Extracts project listings from
-the bids page and follows document links (Dropbox, Google Drive, direct).
+Squarespace site behind a paywall/login. Requires Squarespace member login
+to access the bids page. Extracts project listings from the bids page and
+follows document links (Dropbox, Google Drive, direct).
 """
 import os
 import sys
@@ -61,6 +62,16 @@ class LoydBuildsBetterConfig(ScraperConfig):
     """Configuration for Loyd Builds Better scraper."""
 
     BASE_URL = "https://www.loydbuildsbetter.com/bids"
+
+    # Login credentials (Squarespace member login)
+    LOGIN_EMAIL = os.getenv("LOYD_LOGIN") or os.getenv("SITE_LOGIN", "")
+    LOGIN_PASSWORD = os.getenv("LOYD_PW") or os.getenv("SITE_PW", "")
+
+    # Squarespace login selectors (from browser DevTools)
+    PAYWALL_LOGIN_BTN = "#sqs-paywall-page-root > button"
+    LOGIN_EMAIL_SELECTOR = "#login-email"
+    LOGIN_PASSWORD_SELECTOR = "#login-password"
+    LOGIN_SUBMIT_SELECTOR = "#user-account-login-root > div > div > form > button > span"
 
     SPRINKLER_KEYWORDS = [
         'sprinkler', 'fire protection', 'fire alarm', 'fire suppression',
@@ -152,7 +163,7 @@ class LoydBuildsBetterScraper:
         self._page = None
 
     # ------------------------------------------------------------------
-    # Navigation
+    # Navigation & Login
     # ------------------------------------------------------------------
 
     async def _navigate(self, url, max_retries=3):
@@ -169,6 +180,113 @@ class LoydBuildsBetterScraper:
                     return False
                 await asyncio.sleep(2 ** attempt)
         return False
+
+    async def _is_paywall(self):
+        """Check if the current page is behind the Squarespace paywall."""
+        try:
+            paywall = await self._page.query_selector(self.config.PAYWALL_LOGIN_BTN)
+            if paywall:
+                return True
+            # Also check for common paywall indicators
+            url = self._page.url
+            if "/account/" in url or "login" in url:
+                return True
+            # Check page text for paywall message
+            text = await self._page.evaluate('() => document.body.innerText')
+            if "log in" in text.lower()[:500] and "member" in text.lower()[:500]:
+                return True
+        except Exception:
+            pass
+        return False
+
+    async def _login(self):
+        """
+        Log in via the Squarespace member paywall.
+
+        Steps:
+        1. Click "Log in" button on the paywall page
+        2. Fill email and password
+        3. Click "Sign In"
+        4. Wait for redirect back to bids page
+        """
+        if not self.config.LOGIN_EMAIL or not self.config.LOGIN_PASSWORD:
+            log_status("No LOYD_LOGIN / LOYD_PW credentials configured")
+            return False
+
+        log_status("Paywall detected — logging in...")
+
+        try:
+            # Step 1: Click "Log in" button on paywall
+            login_btn = await self._page.query_selector(self.config.PAYWALL_LOGIN_BTN)
+            if login_btn:
+                await login_btn.click()
+                log_status("Clicked paywall 'Log in' button")
+                await asyncio.sleep(3)
+            else:
+                # Maybe we're already on the login form
+                log_status("No paywall button found, checking for login form...")
+
+            # Step 2: Fill email
+            try:
+                await self._page.wait_for_selector(
+                    self.config.LOGIN_EMAIL_SELECTOR, timeout=10000
+                )
+                await self._page.fill(self.config.LOGIN_EMAIL_SELECTOR, self.config.LOGIN_EMAIL)
+                log_status(f"Entered email: {self.config.LOGIN_EMAIL}")
+            except Exception as e:
+                log_status(f"Could not fill email field: {e}")
+                return False
+
+            # Step 3: Fill password
+            try:
+                await self._page.fill(self.config.LOGIN_PASSWORD_SELECTOR, self.config.LOGIN_PASSWORD)
+                log_status("Entered password")
+            except Exception as e:
+                log_status(f"Could not fill password field: {e}")
+                return False
+
+            # Step 4: Click Sign In
+            await asyncio.sleep(0.5)
+            try:
+                submit = await self._page.wait_for_selector(
+                    self.config.LOGIN_SUBMIT_SELECTOR, timeout=5000
+                )
+                if submit:
+                    await submit.click()
+                    log_status("Clicked 'Sign In'")
+                else:
+                    # Fallback: try pressing Enter
+                    await self._page.keyboard.press("Enter")
+                    log_status("Pressed Enter to submit")
+            except Exception:
+                # Fallback: press Enter in the password field
+                await self._page.keyboard.press("Enter")
+                log_status("Pressed Enter to submit (fallback)")
+
+            # Wait for login to complete and page to redirect
+            await asyncio.sleep(5)
+
+            # Check if we're past the paywall
+            current_url = self._page.url
+            log_status(f"Post-login URL: {current_url}")
+
+            if await self._is_paywall():
+                log_status("Still on paywall after login attempt — login may have failed")
+                # Take debug screenshot
+                try:
+                    debug_path = os.path.join(self.download_dir, 'lbb_login_failed.png')
+                    await self._page.screenshot(path=debug_path)
+                    log_status(f"Saved login debug screenshot: {debug_path}")
+                except Exception:
+                    pass
+                return False
+
+            log_status("Login successful!")
+            return True
+
+        except Exception as e:
+            log_status(f"Login error: {e}")
+            return False
 
     # ------------------------------------------------------------------
     # Project extraction
@@ -532,10 +650,27 @@ class LoydBuildsBetterScraper:
         try:
             await self._launch_browser()
 
-            # Navigate to bids page (public, no login)
+            # Navigate to bids page
             if not await self._navigate(self.config.BASE_URL):
                 log_status("Failed to navigate to Loyd Builds Better")
                 return self.leads
+
+            # Check for paywall/login requirement
+            if await self._is_paywall():
+                success = await self._login()
+                if not success:
+                    log_status("Could not log in to Loyd Builds Better — aborting")
+                    return self.leads
+
+                # Re-navigate to bids page after login
+                if not await self._navigate(self.config.BASE_URL):
+                    log_status("Failed to navigate to bids page after login")
+                    return self.leads
+
+                # Check paywall again
+                if await self._is_paywall():
+                    log_status("Still behind paywall after login — aborting")
+                    return self.leads
 
             # Extract project blocks
             projects = await self._extract_projects()

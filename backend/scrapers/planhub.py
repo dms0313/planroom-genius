@@ -664,6 +664,519 @@ class PlanHubScraper:
         lead["storage_type"] = "local"
         log_status(f"Saved locally: {web_path}")
 
+    # -- browser file download ------------------------------------------------
+
+    async def download_project_files(self, leads: list):
+        """
+        Download project files via Playwright browser for each lead.
+
+        PlanHub's file API returns 404, so we navigate to the project page
+        in a real browser and use the download UI.
+        """
+        if not leads:
+            return
+
+        leads_to_download = [
+            lead for lead in leads
+            if not lead.get("download_link") and not lead.get("local_file_path")
+        ]
+        if not leads_to_download:
+            log_status("All leads already have files, skipping browser download")
+            return
+
+        log_status(f"Downloading files for {len(leads_to_download)} projects via browser...")
+
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            log_status("Playwright not installed, skipping file downloads")
+            return
+
+        pw = None
+        ctx = None
+        try:
+            pw = await async_playwright().start()
+            chrome_path = self._api._find_chrome_executable()
+
+            ctx = await pw.chromium.launch_persistent_context(
+                user_data_dir=self.config.CHROME_USER_DATA_DIR,
+                headless=self.config.HEADLESS,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-gpu",
+                    "--mute-audio",
+                ],
+                executable_path=chrome_path,
+                viewport={"width": 1280, "height": 900},
+                ignore_https_errors=True,
+                accept_downloads=True,
+            )
+
+            page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+
+            for i, lead in enumerate(leads_to_download):
+                project_id = lead["id"].replace("planhub_", "")
+                project_name = lead.get("name", "Unknown")[:50]
+                log_status(f"[{i+1}/{len(leads_to_download)}] Downloading files: {project_name}")
+
+                try:
+                    await self._download_single_project_files(page, lead, project_id)
+                except Exception as e:
+                    log_status(f"  -> File download failed for {project_name}: {e}")
+
+                await asyncio.sleep(1)  # Polite delay between projects
+
+        except Exception as e:
+            log_status(f"Browser file download session failed: {e}")
+            traceback.print_exc()
+        finally:
+            if ctx:
+                try:
+                    await ctx.close()
+                except Exception:
+                    pass
+            if pw:
+                try:
+                    await pw.stop()
+                except Exception:
+                    pass
+
+    async def _download_single_project_files(self, page, lead, project_id):
+        """Navigate to a single project page and download its files.
+
+        Uses multiple strategies since PlanHub doesn't always trigger a
+        standard browser download event:
+        1. Intercept file/download URLs from network responses
+        2. Try Playwright expect_download (short timeout)
+        3. Capture new tabs/popups that may contain the file
+        4. Fall back to downloading intercepted URLs directly via httpx
+        """
+        project_url = f"https://supplier.planhub.com/project/{project_id}"
+
+        # Set up network interception to capture file-related URLs
+        captured_file_urls = []
+        FILE_CONTENT_TYPES = ("application/pdf", "application/zip", "application/octet-stream",
+                              "application/x-zip", "application/x-download")
+        # Only intercept responses from relevant domains (PlanHub, cloud storage, CDNs)
+        ALLOWED_DOMAINS = ("planhub.com", "amazonaws.com", "blob.core.windows.net",
+                           "storage.googleapis.com", "cloudfront.net", "akamaized.net")
+        BLOCKED_DOMAINS = ("google-analytics", "googleadservices", "doubleclick",
+                           "googlesyndication", "facebook", "hotjar", "sentry",
+                           "segment.io", "mixpanel", "amplitude", "intercom")
+
+        async def _on_response(response):
+            url = response.url
+            try:
+                lower_url = url.lower()
+
+                # Skip tracking/ad domains
+                if any(bd in lower_url for bd in BLOCKED_DOMAINS):
+                    return
+
+                ct = response.headers.get("content-type", "")
+                cd = response.headers.get("content-disposition", "")
+
+                # Only check file content-types from relevant domains
+                is_relevant = any(ad in lower_url for ad in ALLOWED_DOMAINS)
+
+                if is_relevant and (any(ft in ct for ft in FILE_CONTENT_TYPES) or "attachment" in cd):
+                    captured_file_urls.append(url)
+                    log_status(f"  -> [NET] File response: {url[:80]} ({ct})")
+
+                # Only check JSON responses from PlanHub API for download URLs
+                if response.status == 200 and "json" in ct and "planhub.com" in lower_url:
+                    try:
+                        body = await response.json()
+                        if isinstance(body, dict):
+                            for key in ("download_url", "downloadUrl", "file_url",
+                                        "signed_url", "signedUrl", "download_link"):
+                                val = body.get(key)
+                                if val and isinstance(val, str) and val.startswith("http"):
+                                    captured_file_urls.append(val)
+                                    log_status(f"  -> [NET] Found URL in JSON '{key}': {val[:80]}")
+                        elif isinstance(body, list):
+                            for item in body[:10]:
+                                if isinstance(item, dict):
+                                    for key in ("download_url", "downloadUrl", "file_url",
+                                                "signed_url", "signedUrl"):
+                                        val = item.get(key)
+                                        if val and isinstance(val, str) and val.startswith("http"):
+                                            captured_file_urls.append(val)
+                    except Exception:
+                        pass
+
+                # Capture file-extension URLs only from relevant domains
+                if is_relevant and any(ext in lower_url for ext in (".pdf", ".zip", ".dwg", ".dwf")):
+                    if url not in captured_file_urls:
+                        captured_file_urls.append(url)
+                        log_status(f"  -> [NET] File URL pattern: {url[:80]}")
+
+            except Exception:
+                pass
+
+        page.on("response", _on_response)
+
+        # Also capture new tabs/popups (some sites open files in new tabs)
+        new_pages = []
+
+        def _on_popup(popup_page):
+            new_pages.append(popup_page)
+            log_status(f"  -> [POPUP] New tab opened: {popup_page.url[:80]}")
+
+        page.context.on("page", _on_popup)
+
+        try:
+            try:
+                await page.goto(project_url, wait_until="domcontentloaded", timeout=30000)
+            except Exception as e:
+                log_status(f"  -> Navigation failed: {e}")
+                return
+
+            await asyncio.sleep(2)
+
+            # Click on Files tab if present
+            files_tab_clicked = False
+            for selector in [
+                self.config.PROJECT_FILES_TAB,
+                'button:has-text("Files")',
+                'a:has-text("Files")',
+                '[role="tab"]:has-text("Files")',
+                'mat-button-toggle:has-text("Files")',
+                'span:has-text("Files")',
+            ]:
+                try:
+                    el = await page.wait_for_selector(selector, timeout=3000)
+                    if el:
+                        await el.click()
+                        files_tab_clicked = True
+                        log_status("  -> Clicked Files tab")
+                        await asyncio.sleep(2)
+                        break
+                except Exception:
+                    continue
+
+            if not files_tab_clicked:
+                log_status("  -> Could not find Files tab, trying page as-is")
+
+            # Try "Select All" checkbox if present
+            for selector in [
+                self.config.SELECT_ALL_FILES_CHECKBOX,
+                'mat-checkbox:has-text("Select")',
+                'input[type="checkbox"][aria-label*="select"]',
+                '.mat-checkbox-inner-container',
+            ]:
+                try:
+                    el = await page.wait_for_selector(selector, timeout=2000)
+                    if el:
+                        await el.click()
+                        log_status("  -> Clicked Select All")
+                        await asyncio.sleep(1)
+                        break
+                except Exception:
+                    continue
+
+            # --- Two-step PlanHub download flow ---
+            # Step A: Click the initial "Download" button to start server-side file prep
+            # Step B: Wait for "Download Now" button to appear, then click it
+            download_started = False
+
+            # Step A: Click initial Download button
+            initial_download_clicked = False
+            download_selectors = [
+                self.config.DOWNLOAD_FILES_BTN,
+                'button:has-text("Download")',
+                'planhub-button:has-text("Download")',
+                'a:has-text("Download")',
+                'button[mattooltip*="Download"]',
+                '[aria-label*="download"]',
+            ]
+
+            for selector in download_selectors:
+                try:
+                    el = await page.wait_for_selector(selector, timeout=2000)
+                    if el:
+                        await el.click()
+                        initial_download_clicked = True
+                        log_status("  -> Clicked Download (server preparing files...)")
+                        break
+                except Exception:
+                    continue
+
+            if not initial_download_clicked:
+                log_status("  -> Could not find initial Download button")
+
+            # Step B: Wait for "Download Now" button and click it
+            if initial_download_clicked:
+                download_now_selectors = [
+                    'button[qa-locator="button-download-now"]',
+                    'planhub-button#right-button button',
+                    'button:has-text("Download Now")',
+                    'planhub-button:has-text("Download Now")',
+                    '#right-button button',
+                    'button.btn-primary:has-text("Download")',
+                ]
+
+                # Server needs time to prepare files — poll for up to 90 seconds
+                log_status("  -> Waiting for server to prepare files...")
+                download_now_el = None
+                for wait_attempt in range(18):  # 18 * 5s = 90s max
+                    for selector in download_now_selectors:
+                        try:
+                            download_now_el = await page.wait_for_selector(
+                                selector, timeout=5000
+                            )
+                            if download_now_el:
+                                # Verify it's actually the "Download Now" button
+                                text = await download_now_el.inner_text()
+                                if "download" in text.lower().strip():
+                                    log_status(f"  -> Found 'Download Now' button (after ~{wait_attempt * 5}s)")
+                                    break
+                                download_now_el = None
+                        except Exception:
+                            continue
+                    if download_now_el:
+                        break
+                    # Log progress every 15 seconds
+                    if wait_attempt > 0 and wait_attempt % 3 == 0:
+                        log_status(f"  -> Still waiting for server... ({wait_attempt * 5}s)")
+
+                if download_now_el:
+                    # PlanHub typically opens the file in a new tab (S3 URL)
+                    # rather than triggering a browser download event.
+                    # Strategy: click, then quickly check popups + network captures.
+
+                    # Wait for loading spinner overlay to disappear before clicking.
+                    # PlanHub uses a cdk-overlay-backdrop that blocks pointer events.
+                    spinner_selectors = [
+                        '.loading-spinner-backdrop',
+                        '.cdk-overlay-backdrop-showing',
+                        '.cdk-overlay-backdrop',
+                    ]
+                    for ss in spinner_selectors:
+                        try:
+                            await page.wait_for_selector(
+                                ss, state='hidden', timeout=120000
+                            )
+                            log_status("  -> Loading spinner cleared")
+                            break
+                        except Exception:
+                            continue
+                    await asyncio.sleep(1)
+
+                    # Clear any stale popups from earlier
+                    new_pages.clear()
+
+                    # Try expect_download with SHORT timeout (PlanHub rarely triggers it)
+                    try:
+                        async with page.expect_download(timeout=8000) as download_info:
+                            try:
+                                await download_now_el.click(timeout=10000)
+                            except Exception:
+                                # Force click if overlay still blocks
+                                log_status("  -> Overlay still blocking, force-clicking...")
+                                await download_now_el.click(force=True)
+                            log_status("  -> Clicked 'Download Now'...")
+
+                        download = await download_info.value
+                        dest_path = await self._save_playwright_download(download, lead)
+                        if dest_path:
+                            download_started = True
+                    except Exception:
+                        # Expected: PlanHub opens file in a new tab, not a download
+                        log_status("  -> No browser download event (checking popups & network)...")
+
+                    # Check for new tabs/popups with S3 or file URLs
+                    if not download_started:
+                        # Give the popup a moment to open
+                        await asyncio.sleep(2)
+                        for np in new_pages:
+                            try:
+                                np_url = np.url
+                                log_status(f"  -> Popup tab: {np_url[:100]}")
+                                # Accept any S3, storage, or file-extension URLs
+                                if any(d in np_url.lower() for d in (
+                                    "s3.amazonaws.com", "s3.us-", "blob.core",
+                                    "storage.googleapis", "cloudfront",
+                                    ".pdf", ".zip", ".dwg",
+                                )):
+                                    dest_path = await self._download_captured_url(np_url, lead)
+                                    if dest_path:
+                                        download_started = True
+                                await np.close()
+                            except Exception:
+                                pass
+                            if download_started:
+                                break
+
+                    # Check captured network URLs
+                    if not download_started and captured_file_urls:
+                        log_status(f"  -> Trying {len(captured_file_urls)} captured URLs...")
+                        for cap_url in captured_file_urls:
+                            dest_path = await self._download_captured_url(cap_url, lead)
+                            if dest_path:
+                                download_started = True
+                                break
+                else:
+                    log_status("  -> 'Download Now' button never appeared (server timeout?)")
+
+            # Fallback: try individual file links on the page
+            if not download_started:
+                log_status("  -> Trying individual file download links...")
+                file_links = await page.query_selector_all(
+                    'a[href*=".pdf"], a[href*=".zip"], a[download], '
+                    'a[href*="download"], a[href*="file"]'
+                )
+                for link in file_links[:5]:
+                    try:
+                        href = await link.get_attribute("href")
+                        if href and href.startswith("http"):
+                            log_status(f"  -> Found file link: {href[:80]}")
+                            dest_path = await self._download_captured_url(href, lead)
+                            if dest_path:
+                                download_started = True
+                                break
+                    except Exception:
+                        continue
+
+            if not download_started:
+                log_status(f"  -> Could not download files for project {project_id}")
+
+        finally:
+            # Clean up event listeners
+            page.remove_listener("response", _on_response)
+            page.context.remove_listener("page", _on_popup)
+
+    async def _save_playwright_download(self, download, lead) -> str | None:
+        """Save a Playwright Download object to disk and update the lead."""
+        try:
+            project_name_clean = "".join(
+                c for c in lead["name"][:60] if c.isalnum() or c in " -_"
+            ).strip()
+            project_dir = os.path.join(self.download_dir, project_name_clean)
+            os.makedirs(project_dir, exist_ok=True)
+
+            suggested = download.suggested_filename or "download.pdf"
+            dest_path = os.path.join(project_dir, suggested)
+            await download.save_as(dest_path)
+
+            file_size = os.path.getsize(dest_path) if os.path.exists(dest_path) else 0
+            log_status(f"  -> Downloaded: {suggested} ({file_size:,} bytes)")
+
+            if file_size < 100:
+                log_status(f"  -> File too small ({file_size} bytes), likely an error page")
+                os.remove(dest_path)
+                return None
+
+            lead["local_file_path"] = f"/downloads/{project_name_clean}/{suggested}"
+            lead["download_link"] = lead["local_file_path"]
+            lead["storage_type"] = "local"
+
+            await self._upload_to_gdrive(lead, dest_path, project_name_clean, suggested)
+            return dest_path
+        except Exception as e:
+            log_status(f"  -> Failed to save download: {e}")
+            return None
+
+    async def _download_captured_url(self, url: str, lead) -> str | None:
+        """Download a file from a captured URL using httpx and update the lead."""
+        try:
+            project_name_clean = "".join(
+                c for c in lead["name"][:60] if c.isalnum() or c in " -_"
+            ).strip()
+            project_dir = os.path.join(self.download_dir, project_name_clean)
+            os.makedirs(project_dir, exist_ok=True)
+
+            # Derive filename from URL
+            filename = url.split("/")[-1].split("?")[0] or "download"
+            if not any(filename.lower().endswith(ext) for ext in (".pdf", ".zip", ".dwg", ".dwf", ".doc", ".docx", ".xls", ".xlsx")):
+                filename = f"{filename}.pdf"
+
+            log_status(f"  -> Downloading via HTTP: {url[:80]}...")
+
+            # Try with auth first, then without
+            dest_path = await self._api.download_file(url, project_dir)
+            if not dest_path:
+                # Try without auth using a fresh client
+                async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+                    async with client.stream("GET", url) as r:
+                        if r.status_code >= 400:
+                            log_status(f"  -> HTTP {r.status_code} downloading {url[:60]}")
+                            return None
+
+                        cd = r.headers.get("content-disposition", "")
+                        if "filename=" in cd:
+                            filename = cd.split("filename=")[-1].strip('" ')
+
+                        dest_path = os.path.join(project_dir, filename)
+                        with open(dest_path, "wb") as f:
+                            async for chunk in r.aiter_bytes(8192):
+                                f.write(chunk)
+
+            if not dest_path or not os.path.exists(dest_path):
+                return None
+
+            file_size = os.path.getsize(dest_path)
+            if file_size < 100:
+                log_status(f"  -> File too small ({file_size} bytes), likely error")
+                os.remove(dest_path)
+                return None
+
+            actual_filename = os.path.basename(dest_path)
+            log_status(f"  -> Saved: {actual_filename} ({file_size:,} bytes)")
+
+            lead["local_file_path"] = f"/downloads/{project_name_clean}/{actual_filename}"
+            lead["download_link"] = lead["local_file_path"]
+            lead["storage_type"] = "local"
+
+            await self._upload_to_gdrive(lead, dest_path, project_name_clean, actual_filename)
+            return dest_path
+        except Exception as e:
+            log_status(f"  -> HTTP download failed: {e}")
+            return None
+
+    async def _upload_to_gdrive(self, lead, local_path, project_name_clean, filename):
+        """Upload a downloaded file to Google Drive if available."""
+        if not GDRIVE_AVAILABLE:
+            return
+        try:
+            if not should_use_gdrive():
+                return
+        except Exception:
+            return
+
+        try:
+            # Check if already uploaded
+            existing = check_file_exists(filename, source="PlanHub")
+            if existing:
+                lead["gdrive_file_id"] = existing.get("file_id")
+                lead["gdrive_link"] = existing.get("web_link")
+                lead["download_link"] = existing.get("web_link")
+                lead["storage_type"] = "gdrive"
+                log_status(f"  -> Already in Google Drive")
+                return
+
+            ext = os.path.splitext(filename)[1] or ".zip"
+            gdrive_filename = f"{project_name_clean}{ext}"
+
+            result = upload_and_cleanup(
+                local_path,
+                filename=gdrive_filename,
+                source="PlanHub",
+                delete_local=True,
+            )
+            if result:
+                lead["gdrive_file_id"] = result.get("file_id")
+                lead["gdrive_link"] = result.get("web_link")
+                lead["gdrive_download_link"] = result.get("download_link")
+                lead["download_link"] = result.get("web_link")
+                lead["storage_type"] = "gdrive"
+                log_status(f"  -> Uploaded to Google Drive: {gdrive_filename}")
+        except Exception as e:
+            log_status(f"  -> Google Drive upload failed: {e}")
+
     # -- main scraping -------------------------------------------------------
 
     async def scrape_all_projects(self, max_projects=None):
@@ -903,17 +1416,24 @@ class PlanHubScraper:
 
     # -- public entry point --------------------------------------------------
 
-    async def run(self, max_projects=None):
-        """Run the full scraping workflow."""
+    async def run(self, max_projects=None, download_files=False):
+        """Run the full scraping workflow.
+
+        Args:
+            max_projects: Max number of projects to scrape (None = all).
+            download_files: Whether to download project files via browser.
+        """
         try:
             await self._api.open()
             await self.scrape_all_projects(max_projects)
+            if download_files and self.leads:
+                await self.download_project_files(self.leads)
             await self.save_results()
             return self.leads
         except Exception as e:
             log_status(f"Fatal error: {e}")
             traceback.print_exc()
-            return []
+            return self.leads
         finally:
             await self._api.close()
 

@@ -1,0 +1,7 @@
+Log in: #sqs-paywall-page-root > button
+
+User: #login-email
+
+PW: #login-password
+
+Sign In: #user-account-login-root > div > div > form > button > span

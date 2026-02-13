@@ -888,6 +888,11 @@ export default function LeadDashboard() {
                   <div className="bg-slate-800/50 rounded-lg p-3 flex-1">
                     <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Source</div>
                     <div className="text-sm text-slate-300">{descriptionPopup.site || descriptionPopup.source || 'N/A'}</div>
+                    {descriptionPopup.url && (
+                      <a href={descriptionPopup.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 break-all mt-1 block">
+                        {descriptionPopup.url}
+                      </a>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-2 flex-wrap">
