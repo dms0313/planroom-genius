@@ -42,6 +42,18 @@ const getHighlightBg = (highlight) => {
   return '';
 };
 
+const stripHtml = (html) => {
+  if (!html || typeof html !== 'string') return html || '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:div|p|li|tr|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
 export default function LeadDashboard() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -90,6 +102,7 @@ export default function LeadDashboard() {
   const [folderBrowserPath, setFolderBrowserPath] = useState('');
   const [folderBrowserItems, setFolderBrowserItems] = useState([]);
   const [folderBrowserLoading, setFolderBrowserLoading] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
 
   // Form state for add/edit
@@ -361,6 +374,36 @@ export default function LeadDashboard() {
     }
   };
 
+  const triggerSingleScraper = async (scraperName) => {
+    setSyncing(true);
+    setShowConsole(true);
+    clearConsoleLogs();
+    const singleSettings = {
+      planhub: false,
+      bidplanroom: false,
+      loydbuildsbetter: false,
+      buildingconnected: false,
+      use_gdrive: scraperSettings.use_gdrive,
+      [scraperName]: true,
+    };
+    try {
+      await fetch(`${API_BASE}/sync-leads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(singleSettings),
+      });
+      let elapsed = 0;
+      const pollInterval = setInterval(() => {
+        fetchLeads();
+        elapsed += 5000;
+        if (elapsed >= 180000) { clearInterval(pollInterval); setSyncing(false); }
+      }, 5000);
+    } catch (e) {
+      console.error("Single scraper trigger failed", e);
+      setSyncing(false);
+    }
+  };
+
   const clearAllLeads = async () => {
     if (!window.confirm('Are you sure you want to clear ALL leads? This will create a backup first.')) return;
     setClearing(true);
@@ -592,34 +635,16 @@ export default function LeadDashboard() {
     <div className={`min-h-screen bg-slate-950 text-slate-100 p-8 font-sans ${showConsole && !consoleMinimized ? 'pb-96' : ''}`}>
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex justify-between items-center mb-8 border-b border-slate-800/50 pb-6">
-          <div>
-            <img src="/logo.png" alt="Marmic Fire & Safety" className="h-16 w-auto" />
-          </div>
-          <div className="flex flex-col items-end gap-2">
+        <div className="mb-6 flex items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl p-3">
+          <div className="flex items-center gap-4">
+            <img src="/logo.png" alt="Marmic Fire & Safety" className="h-14 w-auto" />
             <h1 className="text-sm font-bold tracking-widest text-slate-500 uppercase">
               Planroom<span className="text-[#ed2028]">Genius</span> v2.0
             </h1>
+          </div>
+          <div className="flex flex-col items-end gap-2">
             <div className="flex gap-2 items-center">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500" size={16} />
-                <input
-                  type="text"
-                  placeholder="Search leads..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-slate-800 text-slate-200 pl-10 pr-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-600 w-64"
-                />
-              </div>
-              <button onClick={() => setShowHidden(!showHidden)} className={`px-3 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-1.5 ${showHidden ? 'bg-slate-700 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                {showHidden ? <Eye size={16} /> : <EyeOff size={16} />}
-                {showHidden ? 'Hide Hidden' : 'Show Hidden'}
-              </button>
               <button onClick={openAddModal} className="px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-500 transition flex items-center gap-1.5"><Plus size={16} />Add Lead</button>
-              <button onClick={fetchLeads} disabled={loading} className="px-3 py-2 rounded-lg bg-slate-800 text-slate-400 text-sm font-semibold hover:bg-slate-700 transition">{loading ? '...' : 'Refresh'}</button>
-              <button onClick={() => { setShowConsole(!showConsole); if (!showConsole) fetchConsoleLogs(); }} className={`p-2 rounded-lg transition flex items-center gap-1.5 text-sm ${showConsole ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`} title="Toggle Console">
-                <Terminal size={16} />{syncing && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>}
-              </button>
               <button onClick={() => { triggerScan(); setShowConsole(true); clearConsoleLogs(); }} disabled={syncing} className={`bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-5 rounded-lg transition-all shadow-lg shadow-blue-900/20 flex items-center gap-2 text-sm ${syncing ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 {syncing ? (<><svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Scanning...</>) : "Scan"}
               </button>
@@ -628,6 +653,14 @@ export default function LeadDashboard() {
                   <X size={16} />Stop
                 </button>
               )}
+              <button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                disabled={syncing}
+                className="px-3 py-2 rounded-lg bg-slate-800 text-slate-400 text-sm hover:bg-slate-700 transition flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronDown size={14} className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+                Advanced
+              </button>
               <div className="relative">
                 <button onClick={() => setShowUtilityMenu(!showUtilityMenu)} className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition" title="More options"><Settings size={18} /></button>
                 {showUtilityMenu && (
@@ -647,6 +680,10 @@ export default function LeadDashboard() {
                           <span className="text-xs text-slate-500">{gdriveStatus?.message || 'Not configured'}</span>
                         )}
                       </div>
+                      <button onClick={() => { setShowConsole(!showConsole); if (!showConsole) fetchConsoleLogs(); setShowUtilityMenu(false); }} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-700 transition flex items-center gap-2">
+                        <Terminal size={14} />{showConsole ? 'Hide Console' : 'Show Console'}{syncing && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>}
+                      </button>
+                      <button onClick={() => { fetchLeads(); setShowUtilityMenu(false); }} disabled={loading} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-700 transition disabled:opacity-50">{loading ? 'Refreshing...' : 'Refresh Leads'}</button>
                       <button onClick={() => { deduplicateLeads(); setShowUtilityMenu(false); }} disabled={deduplicating} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-700 transition disabled:opacity-50">{deduplicating ? 'Cleaning...' : 'Remove Duplicates'}</button>
                       <button onClick={() => { refreshAllLeads(); setShowUtilityMenu(false); }} disabled={refreshing} className="w-full px-4 py-2.5 text-left text-sm text-purple-300 hover:bg-slate-700 transition disabled:opacity-50">{refreshing ? 'Refreshing...' : 'Clear & Rescan'}</button>
                       <button onClick={() => { clearAllLeads(); setShowUtilityMenu(false); }} disabled={clearing} className="w-full px-4 py-2.5 text-left text-sm text-yellow-300 hover:bg-slate-700 transition disabled:opacity-50">{clearing ? 'Clearing...' : 'Clear All Leads'}</button>
@@ -655,6 +692,26 @@ export default function LeadDashboard() {
                 )}
               </div>
             </div>
+            {showAdvanced && (
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span className="text-xs text-slate-500">Run individually:</span>
+                {[
+                  { key: 'planhub', label: 'PlanHub', bg: 'bg-blue-600/20', bgHover: 'hover:bg-blue-600/30', text: 'text-blue-400' },
+                  { key: 'bidplanroom', label: 'Bidplanroom', bg: 'bg-emerald-600/20', bgHover: 'hover:bg-emerald-600/30', text: 'text-emerald-400' },
+                  { key: 'loydbuildsbetter', label: 'Loyd Builds Better', bg: 'bg-amber-600/20', bgHover: 'hover:bg-amber-600/30', text: 'text-amber-400' },
+                  { key: 'buildingconnected', label: 'BuildingConnected', bg: 'bg-purple-600/20', bgHover: 'hover:bg-purple-600/30', text: 'text-purple-400' },
+                ].map(s => (
+                  <button
+                    key={s.key}
+                    onClick={() => triggerSingleScraper(s.key)}
+                    disabled={syncing}
+                    className={`px-3 py-1.5 rounded-lg ${s.bg} ${s.text} ${s.bgHover} text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -689,6 +746,10 @@ export default function LeadDashboard() {
             setCompanyPopup={setCompanyPopup}
             setDescriptionPopup={setDescriptionPopup}
             API_BASE={API_BASE}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            showHidden={showHidden}
+            setShowHidden={setShowHidden}
           />
         </div>
 
@@ -817,7 +878,7 @@ export default function LeadDashboard() {
                 </div>
                 <div className="bg-slate-800/50 rounded-lg p-3">
                   <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Description / Full Address</div>
-                  <div className="text-sm text-slate-300 whitespace-pre-wrap">{descriptionPopup.description || descriptionPopup.full_address || 'No description available'}</div>
+                  <div className="text-sm text-slate-300 whitespace-pre-wrap">{stripHtml(descriptionPopup.description) || descriptionPopup.full_address || 'No description available'}</div>
                 </div>
                 <div className="flex gap-2">
                   <div className="bg-slate-800/50 rounded-lg p-3 flex-1">
@@ -1171,7 +1232,8 @@ const LeadTable = ({
   title, data, showSiteFilter, uniqueSites, siteFilter, setSiteFilter,
   triggerKnowledgeScan, knowledgeScanning, triggerSingleScan, scanningIds,
   toggleLeadStyle, openEditModal, deleteLead, setCompanyPopup,
-  setDescriptionPopup, API_BASE, sortConfig, setSortConfig
+  setDescriptionPopup, API_BASE, sortConfig, setSortConfig,
+  searchQuery, setSearchQuery, showHidden, setShowHidden
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedLeadId, setExpandedLeadId] = useState(null);
@@ -1212,7 +1274,20 @@ const LeadTable = ({
             {title}
             <span className="bg-slate-800 text-slate-400 text-xs px-2 py-1 rounded-full">{data.length}</span>
           </h2>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500" size={14} />
+              <input
+                type="text"
+                placeholder="Search leads..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-slate-800 text-slate-200 pl-9 pr-4 py-1.5 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-slate-600 w-52"
+              />
+            </div>
+            <button onClick={() => setShowHidden(!showHidden)} className={`p-1.5 rounded-lg transition ${showHidden ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`} title={showHidden ? 'Hide Hidden' : 'Show Hidden'}>
+              {showHidden ? <Eye size={16} /> : <EyeOff size={16} />}
+            </button>
             <button onClick={triggerKnowledgeScan} disabled={knowledgeScanning} className="flex items-center gap-1.5 px-3 py-1 bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-600/30 rounded-lg text-xs font-semibold transition">
               {knowledgeScanning ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
               {knowledgeScanning ? 'Scanning...' : 'AI Scan All'}
@@ -1304,7 +1379,7 @@ const LeadTable = ({
                           onBlur={(e) => toggleLeadStyle(lead, 'short_comment', e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                           placeholder="Add comment..."
-                          className="bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] text-slate-400 focus:text-slate-200 placeholder-slate-700 w-full focus:outline-none transition-colors"
+                          className="bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] text-[#ed2028] focus:text-[#ed2028] placeholder-slate-700 w-full focus:outline-none transition-colors"
                         />
                       </div>
                     </td>
@@ -1366,11 +1441,11 @@ const LeadTable = ({
                                 {lead.name}
                                 <span className="text-xs font-normal text-slate-500">Project Summary</span>
                               </h4>
-                              <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
+                              <p className="text-xs text-slate-300 max-w-3xl leading-relaxed whitespace-pre-wrap">
                                 {lead.knowledge_notes ? (
-                                  lead.knowledge_notes.split('\n')[0].substring(0, 300) + (lead.knowledge_notes.length > 300 ? '...' : '')
+                                  lead.knowledge_notes
                                 ) : lead.description ? (
-                                  lead.description.substring(0, 300) + (lead.description.length > 300 ? '...' : '')
+                                  stripHtml(lead.description)
                                 ) : <span className="text-slate-500 italic">No summary available. Run AI scan for details.</span>}
                               </p>
                               <div className="flex gap-2 mt-3 flex-wrap">

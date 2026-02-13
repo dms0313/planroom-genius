@@ -281,18 +281,25 @@ class PlanHubConfig(ScraperConfig):
     LOGIN_URL = "https://access.planhub.com/signin"
     PROJECT_LIST_URL = "https://supplier.planhub.com/project/list"
 
+    # API Settings
+    API_BASE_URL = "https://api.planhub.com/api/v1/projects"
+    AUTH_TOKEN = os.getenv("PLANHUB_AUTH_TOKEN", "")  # Optional manual override
+    FILTER_ID = 99806          # "Daniel's Filter"
+    SUB_TRADES = [135]         # Fire Alarm trade ID
+    TOKEN_FILE = os.path.join(os.path.dirname(__file__), 'planhub_token.json')
+
     # Credentials
     LOGIN_EMAIL = os.getenv("PLANHUB_LOGIN") or os.getenv("SITE_LOGIN", "")
     LOGIN_PASSWORD = os.getenv("PLANHUB_PW") or os.getenv("SITE_PW", "")
 
     # Filter Settings
     LOCATION_ZIP = "64030"
-    LOCATION_RADIUS = 125  # miles (updated from 100)
+    LOCATION_RADIUS = 100  # miles
     TRADE_FILTER = "Fire Alarm"
     REGIONS = ["Missouri", "Kansas"]  # MO and KS only
 
     # Scraping Limits
-    MAX_PROJECTS_DEFAULT = 5  # PlanHub max 5 per run
+    MAX_PROJECTS_DEFAULT = None  # None = all projects (no enrichment API calls needed)
 
     # Sprinkler Keywords
     SPRINKLER_KEYWORDS = [

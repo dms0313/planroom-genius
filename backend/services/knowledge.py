@@ -1236,7 +1236,18 @@ def scan_local_downloads(lead_id=None, force_rescan=False):
                     # Override targets list to just this one
                     targets = [(target_path, os.path.basename(target_path), target_lead)]
                 else:
-                    targets = []
+                    # No folder found - set a clear message on the lead so
+                    # the user knows the scan couldn't find any files
+                    logger.warning(f"No download folder found for lead '{target_lead.get('name')}' (id={lead_id})")
+                    target_lead["knowledge_last_scanned"] = datetime.now().isoformat()
+                    target_lead["knowledge_notes"] = "No project files found. Use the files link field to point to a local folder, or download files first."
+                    target_lead["knowledge_score"] = 0
+                    target_lead["knowledge_badges"] = []
+                    direct_save_leads(leads)
+                    _status["running"] = False
+                    _status["current_project"] = None
+                    _status["last_run"] = datetime.now().isoformat()
+                    return _status
             else:
                 targets = []
         

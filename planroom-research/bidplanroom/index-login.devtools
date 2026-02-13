@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noodp,noydir"/>
+<meta name="description" content="Commercial construction bid management, prequalification and plan room software. General Contractors use BidPlanroom's online web application for bid project management, sharing plans and project documents, sending invitations to bid, bid intention tracking, project level announcements, subcontractor management and more."/>
+<title>BidPlanroom | Commercial Construction Bidding Software, Prequalification and Plan Room</title>
+<link rel="stylesheet" href="/css/bootstrap.min.css" type="text/css">
+<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+<!--[if lt IE 9]>
+  <script src="//oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+  <script src="//oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+<![endif]-->
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=9BPdv23ez4">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=9BPdv23ez4">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=9BPdv23ez4">
+<link rel="manifest" href="/site.webmanifest?v=9BPdv23ez4">
+<link rel="mask-icon" href="/safari-pinned-tab.svg?v=9BPdv23ez4" color="#99cc33">
+<link rel="shortcut icon" href="/favicon.ico?v=9BPdv23ez4">
+<meta name="msapplication-TileColor" content="#99cc33">
+<meta name="theme-color" content="#99cc33">
+<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Open+Sans:300,600" type="text/css">
+<link rel="stylesheet" href="https://www.bidplanroom.com//css/style_site_v2.css" type="text/css">
+<link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" type="text/css"><style type="text/css">
+.table > tbody > tr > td {
+	vertical-align:middle;
+}
+.client-logo-holder {
+	display:none;
+}
+.client-logo-holder.current {
+	display:block;
+}
+.slide-controls a, .slide-controls a:hover {
+	color:#CCC;
+}
+@media(min-width:767px) {
+    .slide-controls {
+		display:none;
+	}
+	.client-logo-holder {
+		display:block;
+	}
+}
+</style>
+</head>
+
+<body>
+
+	<!-- Login Modal -->
+    <div class="modal fade" id="login-modal" tabindex="-1" role="dialog" aria-labelledby="login-modal" aria-hidden="true">
+		<div class="modal-dialog modal-sm">
+    		<div class="modal-content">
+      			<div class="modal-header">
+                	<button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                    <div class="modal-title">Welcome back</div>
+      			</div>
+      			<div class="modal-body">
+                	<div style="text-align:center; margin:10px 0;">Please Log In</div>
+        			<div id="login-error" class="alert alert-danger hide"></div>
+                    <div class="input-group" style="margin:15px 0;">
+                    	<span class="input-group-addon"><i class="fa fa-envelope"></i></span>
+                        <input id="email" type="text" class="form-control" name="email" maxlength="120" value="" placeholder="Email">
+                    </div>
+                    <div class="input-group" style="margin-bottom:30px;">
+                    	<span class="input-group-addon"><i class="fa fa-key"></i></span>
+                        <input id="password" type="password" class="form-control" name="password" maxlength="50" placeholder="Password">
+                    </div>
+                    <div class="btn-in-modal" id="login-val-btn">
+                    	<i id="login-btn-icon" class="fa fa-spinner fa-pulse hide" style="margin-right:7px;"></i>
+                        <span>Log In</span>
+                    </div>
+            		<div style="margin:20px; text-align:center;">
+						<a id="forgot-link" class="forgot-text" href="#">Forgot Password?</a>
+            		</div>
+      			</div>
+    		</div>
+  		</div>
+	</div>
+    
+    <!-- Forgot Password Modal -->
+    <div class="modal fade" id="forgot-password-modal" tabindex="-1" role="dialog" aria-labelledby="forgot-password-modal" aria-hidden="true">
+		<div class="modal-dialog modal-sm">
+    		<div class="modal-content">
+      			<div class="modal-header">
+                	<button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                    <div class="modal-title">Forgot Your Password?</div>
+      			</div>
+      			<div class="modal-body">
+                	<div style="text-align:center; margin:10px 0;">Enter Your Account Email</div>
+        			<div id="forgot-password-error" class="alert alert-danger hide"></div>
+                    <div class="input-group" style="margin:15px 0;">
+                    	<span class="input-group-addon"><i class="fa fa-envelope"></i></span>
+                        <input id="reset-id" type="text" class="form-control" name="reset-id" maxlength="120" placeholder="Email">
+                    </div>
+                    <p style="text-align:center; font-size:12px;">We will email you a link to reset your password.</p>
+                    <div class="btn-in-modal" id="forgot-password-submit-btn">
+                    	<i id="forgot-password-btn-icon" class="fa fa-spinner fa-pulse hide" style="margin-right:7px;"></i>
+                        <span>Submit</span>
+                    </div>
+      			</div>
+    		</div>
+  		</div>
+	</div>
+    
+    <!-- Forgot Password Email Sent Modal -->
+    <div class="modal fade" id="forgot-password-sent-modal" tabindex="-1" role="dialog" aria-labelledby="forgot-password-sent-modal" aria-hidden="true">
+		<div class="modal-dialog modal-sm">
+    		<div class="modal-content">
+      			<div class="modal-header">
+                	<button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                    <div class="modal-title">Account Located</div>
+      			</div>
+      			<div class="modal-body">
+                	<div style="text-align:center;" class="alert alert-success">Reset Password Email Sent!</div>
+        			<div style="font-size:14px;">
+						<p style="padding:5px;">An email with password reset instructions has been sent to your email address. Click on the link in the email to create your new password.</p>
+        				<p style="background:#eee; padding:5px;">Please allow a few minutes for the email to arrive. If the email does not arrive in an acceptable amount of time, check your spam box. If you still need assistance, email <a href="mailto:support@bidplanroom.com">support@bidplanroom.com</a> so we can help.</p>
+        			</div>
+      			</div>
+                <div class="modal-footer">
+                	<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+        		</div>
+    		</div>
+  		</div>
+	</div>
+    
+    <!-- Processing Signup Modal -->
+    <div class="modal" id="processing-signup-modal" data-keyboard="false" data-backdrop="static" role="dialog" aria-labelledby="processing-signup-modal" aria-hidden="true">
+		<div class="modal-dialog">
+    		<div class="modal-content">
+      			<div class="modal-header">
+                	<div class="modal-title">Creating Account</div>
+      			</div>
+      			<div class="modal-body" style="text-align:center;">
+                	<div style="margin-top:10px;">Creating Your BidPlanroom Account</div>
+                    <div id="processing-signup-error" class="alert alert-danger hide"></div>
+                	<div id="processing-signup-loader" style="padding:50px 0;">
+                    	<div class="loading">
+                        	<div class="loading-bar"></div>
+                            <div class="loading-bar"></div>
+                            <div class="loading-bar"></div>
+                        </div>
+                    </div>
+      			</div>
+    		</div>
+  		</div>
+	</div>
+    
+    <!-- Signup Modal -->
+    <div class="modal fade" id="signup-modal" tabindex="-1" role="dialog" aria-labelledby="signup-modal" aria-hidden="true">
+		<div class="modal-dialog modal-sm">
+    		<div class="modal-content">
+      			<div class="modal-header">
+                	<button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                    <div class="modal-title">Welcome to BidPlanroom</div>
+      			</div>
+      			<div class="modal-body">
+                	<div style="text-align:center; margin:10px 0;">Let's Create Your Account</div>
+        			<div id="signup-error" class="alert alert-danger hide"></div>
+                    <div style="margin:15px 0;">
+                    	<input type="hidden" id="role" name="role">
+                    	<select id="roles" name="roles" class="form-control">
+            				<option value="0">-- Select an option --</option>
+                			<option value="1">I was invited to bid / Looking for bid opportunities</option>
+                			<option value="5">I want to setup a GC BidPlanroom for my company</option>
+                            <option value="3">I have an Employee Key Code</option>
+                			<option value="4">Reprographic / Construction Reporter</option>
+            			</select>
+                    </div>
+                    <div id="create-account-form" class="hide">
+                    	<div class="input-group" style="margin-bottom:15px;">
+                    		<span class="input-group-addon"><i class="fa fa-user"></i></span>
+                    	    <input id="fname" type="text" class="form-control" name="fname" maxlength="50" placeholder="First Name">
+                    	</div>
+                    	<div class="input-group" style="margin-bottom:15px;">
+                    		<span class="input-group-addon"><i class="fa fa-user"></i></span>
+                    	    <input id="lname" type="text" class="form-control" name="lname" maxlength="50" placeholder="Last Name">
+                    	</div>
+                    	<div class="input-group" style="margin-bottom:15px;">
+                    		<span class="input-group-addon"><i class="fa fa-envelope"></i></span>
+                    	    <input id="email-signup" type="text" class="form-control" name="email-signup" maxlength="120" value="" placeholder="Email">
+                    	</div>
+                    	<div class="input-group" style="margin-bottom:15px;">
+                    		<span class="input-group-addon"><i class="fa fa-key"></i></span>
+                    	    <input id="password-signup" type="password" class="form-control" name="password-signup" maxlength="50" placeholder="Password">
+                    	</div>
+                    	<div style="font-size:12px; margin-bottom:30px;">
+                    		<input type="checkbox" id="terms" name="terms">
+                    	    <span style="padding-left:5px;">I agree to BidPlanroom's </span>
+                    	    <a class="terms-conditions-link" href="#" style="text-decoration:underline;">terms and conditions</a>
+                    	</div>
+                    	<div class="btn-in-modal" id="signup-val-btn">
+                    		<i id="signup-btn-icon" class="fa fa-spinner fa-pulse hide" style="margin-right:7px;"></i>
+                    	    <span>Create Free Account</span>
+                    	</div>
+                    </div>
+      			</div>
+    		</div>
+  		</div>
+	</div>
+    
+    <!-- GC BidPlanroom Modal -->
+    <div class="modal fade" id="gc-bidplanroom-modal" tabindex="-1" role="dialog" aria-labelledby="gc-bidplanroom-modal" aria-hidden="true">
+		<div class="modal-dialog modal-lg">
+    		<div class="modal-content">
+      			<div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                    <div class="modal-title">Create Company GC BidPlanroom</div>
+      			</div>
+      			<div class="modal-body" style="max-height:390px; overflow-y:auto; font-size:14px;">
+        			<div style="padding:30px 10px;">
+                    	<h3 style="text-align:center; margin:20px 0;">Creating a GC BidPlanroom will allow your company to:</h3>
+                    	<div style="max-width:430px; margin:0 auto;">
+                            <ul>
+                            	<li>Manage your subcontractors and their information</li>
+                                <li>Create Bid Projects and Upload Plans</li>
+                                <li>Send out Invitations to Bid</li>
+                                <li>Track subcontractor bid intention responses, bids and activity</li>
+                                <li>and much more...</li>
+                            </ul>
+                        </div>
+                    	<h3 style="text-align:center; margin:20px 0;">Do you want to setup a GC BidPlanroom for your company?</h3>
+                        <div style="max-width:300px; margin:0 auto;">
+                        	<div class="btn-in-modal" id="create-gc-bidplanroom-btn">
+                    		    <span><b>Yes, Setup GC BidPlanroom Now</b></span>
+                    		</div>
+                        	<div class="btn-in-modal" data-dismiss="modal" style="background:#999;">
+                    		    <span>No, I Selected the wrong option</span>
+                    		</div>
+                        </div>
+                    </div>
+      			</div>
+                <div class="modal-footer">
+                	<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+        		</div>
+    		</div>
+  		</div>
+	</div>
+    
+    <!-- Signup Employee Key Code Modal -->
+    <div class="modal" id="keycode-signup-modal" tabindex="-1" role="dialog" aria-labelledby="keycode-signup-modal" aria-hidden="true">
+		<div class="modal-dialog modal-sm">
+    		<div class="modal-content">
+      			<div class="modal-header">
+                	<button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
+                    <div class="modal-title">Employee Signup</div>
+      			</div>
+      			<div class="modal-body">
+                	<div style="text-align:center; margin:10px 0;">Employee Key Code Validation</div>
+        			<div id="keycode-error" class="alert alert-danger hide"></div>
+                	<div class="input-group" style="margin-bottom:15px;">
+                    	<span class="input-group-addon"><i class="fa fa-key"></i></span>
+                    	<input id="key" type="password" class="form-control" name="key" maxlength="10" placeholder="Employee Key Code">
+                    </div>
+                    <div class="btn-in-modal" id="keycode-val-btn">
+                    	<i id="keycode-btn-icon" class="fa fa-spinner fa-pulse hide" style="margin-right:7px;"></i>
+                    	<span>Submit</span>
+                    </div>
+                    <div style="font-size:14px; text-align:center; margin:20px 0 10px;">
+                    	<a href="#" id="keycode-help-link">
+                        	<i id="keycode-help-toggle" class="fa fa-caret-right" style="margin-right:5px;"></i>
+                            <span>Need Help?</span>
+                        </a>
+                    </div>
+        			<div id="keycode-help" style="background:#eee; padding:15px 15px 5px; font-size:14px;" class="hide">
+						<p>You will need a key code to verify you are an employee of a GC BidPlanroom. If you do not have a key code, you can obtain a key code from your planroom administrator.</p>
+            			            		</div>
+        		</div>
+    		</div>
+  		</div>
+	</div>
+    
+    <!-- Terms and Conditions Modal -->
+    <div class="modal fade" id="terms-conditions-modal" tabindex="-1" role="dialog" aria-labelledby="terms-conditions-modal" aria-hidden="true">
+		<div class="modal-dialog modal-lg">
+    		<div class="modal-content">
+      			<div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                    <div class="modal-title">BidPlanroom Terms and Conditions</div>
+      			</div>
+      			<div class="modal-body" style="max-height:390px; overflow-y:auto; font-size:14px;">
+                	<div id="terms-conditions-loader" class="hide" style="padding:50px 0;">
+                    	<div class="loading">
+                        	<div class="loading-bar"></div>
+                            <div class="loading-bar"></div>
+                            <div class="loading-bar"></div>
+                        </div>
+                    </div>
+        			<div id="terms-conditions" class="hide" style="padding:30px 10px;"></div>
+      			</div>
+                <div class="modal-footer">
+                	<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+        		</div>
+    		</div>
+  		</div>
+	</div>
+
+    <!-- Navigation -->
+    <nav class="navbar navbar-default navbar-fixed-top" role="navigation" style="background-color:#FFF;">
+        <div class="container-fluid">
+            <div class="navbar-header page-scroll">
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-ex1-collapse">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand page-scroll" href="#page-top" style="margin-left:-15px; margin-top:-15px;"><img src="images/bidplanroom_logo_header.gif" style="max-width:222px;" alt="BidPlanroom Bid Management"></a>
+            </div>
+
+            <!-- Collect the nav links, forms, and other content for toggling -->
+            <div class="collapse navbar-collapse navbar-ex1-collapse">
+                <ul class="nav navbar-nav navbar-right">
+                    <!-- Hidden li included to remove active class from about link when scrolled up past about section -->
+                    <li class="hidden">
+                        <a class="page-scroll" href="#page-top"></a>
+                    </li>
+                    <li>
+                        <a class="page-scroll" href="#gc-app-info"><span class="fa fa-caret-right menu-icon"></span>General Contractors</a>
+                    </li>
+                    <li>
+                        <a href="marketplace/"><span class="fa fa-caret-right menu-icon"></span>Subcontractors</a>
+                    </li>
+                    <li>
+                        <a href="contact-us/"><span class="fa fa-caret-right menu-icon"></span>Contact Us</a>
+                    </li>
+                </ul>
+            </div>
+            <!-- /.navbar-collapse -->
+        </div>
+        <!-- /.container -->
+    </nav>
+    
+    <div id="page-top" class="main-splash-container" style="background:url(images/home_splash_bg_v3.jpg) no-repeat; background-position:center; background-size:cover;">
+    	<div class="main-splash-overlay">
+        	<div class="main-splash-content">
+            	            	<div class="main-splash-text" style="padding:10px 0;">
+                	<h1>CONSTRUCTION BID MANAGEMENT</h1>
+                	<h2 style="margin:15px; line-height:30px;">Plan Room, Prequalification and Construction Bidding Software</h2>
+                	<div style="text-align:center; padding-top:20px;">
+                		<span class="inline-btn-container" style="padding:0 10px 10px;">
+                	    	<button class="btn btn-success btn-bp-green login-btn"><span class="txt-shadow">Log In</span></button>
+                	    </span>
+                	    <span class="inline-btn-container" style="padding:10px 10px 0;">
+                	    	<button class="btn btn-success btn-bp-green signup-btn"><span class="txt-shadow">Create Free Account</span></button>
+                	    </span>
+                	</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div>
+    	<div style="text-align:center; padding:40px 10px;">
+    		<div style="font-size:30px; font-weight:bold;">The Powerful, Efficient, Cost-Effective Solution</div>
+        	<div style="font-size:24px;">used by commercial construction contractors everywhere!</div>
+        	<div style="padding-top:20px;">
+        		<span class="inline-btn-container" style="padding:0 10px 10px;">
+                	<a class="page-scroll" href="#gc-app-info">
+        	    		<button style="font-size:16px;" class="btn btn-primary gc-app-info-btn">For General Contractors</button>
+                    </a>
+        	    </span>
+        	    <span class="inline-btn-container" style="padding:10px 10px 0;">
+        	    	<button style="font-size:16px;" class="btn btn-primary sub-app-info-btn">For Subcontractors</button>
+        	    </span>
+        	</div>
+            <div class="container">
+        		<div class="row" style="padding:20px;">
+                    <div class="col-sm-2 client-logo-holder current">
+            	    	<div class="client-list-logo">
+            	        	<a href="https://www.vccusa.com/" target="_blank" data-toggle="tooltip" title="View Client Website">
+            	            	<img src="images/gc_client_logo_vcc.gif" class="img-responsive" alt="VCC GC Logo">
+            	            </a>
+            	        </div>
+            	    </div>
+            	    <div class="col-sm-2 client-logo-holder">
+            	    	<div class="client-list-logo">
+            	        	<a href="https://probitycg.com/" target="_blank" data-toggle="tooltip" title="View Client Website">
+            	        		<img src="images/gc_client_logo_probity.gif" class="img-responsive" alt="Probity GC Logo">
+            	        	</a>
+            	    	</div>
+            	    </div>
+					<div class="col-sm-2 client-logo-holder">
+            	    	<div class="client-list-logo">
+            	        	<a href="https://www.seagatecontract.com/" target="_blank" data-toggle="tooltip" title="View Client Website">
+            	            	<img src="images/gc_client_logo_seagate.gif" class="img-responsive" alt="Seagate GC Logo">
+            	            </a>
+            	        </div>
+            	    </div>
+            	    <div class="col-sm-2 client-logo-holder">
+            	    	<div class="client-list-logo">
+            	        	<a href="https://tlcdiversified.com/" target="_blank" data-toggle="tooltip" title="View Client Website">
+            	            	<img src="images/gc_client_logo_tlc_2021.gif" class="img-responsive" alt="TLC Diversified GC Logo">
+            	            </a>
+            	        </div>
+            	    </div>
+            	    <div class="col-sm-2 client-logo-holder">
+            	    	<div class="client-list-logo">
+            	        	<a href="http://lionberger.com/" target="_blank" data-toggle="tooltip" title="View Client Website">
+            	            	<img src="images/gc_client_logo_lionberger.gif" class="img-responsive" alt="Lionberger GC Logo">
+            	            </a>
+            	        </div>
+            	    </div>
+            	    <div class="col-sm-2 client-logo-holder">
+            	    	<div class="client-list-logo">
+            	        	<a href="https://www.morconstruction.ca/" target="_blank" data-toggle="tooltip" title="View Client Website">
+            	            	<img src="images/gc_client_logo_mor.gif" class="img-responsive" alt="Mor GC Logo">
+            	            </a>
+            	        </div>
+            	    </div>
+            	</div>
+                <div class="slide-controls" style="position:relative; top:-100px;">
+                    <div style="float:left;">
+                    	<a class="carousel-control-prev" href="#">
+                        	<i class="fa fa-chevron-left fa-lg"></i>
+                        </a>
+                    </div>
+                    <div style="float:right;">
+                        <a class="carousel-control-next" href="#">
+                        	<i class="fa fa-chevron-right fa-lg"></i>
+                        </a>
+                    </div>
+                    <div style="clear:both;"></div>
+                </div>
+        	</div>
+        </div>
+    </div>
+    <div id="gc-app-info" style="background:#eaeaea;">
+    	<div style="text-align:center; padding:100px 10px 50px;">
+        	<h1 style="font-size:30px; font-weight:bold;">BidPlanroom for General Contractors</h1>
+            <div style="font-size:18px;">Easy to use and a workflow that just makes sense!</div>
+            <div class="container" style="font-size:14px;">
+        		<div class="row" style="padding:20px 0;">
+                    <div class="col-sm-2" style="margin:20px 0;">
+                    	<div class="workflow-icon">
+                        	<img src="images/icon_workflow_bid_project.gif" class="img-responsive" alt="Post Construction Bid Project">
+                        </div>
+            	    	<div><b>Create Bid Projects</b></div>
+                        <div>(Publicly or Privately)</div>
+            	    </div>
+                    <div class="col-sm-2" style="margin:20px 0;">
+                    	<div class="workflow-icon">
+                        	<img src="images/icon_workflow_upload_plans2.gif" class="img-responsive" alt="Upload Construction Plans">
+                        </div>
+            	    	<div><b>Upload Plans</b></div>
+                        <div>(Unlimited Storage)</div>
+            	    </div>
+                    <div class="col-sm-2" style="margin:20px 0;">
+                    	<div class="workflow-icon">
+                        	<img src="images/icon_workflow_send_invitations.gif" class="img-responsive" alt="ITBs Invitations To Bid">
+                        </div>
+            	    	<div><b>Send Invitations</b></div>
+                        <div>(ITBs)</div>
+            	    </div>
+                    <div class="col-sm-2" style="margin:20px 0;">
+                    	<div class="workflow-icon">
+                        	<img src="images/icon_workflow_track_responses.gif" class="img-responsive" alt="ITB Tracking">
+                        </div>
+            	    	<div><b>Track Responses</b></div>
+                        <div>(Will Bid, Not Bidding)</div>
+            	    </div>
+                    <div class="col-sm-2" style="margin:20px 0;">
+                    	<div class="workflow-icon">
+                        	<img src="images/icon_workflow_announce_changes.gif" class="img-responsive" alt="Adenda Announcements">
+                        </div>
+            	    	<div><b>Announce Updates</b></div>
+                        <div>(Addenda, Dates, etc.)</div>
+            	    </div>
+                    <div class="col-sm-2" style="margin:20px 0;">
+                    	<div class="workflow-icon">
+                        	<img src="images/icon_workflow_prequalify.gif" class="img-responsive" alt="Subcontractor Prequalification">
+                        </div>
+            	    	<div><b>Prequalify Bidders</b></div>
+                        <div>(With Custom Forms)</div>
+            	    </div>
+                </div>
+            </div>
+            <div style="padding-top:20px;">
+        		<span class="inline-btn-container" style="padding:0 10px 10px;">
+                	<button style="font-size:16px;" class="btn btn-primary request-demo-btn">Request Demo</button>
+        	    </span>
+        	    <span class="inline-btn-container" style="padding:10px 10px 0;">
+        	    	<button style="font-size:16px;" class="btn btn-primary get-started-btn">Get Started</button>
+        	    </span>
+        	</div>
+        </div>
+    </div>
+    <div style="padding:50px 10px;">
+    	<h2 style="font-size:30px; font-weight:bold; text-align:center;">GC Application Features</h2>
+        <div style="font-size:18px; text-align:center; margin-bottom:50px;">All-In-One Bid Management Solution!</div>
+        <div class="container">
+        	<div class="row" style="margin-bottom:20px; padding-bottom:5px;">
+            	<div class="col-sm-2">
+            		<div class="feature-pic-sm" style="background:url(images/features_bid_projects.jpg) no-repeat;"></div>
+            	</div>
+            	<div class="col-sm-4">
+            		<h3 class="feature-header">
+            	    	<div>Bid Project Management</div>
+            	        <div style="font-size:16px; margin-top:7px;">(Public or Private)</div>
+            	    </h3>
+            	    <p class="feature-desc" style="font-size:12px;">You have full control over the projects you list in your planroom. There are two options for listing your projects, Publicly and Privately. Listing a project publicly will give your project more exposure, and makes it easy for your subcontractors and suppliers to access your project. Listing your project privately allows you to securely hide your project from the network and only let those you invite to access the project.</p>
+            	</div>
+            	<div class="col-sm-2">
+            		<div class="feature-pic-sm" style="background:url(images/features_planroom.jpg) no-repeat;"></div>
+            	</div>
+            	<div class="col-sm-4">
+            		<h3 class="feature-header">
+                    	<div>Plan Room</div>
+                        <div style="font-size:16px; margin-top:7px;">(Unlimited Storage)</div>
+                    </h3>
+            	    <p class="feature-desc" style="font-size:12px;">General Contractors have unlimited plan storage for every project. Upload and manage your plans with your bid projects in our easy to use plan room. Our online plan rooms for construction support quick viewing, uploading, downloading and versioning of your documents. The BidPlanroom solution is fully integrated with <a href="https://www.sharefile.com/" target="_blank">Citrix&reg; ShareFile</a> technology, one of the nation's leading file share companies, safely securing your project documents.</p>
+            	</div>
+        	</div>
+            <div class="row" style="margin-bottom:20px; padding-bottom:5px;">
+            	<div class="col-sm-2">
+                    <div class="feature-pic-sm" style="background:url(images/features_itb.jpg) no-repeat;"></div>
+                </div>
+                <div class="col-sm-4">
+                	<h3 class="feature-header">
+                    	<div>Invitations To Bid</div>
+                        <div style="font-size:16px; margin-top:7px;">(ITBs)</div>
+                    </h3>
+                    <p class="feature-desc" style="font-size:12px;">Sending company branded ITBs is quick and easy when it's time to invite your subcontractors to your project. There are multiple options for creating a project invitation list. You can import past project lists (or specific trades or groups from past project lists), or choose from your subcontractors using filtering by trades, groups, locations, proximity and more. Our intuitive workflow allows for bounced email addresses to quickly be updated and invitations to bid re-issued. Your ITBs include interactive bid intention buttons, project information, instructions to bidders and any other custom information you include.</p>
+                </div>
+                <div class="col-sm-2">
+                    <div class="feature-pic-sm" style="background:url(images/features_bid_list.jpg) no-repeat;"></div>
+                </div>
+                <div class="col-sm-4">
+                	<h3 class="feature-header">
+                    	<div>BidTracker</div>
+                        <div style="font-size:16px; margin-top:7px;">(Project Bid List)</div>
+                    </h3>
+                    <p class="feature-desc" style="font-size:12px;">Your project bid list (also known as the &quot;BidTracker&quot;) is an extremely helpful and powerful tool that allows the General Contractor to organize their project's bidders, statistics and notes. In one screen you can view and track your bidders, non-bidders, received bids and more. You can track if and when your invitees have viewed plans and declared bid intentions. You may also enter notes and manually mark bid intentions for the unresponsive subcontractors of the project.</p>
+                </div>
+            </div>
+            <div class="row" style="margin-bottom:20px; padding-bottom:5px;">
+            	<div class="col-sm-2">
+                    <div class="feature-pic-sm" style="background:url(images/features_correspondence.jpg) no-repeat;"></div>
+                </div>
+                <div class="col-sm-4">
+                    <h3 class="feature-header">
+                    	<div>Correspondence</div>
+                        <div style="font-size:16px; margin-top:7px;">(Project-Level Announcements)</div>
+                    </h3>
+                	<p class="feature-desc" style="font-size:12px;">Quickly announce project updates and changes with our correspondence notification tools. Keep your subcontractors up to date on addenda, bid date changes and other notifications on a project level. You have the ability to send correspondence to everyone on your project list, or send only to specific trades or groups in your project. In addition, users that declare &quot;Not Bidding&quot; will automatically be excluded from any further notifications for that project.</p>
+                </div>
+                <div class="col-sm-2">
+                	<div class="feature-pic-sm" style="background:url(images/features_prequal.jpg) no-repeat;"></div>
+                </div>
+                <div class="col-sm-4">
+                	<h3 class="feature-header">
+                    	<div>Prequalification</div>
+                        <div style="font-size:16px; margin-top:7px;">(Risk Assessment)</div>
+                    </h3>
+                    <p class="feature-desc" style="font-size:12px;">Qualify your bidders with our powerful prequal tools. Projects differ in scope and qualification requirements. Our custom form builder allows you to create reusable questions and select the ones needed on a project level. Approve, deny and rate submissions. Easily access recent and historical bidder submissions from other projects. Your subcontractors can even access and copy their historical answers providing a hassle-free experience.</p>
+                </div>
+            </div>
+            <div class="row" style="margin-bottom:20px; padding-bottom:5px;">
+            	<div class="col-sm-2">
+                	<div class="feature-pic-sm" style="background:url(images/features_subcontractor_management.jpg) no-repeat;"></div>
+                </div>
+                <div class="col-sm-4">
+                	<h3 class="feature-header">
+                    	<div>Subcontractor Management</div>
+                    </h3>
+                    <p class="feature-desc" style="font-size:12px;">BidPlanroom is a centralized place to manage your subcontractors giving all your employees access anytime. Our software provides intuitive tools and processes that will give your company the most organized subcontractor list it's ever had. You control your subcontractor data and is private to your company. Categorize your subs in custom trades and groups. Enjoy complete control to update, add or remove contacts as needed.</p>
+                </div>
+                <div class="col-sm-2">
+                	<div class="feature-pic-sm" style="background:url(images/features_employee_management.jpg) no-repeat;"></div>
+                </div>
+                <div class="col-sm-4">
+                	<h3 class="feature-header">
+                    	<div>Employee Management</div>
+                    </h3>
+                    <p class="feature-desc" style="font-size:12px;">With unlimited employee users, BidPlanroom gives your company the ability to grow without being bothered by more cost everytime a new employee is added. Many GC employees have different responsibilities during the bid process and that's why BidPlanroom lets you set different permissions for each user. From uploading and deleting files to creating projects and sending invitations to bid, each employee will have the control needed to achieve efficient and successful bids.</p>
+                </div>
+            </div>
+            <div class="row">
+            	<div class="col-sm-2">
+                	<div class="feature-pic-sm" style="background:url(images/features_trade_management.jpg) no-repeat;"></div>
+                </div>
+                <div class="col-sm-4">
+                	<h3 class="feature-header">
+                    	<div>Custom Trade Management</div>
+                    </h3>
+                    <p class="feature-desc" style="font-size:12px;">CSI codes are time consuming to manage... Whether your company uses the original 16 divisions, the new expanded divisions, or your own custom trade categories, BidPlanroom lets you organize your subcontractors and projects the way you're used to. You can transition to BidPlanroom with ease by maintaining the organization that's already familiar to your company.</p>
+                </div>
+                <div class="col-sm-2">
+                	<div class="feature-pic-sm" style="background:url(images/features_support.jpg) no-repeat;"></div>
+                </div>
+                <div class="col-sm-4">
+                	<h3 class="feature-header">
+                    	<div>Application Support</div>
+                    </h3>
+                    <p class="feature-desc" style="font-size:12px;">Our centralized support team is always available to assist the General Contractor and their subcontractors. Even though BidPlanroom is extremely easy to use, you will have the confidence knowing we're here to answer any questions and assist in any way.</p>
+                </div>
+            </div>
+    	</div>
+        <div style="font-size:30px; font-weight:bold; text-align:center; margin:40px 0 10px;">Improve Your Bid Process With BidPlanroom!</div>
+        <div style="font-size:18px; text-align:center;">GC branded BidPlanrooms provide absolute FREE ACCESS to subcontractors, vendors, reprographics and more!</div>
+        <div style="padding:20px 0 40px; text-align:center;">
+        	<span class="inline-btn-container" style="padding:0 10px 10px;">
+            	<button style="font-size:16px;" class="btn btn-primary request-demo-btn">Request Demo</button>
+        	</span>
+        	<span class="inline-btn-container" style="padding:10px 10px 0;">
+        	    <button style="font-size:16px;" class="btn btn-primary get-started-btn">Get Started</button>
+        	</span>
+        </div>
+    </div>
+    <div style="background:#eaeaea;">
+    	<div style="text-align:center; padding:50px 10px;">
+        	<h1 style="font-size:30px; font-weight:bold;">Pricing for General Contractors</h1>
+            <div style="font-size:18px;">No hassle, straight forward pricing!</div>
+            <div style="margin-top:20px;">
+                <span class="denom"><sup style="font-size:24px; font-weight:bold; top:-3px;">$</sup></span>
+                <span class="price" style="font-size:30px; font-weight:bold;">149</span>
+                <span>/month <span style="font-size:14px;">*</span></span>
+            </div>
+            <div style="font-size:18px; margin-bottom:20px;">provides unlimited user licences for your company!</div>
+            <div class="container">
+            	<table class="table table-striped" style="background:#FFF; margin:20px auto; text-align:left; font-size:16px; max-width:800px;">
+            		<tr>
+                    	<td width="50"><i class="fa fa-check" style="color:#96cc00;"></i></td>
+            	    	<td>Employee Users</td>
+            	        <td>Unlimited</td>
+            	    </tr>
+            		<tr>
+                    	<td><i class="fa fa-check" style="color:#96cc00;"></i></td>
+            	    	<td>Project Listings</td>
+            	        <td>Unlimited</td>
+            	    </tr>
+            	    <tr>
+                    	<td><i class="fa fa-check" style="color:#96cc00;"></i></td>
+            	    	<td>Plan Room Storage</td>
+            	        <td>Unlimited</td>
+            	    </tr>
+            	    <tr>
+                    	<td><i class="fa fa-check" style="color:#96cc00;"></i></td>
+            	    	<td>ITB and Correspondence Sends</td>
+            	        <td>Unlimited</td>
+            	    </tr>
+                    <tr>
+                    	<td><i class="fa fa-check" style="color:#96cc00;"></i></td>
+            	    	<td>Prequalification Requests</td>
+            	        <td>Unlimited</td>
+            	    </tr>
+            	    <tr>
+                    	<td><i class="fa fa-check" style="color:#96cc00;"></i></td>
+            	    	<td>All Features</td>
+            	        <td>Included</td>
+            	    </tr>
+            	    <tr>
+                    	<td><i class="fa fa-check" style="color:#96cc00;"></i></td>
+            	    	<td>Logo Branding</td>
+            	        <td>Included</td>
+            	    </tr>
+            	    <tr>
+                    	<td><i class="fa fa-check" style="color:#96cc00;"></i></td>
+            	    	<td>Branded Link for Website</td>
+            	        <td>Included</td>
+            	    </tr>
+            	</table>
+            </div>
+            <div style="padding:20px 0;">
+        		<span class="inline-btn-container" style="padding:0 10px 10px;">
+                	<button style="font-size:16px;" class="btn btn-primary request-demo-btn">Request Demo</button>
+        	    </span>
+        	    <span class="inline-btn-container" style="padding:10px 10px 0;">
+        	    	<button style="font-size:16px;" class="btn btn-primary get-started-btn">30 Day Free Trial</button>
+        	    </span>
+        	</div>
+            <div style="padding:20px 0 50px; font-size:12px;">
+            	<div>* Pricing is based on how many subcontractors you manage in your BidPlanroom. The listed price is valid for 1 to 3000 subcontractors. If you have more than 3000 subcontractors please contact us for pricing.</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Footer -->
+    <div class="bp-footer">
+    	<span>Copyright &copy; 2011 - 2026 Bid Planroom. All Rights Reserved.</span>    </div>
+    <!-- Javascripts -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+	<script src="js/bootstrap.min.js"></script>
+	<script src="js/jquery.watermark.min.js"></script>
+    <script src="js/jquery.easing.min.js"></script>
+    <script src="js/scrolling-nav.js"></script>
+    <script type="text/javascript">
+	$(function() {
+		window.scrollTo(0,0);
+		$("body").tooltip({
+			selector: '[data-toggle="tooltip"]'
+		});
+		$(window).blur(function() {
+			$('a').blur(); // hides tooltip on new window open
+		});
+		$('input').each(function(){
+			$(this).watermark( { textAttr: 'placeholder' } );
+		});
+		$('.navbar-nav a').on('click', function () {
+    	    if (window.innerWidth <= 768) {
+    	        $(".navbar-toggle").click();
+    	    }
+    	});
+		$('.sub-app-info-btn').on('click', function() {
+			window.location = 'marketplace/';
+    	});
+		$('.get-started-btn').on('click', function() {
+			window.location = 'create-gc-bidplanroom/';
+    	});
+		$('.request-demo-btn').on('click', function() {
+			window.location = 'request-gc-demo/';
+    	});
+		$('#login-modal').on('shown.bs.modal', function() {
+			$('#email').focus();		});
+		$('.login-btn').on('click', function() {
+			$('#login-modal').modal("show");
+    	});
+		$('#email, #password, #login-val-btn').keyup(function(event) {
+			if(event.keyCode == 13) {
+				validateLogin();
+			}
+		});
+		$('#reset-id, #forgot-password-submit-btn').keyup(function(event) {
+			if(event.keyCode == 13) {
+				forgotPasswordSubmit();
+			}
+		});
+		$("#login-val-btn").on('click', function (event) {
+			validateLogin();
+    	});
+		$("#forgot-link").on('click', function (event) {
+			event.preventDefault();
+			$('#reset-id').val($('#email').val());
+			$("#forgot-password-btn-icon").addClass("hide");
+			$('#forgot-password-error').addClass("hide");
+			$('#forgot-password-error').html('');
+			$('#login-modal').modal("hide");
+			$('#forgot-password-modal').modal("show");
+    	});
+		$("#forgot-password-submit-btn").on('click', function(event) {
+			forgotPasswordSubmit();
+   		});
+		$('#roles').on('change', function() {
+			if($(this).val() == 0) {
+				$('#create-account-form').addClass("hide");
+			} else if($(this).val() == 5) {
+				$('#signup-modal').modal("hide");
+				$('#gc-bidplanroom-modal').modal("show");
+				$(this).val(0);
+			} else {
+				$('#create-account-form').removeClass("hide");
+			}
+		});
+		$("#create-gc-bidplanroom-btn").on('click', function (event) {
+			window.location = 'create-gc-bidplanroom/';
+    	});
+		$("#signup-val-btn").on('click', function (event) {
+			validateSignup();
+    	});
+		$("#keycode-val-btn").on('click', function (event) {
+			validateKeycode();
+    	});
+		$(".signup-btn").on('click', function (event) {
+			event.preventDefault();
+			$('#signup-modal').modal('show');
+    	});
+		$(".terms-conditions-link").on('click', function (event) {
+			event.preventDefault();
+			loadTermsConditions();
+    	});
+		$('#terms-conditions-modal').on('hidden.bs.modal', function () {
+  			$("#signup-modal").modal('show');
+		});
+		$('#forgot-password-sent-modal').on('hidden.bs.modal', function () {
+  			$("#login-modal").modal('show');
+		});
+		$('#gc-bidplanroom-modal').on('hidden.bs.modal', function () {
+  			$("#signup-modal").modal('show');
+		});
+		$("#keycode-help-link").on('click', function (event) {
+			event.preventDefault();
+			if($("#keycode-help-toggle").hasClass("fa-caret-right")) {
+				$("#keycode-help-toggle").removeClass("fa-caret-right").addClass("fa-caret-down");
+				$("#keycode-help").removeClass("hide");
+			} else {
+				$("#keycode-help-toggle").removeClass("fa-caret-down").addClass("fa-caret-right");
+				$("#keycode-help").addClass("hide");
+			}
+    	});
+		$(".carousel-control-prev").on('click', function (event) {
+			event.preventDefault();
+			var current_logo = $('.client-logo-holder.current');
+			if($('.client-logo-holder').first().hasClass("current")) {
+				$(current_logo).removeClass("current");
+				$('.client-logo-holder').last().addClass("current");
+			} else {
+				$(current_logo).removeClass("current");
+				$(current_logo).prev().addClass("current");
+			}
+    	});
+		$(".carousel-control-next").on('click', function (event) {
+			event.preventDefault();
+			var current_logo = $('.client-logo-holder.current');
+			if($('.client-logo-holder').last().hasClass("current")) {
+				$(current_logo).removeClass("current");
+				$('.client-logo-holder').first().addClass("current");
+			} else {
+				$(current_logo).removeClass("current");
+				$(current_logo).next().addClass("current");
+			}
+    	});
+			});
+	function validateLogin() {
+		if($("#login-btn-icon").hasClass("hide")) {
+			$("#login-btn-icon").removeClass("hide");
+			$("#login-error").addClass("hide");
+			$("#login-error").html('');
+			if($.trim($("#email").val()) == '') {
+				$("#login-error").html('Please enter your email address');
+				$("#login-error").removeClass("hide");
+				$("#email").focus();
+				$("#login-btn-icon").addClass("hide");
+			} else if($.trim($("#password").val()) == '') {
+				$("#password").focus();
+				$("#login-btn-icon").addClass("hide");
+			} else {
+				var d = new Date();
+				var d_o = d.getTimezoneOffset();
+				$.post("app/login.php", { email: $("#email").val(), password: $("#password").val(), dateoffset: d_o },
+				function(data) {
+					if(data['error'] == false) {
+						window.location = data['response'];
+					} else {
+						$("#login-error").html(data['response']);
+						$("#login-error").removeClass("hide");
+						$("#password").val('');
+						$("#password").focus();
+						$("#login-btn-icon").addClass("hide");
+					}
+				}, 'json');
+			}
+		}
+	}
+	function validateSignup() {
+		if($("#signup-btn-icon").hasClass("hide")) {
+			$("#signup-btn-icon").removeClass("hide");
+			$("#signup-error").addClass("hide");
+			$("#signup-error").html('');
+			if($.trim($("#fname").val()) == '') {
+				$("#signup-error").html('Please enter your first name');
+				$("#signup-error").removeClass("hide");
+				$("#fname").focus();
+				$("#signup-btn-icon").addClass("hide");
+			} else if($.trim($("#lname").val()) == '') {
+				$("#signup-error").html('Please enter your last name');
+				$("#signup-error").removeClass("hide");
+				$("#lname").focus();
+				$("#signup-btn-icon").addClass("hide");
+			} else if($.trim($("#email-signup").val()) == '') {
+				$("#signup-error").html('Please enter your email address');
+				$("#signup-error").removeClass("hide");
+				$("#email-signup").focus();
+				$("#signup-btn-icon").addClass("hide");
+			} else if($.trim($("#password-signup").val()) == '') {
+				$("#signup-error").html('Please enter a password');
+				$("#signup-error").removeClass("hide");
+				$("#password-signup").focus();
+				$("#signup-btn-icon").addClass("hide");
+			} else if($("#roles").val() == 0) {
+				$("#signup-error").html('Please select an option');
+				$("#signup-error").removeClass("hide");
+				$("#signup-btn-icon").addClass("hide");
+			} else if(!$('#terms').is(':checked')) {
+				$("#signup-error").html('Please agree to the Terms and Conditions');
+				$("#signup-error").removeClass("hide");
+				$("#signup-btn-icon").addClass("hide");
+			} else {
+				$("#role").val($("#roles").val());
+				validateEmail($.trim($("#email-signup").val()));
+			}
+		}
+	}
+	function validateEmail(e) {
+		$.post("app/validate_email.php", { e: e },
+		function(data) {
+			if(data['error'] == false) {
+				validateAccount(e);
+			} else {
+				$("#signup-error").html('Please enter a valid email address');
+				$("#signup-error").removeClass("hide");
+				$("#email-signup").focus();
+				$("#signup-btn-icon").addClass("hide");
+			}
+		}, 'json');
+	}
+	function validateAccount(e) {
+		$.post("app/validate_account.php", { e: e },
+		function(data) {
+			if(data['error'] == false) {
+				$('#signup-modal').modal('hide');
+				$('#signup-btn-icon').addClass('hide');
+				if($("#role").val() == 3) {
+					$("#keycode-btn-icon").addClass("hide");
+					$("#keycode-error").addClass("hide");
+					$("#keycode-help-toggle").removeClass("fa-caret-down").addClass("fa-caret-right");
+					$("#keycode-help").addClass("hide");
+					$('#keycode-signup-modal').modal('show');
+				} else {
+					if($('#role').val() == 1) {
+						completeSignup(2);
+					} else {
+						completeSignup(4);
+					}
+				}
+			} else {
+				if(data['response'] == 'exists') {
+					$('#signup-btn-icon').addClass('hide');
+					$('#email').val($('#email-signup').val());
+					$('#login-error').html('You already have a BidPlanroom account. Please log in.');
+					$('#login-error').removeClass('hide');
+					$('#signup-modal').modal('hide');
+					$('#login-modal').modal('show');
+				} else {
+					$('#signup-error').html(data['response']);
+					$('#signup-error').removeClass("hide");
+					$('#signup-btn-icon').addClass('hide');
+				}
+			}
+			$("#btn-icon2").removeClass("fa-spinner fa-spin");
+		}, 'json');
+	}
+	function completeSignup(role) {
+		$('#processing-signup-loader').removeClass('hide');
+		$('#processing-signup-error').addClass('hide');
+		$('#processing-signup-error').html('');
+		$('#processing-signup-modal').modal('show');
+		$.post("app/create_user_account.php", { fn: $.trim($("#fname").val()), ln: $.trim($("#lname").val()), e: $.trim($("#email-signup").val()), p: $.trim($("#password-signup").val()), r: role  },
+		function(data) {
+			if(data['error'] == false) {
+				var d = new Date();
+				var d_o = d.getTimezoneOffset();
+				$.post("app/login.php", { email: $.trim($("#email-signup").val()), password: $.trim($("#password-signup").val()), dateoffset: d_o },
+				function(data) {
+					if(data['error'] == false) {
+						window.location = data['response'];
+					} else {
+						// If for some reason log in fails after account creation
+						$('#email').val($.trim($('#email-signup').val()));
+						$('#processing-signup-loader').addClass('hide');
+						$('#processing-signup-modal').modal("hide");
+						$('#login-modal').modal("show");
+					}
+				}, 'json');
+			} else {
+				$('#processing-signup-loader').addClass("hide");
+				$('#processing-signup-error').html(data['response']);
+				$('#processing-signup-error').removeClass('hide');
+			}
+		}, 'json');
+	}
+	function validateKeycode() {
+		if($("#keycode-btn-icon").hasClass("hide")) {
+			$("#keycode-btn-icon").removeClass("hide");
+			$("#keycode-error").addClass("hide");
+			$("#keycode-help-toggle").removeClass("fa-caret-down").addClass("fa-caret-right");
+			$("#keycode-help").addClass("hide");
+			if($.trim($("#key").val()) == '') {
+				$("#keycode-error").html('Please enter your employee key code');
+				$("#keycode-error").removeClass("hide");
+				$("#keycode-btn-icon").addClass("hide");
+				$("#key").focus();
+			} else {
+				$.post("app/validate_employee_keycode_post.php", { k: $.trim($("#key").val()), e: $.trim($("#email-signup").val()) },
+				function(data) {
+					if(data['error'] == false) {
+						$("#keycode-btn-icon").addClass("hide");
+						$('#keycode-signup-modal').modal('hide');
+						completeSignup(1);
+					} else {
+						$("#keycode-error").html(data['response']);
+						$("#keycode-error").removeClass("hide");
+						$("#keycode-btn-icon").addClass("hide");
+					}
+				}, 'json');
+			}
+		}
+	}
+	function forgotPasswordSubmit() {
+		if($("#forgot-password-btn-icon").hasClass("hide")) {
+			$("#forgot-password-btn-icon").removeClass("hide");
+			$("#forgot-password-error").addClass("hide");
+			$("#forgot-password-error").html('');
+			if($.trim($("#reset-id").val()) == '') {
+				$("#forgot-password-error").html('Please enter your email address');
+				$("#forgot-password-error").removeClass("hide");
+				$("#reset-id").focus();
+				$("#forgot-password-btn-icon").addClass("hide");
+			} else {
+				$.post("app/forgot_password_submit.php", { email: $("#reset-id").val()  },
+				function(data) {
+					if(data['error'] == false) {
+						$('#forgot-password-modal').modal('hide');
+						$('#forgot-password-btn-icon').addClass('hide');
+						$('#forgot-password-sent-modal').modal('show');
+					} else {
+						$("#forgot-password-error").html(data['response']);
+						$("#forgot-password-error").removeClass("hide");
+						$("#forgot-password-btn-icon").addClass("hide");
+					}
+				}, 'json');
+			}
+		}
+	}
+	function loadTermsConditions() {
+		$('#terms-conditions').addClass("hide");
+		$('#terms-conditions-loader').removeClass("hide");
+		$('#signup-modal').modal("hide");
+		$('#terms-conditions-modal').modal("show");
+		$.post("app/ajax_get_terms_conditions.php", { page: 'terms_conditions_05102019' },
+		function(data) {
+			if(data['error'] == false) {
+				$('#terms-conditions').html(data['response']);
+				$('#terms-conditions-loader').addClass("hide");
+				$('#terms-conditions').removeClass("hide");
+			} else {
+				$('#terms-conditions').html('<div class="alert alert-danger">' + data['response'] + '</div>');
+				$('#terms-conditions-loader').addClass("hide");
+				$('#terms-conditions').removeClass("hide");
+			}
+		}, 'json');
+	}
+	</script>
+	
+</body>
+</html>

@@ -1,0 +1,20 @@
+curl 'https://app.buildingconnected.com/api/opportunity-links:batch-get' \
+  -H 'Accept: application/json, text/javascript, */*; q=0.01' \
+  -H 'Accept-Language: en-US,en;q=0.9' \
+  -H 'Connection: keep-alive' \
+  -H 'Content-Type: application/json; charset=UTF-8' \
+  -b 'ldId=ldId_697a59e48cbc9e4c9e406f23; _ga=GA1.2.1227205984.1769626087; _gcl_au=1.1.465323787.1769626115; _mkto_trk=id:572-JSV-775&token:_mch-buildingconnected.com-5a54e54e68937d1761452e7417888e2; ADSK_GDPR_OPT_LENGTH=Thu%2C%2028%20Jan%202027%2018%3A49%3A13%20GMT; OPTOUTMULTI_TYPE=P; OPTOUTMULTI_REF=bf804cd2-bfa0-d652-c3b4-c34ab768d010; _biz_uid=8426d06b76194e85d600d82547781fb4; cb_user_id=null; cb_group_id=null; cb_anonymous_id=%22d2e6da08-a5e8-412f-bd66-1c9825e73bcb%22; AMCV_6DC7655351E5696B0A490D44%40AdobeOrg=1585540135%7CMCIDTS%7C20482%7CMCMID%7C60418674226648387404438101622969884046%7CMCAID%7CNONE%7CMCOPTOUT-1769633354s%7CNONE%7CMCAAMLH-1770230954%7C9%7CMCAAMB-1770230954%7Cj8Odv6LonN4r3an7LhD3WZrU1bUpAkFkkiY1ncBR96t2PTI%7CvVersion%7C4.4.0; utag_main=v_id:019c05f031ec0021cfbca9913fd00507d003a07500fb8$_sn:1$_se:2$_ss:0$_st:1769627955954$ses_id:1769626153452%3Bexp-session$_pn:2%3Bexp-session$vapi_domain:buildingconnected.com$optoutbackup:undefined%3Bexp-1777402154112; OPTOUTMULTI=0%3A0%7Cc1%3A0%7Cc7%3A0%7Cc8%3A0%7Cc9%3A0; _biz_nA=3; _biz_flagsA=%7B%22Version%22%3A1%2C%22ViewThrough%22%3A%221%22%2C%22XDomain%22%3A%221%22%2C%22Ecid%22%3A%22509433383%22%7D; _uetvid=0ab25040fc7a11f0af18bd2f9c57ecb4; _biz_pendingA=%5B%5D; _gid=GA1.2.1630632803.1770996953; _ga_FTQW73CGR3=GS2.2.s1770996953$o8$g0$t1770996953$j60$l0$h0; _gat_UA-38247796-12=1; authorization=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY2YWE4YTQyMGJjMDJjMDA0MjYyY2I2MSIsInVzZXJJZCI6IjY2YWE4YTQyMGJjMDJjMDA0MjYyY2I2MSIsImFjY291bnRJZCI6IjY2YWE4YTQyMGJjMDJjMDA0MjYyY2I2MyIsImVtYWlsIjoiZHN1bGxpdmFuQG1hcm1pY2ZpcmUuY29tIiwidXBkYXRlZEF0IjoiMjAyNi0wMi0xM1QxNTozNTo1NS4yOTlaIiwib3h5Z2VuRW5hYmxlZCI6dHJ1ZSwiYXV0b2Rlc2tJZCI6IlJXUDI2WjdNSkpWR0xCUzUiLCJkb05vdFRyYWNrIjpmYWxzZSwic3NvRW5hYmxlZCI6ZmFsc2UsImVtcGxveW1lbnRJZCI6IjY2YWE4YTk0ZWY5ZjJhYzlkZTYzYTk3MiIsImNvbXBhbnlJZCI6IjU1ZTc0ZDM0YjU3OWRjMDcwMDA5ZDRjMyIsInByaW1hcnlPZmZpY2VJZCI6IjVhNmY0OTEwZjI4ZTI4MDAxNDQ1OTA0ZiIsImlzVmVyaWZpZWQiOnRydWUsImlzQWRtaW4iOmZhbHNlLCJqdGkiOiIxYTAwZTY4Zi1lNmZiLTQ2NjQtYTM4OC0yM2RmYWYzYzA5YTkiLCJpYXQiOjE3NzA5OTcwOTMsImV4cCI6MTc3MTI1NjI5M30.0i7U7qgM-0n03pnJZG5FM7zFSiM0Ow1pJI1-Nr732VI' \
+  -H 'Origin: https://app.buildingconnected.com' \
+  -H 'Referer: https://app.buildingconnected.com/opportunities/pipeline' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-origin' \
+  -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0' \
+  -H 'X-BC-App-Instance-Id: f46f0300-d82b-4e84-8a96-197afde37f81' \
+  -H 'X-BC-Client-Hash: 7c51db1bf53b0294ddce228d3d334368cdf38583' \
+  -H 'X-BC-Request-Id: 4df7e8f2-82e0-4079-99e0-e2b430eba733' \
+  -H 'X-Requested-With: XMLHttpRequest' \
+  -H 'sec-ch-ua: "Not(A:Brand";v="8", "Chromium";v="144", "Microsoft Edge";v="144"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  --data-raw '["696e80af5e47bc8ae6fa097a","695c22c0aa7ee0b4ea260de4","696fac965857dd614d21d6be","6977f3a24a6926b046b6cfa0","698b492ba4331615ee952f2f","698b4a0c329bee7a4e20c796","696e759290549632eb44d0e2","696e63a28f42e578086643d5","6970fe58b5b93b6452c855dd","696fc92ebaec8a8483006a81","697bfd701596d34c2087922c","697bfdc8f9ccfaa8e71fd0e3","696d60d5c36edb00529d2ecd","6973b9325b032f5db2a70945","6968118e7867a8961f1b1f5a","6973e6640b8a46f08168a233","6973e6f99c6f0e71c1a13959","696ffe954ebc7761e1eb55f9","697b6cf80d079ef7d6c1963b","697b6d09e422a3bc5bd7b4ac","6925f3037b3c060a75c2ea7b","698f4453dfc3ab264049f29d","697cc14224241ebf04a58317","698bab1be312635935ced3fb","698a7b876f49f2b05a1be8cf","6977de154c720ca8e4996896","698494b2465361234238ef4c","698658c0c9c150520eeda09d","698e0ea5bdf7648cb832102d","698517905963f9f6e010978a","69851f0d1e6a7b379cd45e87","698b9812de75560042fb68f6","69863800949afcd27e6b1b71","698cb9f9a573cb996301d69d"]'

@@ -36,7 +36,7 @@ Restart=always
 RestartSec=10
 
 # Environment variables for headless operation
-Environment="HEADLESS=true"
+Environment="HEADLESS=false"
 Environment="DISPLAY=:0"
 Environment="HOME=/home/pi"
 

@@ -146,7 +146,7 @@ python3 start.py
    ```env
    PLANHUB_LOGIN=your_email@example.com
    PLANHUB_PW=your_password
-   HEADLESS=true
+   HEADLESS=false
    ```
 
 5. **Start Application**

@@ -14,6 +14,18 @@ backend/credentials.json
 backend/token.json
 
 ############################
+# PlanHub auth token (sensitive!)
+############################
+planhub_token.json
+backend/planhub_token.json
+
+############################
+# BuildingConnected auth token (sensitive!)
+############################
+bc_token.json
+backend/bc_token.json
+
+############################
 # Scraper Debug / Dumps
 ############################
 *_debug_log.txt
