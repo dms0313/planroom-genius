@@ -858,7 +858,13 @@ class BuildingConnectedTableScraper:
             # Status
             status = self._get(proj, "status", "bidStatus", default="")
 
-            log_status(f"[{i+1}/{len(all_projects)}] {name[:50]} | {location} | due {bid_date_str[:10] if bid_date_str else 'N/A'}")
+            # Debug: log what fields we extracted
+            if i == 0:
+                log_status(f"[DEBUG] First project keys: {list(proj.keys())[:15]}")
+                log_status(f"[DEBUG] client obj: {type(client_obj).__name__}, keys={list(client_obj.keys()) if isinstance(client_obj, dict) else 'N/A'}")
+                log_status(f"[DEBUG] company={company_name}, contact={contact_name}, email={contact_email}, due={bid_date_str[:20] if bid_date_str else 'NONE'}")
+
+            log_status(f"[{i+1}/{len(all_projects)}] {name[:50]} | {company_name} | {location} | due {bid_date_str[:10] if bid_date_str else 'N/A'}")
 
             # Build lead
             lead = {
