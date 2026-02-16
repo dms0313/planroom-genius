@@ -1,0 +1,393 @@
+import React, { useEffect, useRef, useCallback } from 'react';
+
+const TAKEOFF_BODY_HTML = `
+    <div class="container">
+
+        <div class="top-actions">
+            <div class="tagline">Unified symbol detection with modern Gemini insights.</div>
+            <button class="settings-btn" id="openSettingsBtn" aria-haspopup="dialog" aria-controls="settingsModal">
+                <span class="settings-icon" aria-hidden="true">⚙️</span>
+                Settings
+            </button>
+        </div>
+
+        <div class="app-layout">
+            <div class="history-popup hidden" id="historyPopup" role="dialog" aria-modal="true" aria-hidden="true">
+                <div class="history-popup-content">
+                    <div class="history-popup-header">
+                        <div>
+                            <h2 class="section-title">📁 Project History</h2>
+                            <p class="section-subtitle">Quickly reopen recent documents and Gemini takeoffs.</p>
+                        </div>
+                        <button type="button" class="popup-close" id="historyPopupClose"
+                            aria-label="Close project history">×</button>
+                    </div>
+                    <div class="history-list-wrapper" id="historyListWrapper">
+                        <div class="history-list" id="historyList" role="list" aria-hidden="true">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="main-content">
+                <section class="analysis-panel" id="analysisPanel">
+                    <div class="upload-section">
+                        <div class="upload-area">
+                            <div class="drop-zone" id="dropZone" tabindex="0" role="button"
+                                aria-label="Click to select or drop PDF file">
+                                <div class="drop-zone-icon">📄</div>
+                                <h2>Drop PDF here or click to browse</h2>
+                                <p class="upload-help">Maximum file size: 500MB</p>
+                                <input type="file" id="fileInput" accept=".pdf,.PDF" class="hidden">
+                            </div>
+                            <div id="fileName" class="file-name"></div>
+                            <div id="fileError" class="file-error" role="alert"></div>
+
+                            <div class="optional-files" aria-label="Optional uploads for specs or extra references">
+                                <button type="button" class="add-file-toggle" id="optionalFilesToggle"
+                                    aria-expanded="false">
+                                    <span class="toggle-icon" aria-hidden="true">＋</span>
+                                    <span>Add optional files</span>
+                                </button>
+
+                                <div class="optional-files-body hidden" id="optionalFilesBody">
+                                    <div class="spec-upload" aria-label="Optional specification book upload">
+                                        <div class="spec-upload-header">
+                                            <div>
+                                                <h3 class="section-title">📚 Spec Book (Optional)</h3>
+                                                <p class="section-subtitle">Attach the spec book so Gemini can pull
+                                                    Division 28 fire alarm sections.</p>
+                                            </div>
+                                            <p class="spec-helper">Only fire alarm sections are sent to Gemini.</p>
+                                        </div>
+                                        <div class="drop-zone spec-drop" id="specDropZone" tabindex="0" role="button"
+                                            aria-label="Click to select or drop spec PDF">
+                                            <div class="drop-zone-icon">📑</div>
+                                            <h3>Drop spec book here or click to browse</h3>
+                                            <p class="upload-help">Optional: PDF format</p>
+                                            <input type="file" id="specFileInput" accept=".pdf,.PDF" class="hidden">
+                                        </div>
+                                        <div id="specFileName" class="file-name"></div>
+                                    </div>
+
+                                    <div class="additional-uploads" aria-label="Add supporting files">
+                                        <div class="additional-uploads-header">
+                                            <div>
+                                                <h3 class="section-title">➕ Supporting Files</h3>
+                                                <p class="section-subtitle">Drop any extra references to accompany your
+                                                    PDF (multiple files supported).</p>
+                                            </div>
+                                            <button type="button" class="add-attachment-btn" id="addAttachmentBtn">
+                                                ＋ Add file
+                                            </button>
+                                            <input type="file" id="additionalFileInput" multiple class="hidden">
+                                        </div>
+                                        <ul class="attachment-list" id="attachmentList"></ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="page-selection" id="pageSelection">
+                            <div class="page-selection-header">
+                                <div>
+                                    <h3 class="section-title">📄 Select Pages to Analyze</h3>
+                                    <p class="section-subtitle">Selected pages: <strong id="selectedCount">0</strong>
+                                    </p>
+                                </div>
+                                <button type="button" class="collapse-toggle" id="pageSelectionToggle"
+                                    aria-expanded="false">
+                                    Expand Page Selection
+                                </button>
+                            </div>
+                            <div class="page-selection-controls">
+                                <button type="button" class="select-btn" id="selectAllBtn">Select All</button>
+                                <button type="button" class="select-btn" id="deselectAllBtn">Clear Selection</button>
+                            </div>
+                            <div class="page-hover-preview hidden" id="pageHoverPreview" aria-hidden="true">
+                                <div class="page-hover-lens hidden" id="pageHoverLens" aria-hidden="true"></div>
+                                <img id="pageHoverImage" alt="Zoomed page preview">
+                                <div class="page-hover-label" id="pageHoverLabel"></div>
+                            </div>
+                            <div class="page-grid-wrapper collapsed" id="pageGridWrapper">
+                                <div class="page-grid" id="pageGrid"></div>
+                            </div>
+                        </div>
+
+                        <div class="action-row">
+                            <button class="btn btn-gemini" id="analyzeBtn" disabled>🔍 Analyze for Symbols (Selected
+                                Pages)</button>
+                            <button class="btn" id="startGeminiBtn" disabled>🤖 Run Gemini AI Summary (All
+                                Pages)</button>
+                        </div>
+                        <div class="progress-section" id="progressSection">
+                            <div class="progress-visuals" aria-hidden="true">
+                                <div class="pulse-loader" id="progressLoader"></div>
+                                <div class="progress-status">
+                                    <div class="progress-status-line" id="progressStatus">Starting...</div>
+                                    <div class="progress-eta" id="progressEta">Estimating time remaining...</div>
+                                </div>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill"></div>
+                            </div>
+                            <div class="progress-text" id="progressText">Initializing...</div>
+                        </div>
+                        <div class="results-section" id="resultsSection">
+                            <h2 class="section-title">📊 Symbol Analysis Results</h2>
+                            <div class="results-summary" id="resultsSummary"></div>
+                            <h3 class="section-title">🚨 Detected Devices</h3>
+                            <div class="devices-grid" id="devicesGrid"></div>
+                            <div class="export-section">
+                                <button class="btn export-btn" id="exportBtn">📥 Export Results (JSON)</button>
+                            </div>
+                            <div class="preview-section" id="previewSection">
+                                <h3>🖼️ Annotated Pages Preview</h3>
+                                <p class="section-subtitle">Click any image to view in full screen</p>
+                                <div class="preview-grid" id="previewGrid"></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="gemini-panel" id="geminiPanel">
+                    <div class="gemini-header">
+                        <h2>AI Takeoff Assistant for Fire Alarm</h2>
+                        <p>
+                        </p>
+                        <p class="gemini-helper">Gemini is always executed across all pages of your PDF — use the button
+                            above
+                            whenever you need a fresh summary.</p>
+                        <div class="gemini-actions hidden" id="geminiActions">
+                            <div class="gemini-action-buttons">
+                                <button class="btn btn-gemini" id="downloadGeminiReportBtn" disabled>
+                                    📄 Download Report
+                                </button>
+                                <button class="btn btn-secondary" id="copyGeminiBtn" disabled>
+                                    📋 Copy All Sections
+                                </button>
+                            </div>
+                            <p class="gemini-helper">Available after Gemini finishes so you can share a page-referenced
+                                report.
+                            </p>
+                            <p class="copy-helper hidden" id="copyGeminiStatus"></p>
+                        </div>
+
+                        <div class="gemini-follow-up" aria-label="Ask follow-up questions to Gemini">
+                            <div class="follow-up-header">
+                                <div>
+                                    <h3 class="section-title">🔁 Ask Gemini a Follow-Up</h3>
+                                    <p class="gemini-helper">Use after a Gemini run to clarify devices, page numbers, or
+                                        CO monitoring.</p>
+                                </div>
+                                <button class="btn btn-secondary" id="askFollowUpBtn" disabled>Ask Follow-Up</button>
+                            </div>
+                            <label class="sr-only" for="followUpQuestion">Follow-up question</label>
+                            <textarea id="followUpQuestion" rows="2"
+                                placeholder="Example: Are there any devices on level 2 that seem out of place?"
+                                aria-label="Enter a follow-up question for Gemini"></textarea>
+                            <p class="copy-helper" id="followUpStatus" aria-live="polite"></p>
+                            <div class="gemini-follow-up-response hidden" id="followUpResponse" aria-live="polite">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="gemini-progress hidden" id="geminiProgress" role="status" aria-live="polite">
+                        <div class="spinner" aria-hidden="true"></div>
+                        <div class="progress-status">
+                            <p id="geminiProgressText">Preparing analysis...</p>
+                            <p class="progress-eta" id="geminiEta">Estimating time remaining...</p>
+                        </div>
+                    </div>
+
+                    <div class="gemini-results hidden" id="geminiResultsSection" aria-live="polite"></div>
+
+                    <div class="notion-transfer hidden" id="notionTransferSection">
+                        <div class="notion-transfer-body">
+                            <div>
+                                <h3 class="section-title">📥 Send to Notion</h3>
+                                <p class="gemini-helper">Save the project snapshot to your Notion database when Gemini
+                                    finishes.</p>
+                            </div>
+                            <div class="notion-actions">
+                                <button class="btn btn-secondary" id="sendToNotionBtn" disabled>Send project to
+                                    Notion</button>
+                                <p class="copy-helper" id="notionTransferStatus" aria-live="polite"></p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <div class="history-fab-wrapper">
+        <button type="button" class="history-fab" id="historyPopupToggle" aria-expanded="false"
+            aria-controls="historyPopup" aria-label="Open project history">
+            <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                <path
+                    d="M4 6.5A2.5 2.5 0 0 1 6.5 4h4.086a2.5 2.5 0 0 1 1.768.732l1.914 1.914A2.5 2.5 0 0 0 16.036 8h1.464A2.5 2.5 0 0 1 20 10.5V17A3 3 0 0 1 17 20H7a3 3 0 0 1-3-3Z"
+                    fill="currentColor" />
+                <path
+                    d="M8 12.5a1 1 0 0 1 1-1h6.5a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1Zm1 3.5a1 1 0 0 0 0 2h4.5a1 1 0 1 0 0-2Z"
+                    fill="currentColor" />
+            </svg>
+            <span>Project History</span>
+        </button>
+        <div class="history-status" id="historyStatus"></div>
+    </div>
+
+    <div class="status-footer" role="status">
+        <div class="status-item">
+            <div class="status-dot" id="local-model-status" aria-hidden="true"></div>
+            <span>Local Model: <span id="local-model-text">Checking...</span></span>
+        </div>
+        <div class="status-item">
+            <div class="status-dot" id="gemini-status" aria-hidden="true"></div>
+            <span>Gemini AI: <span id="gemini-text">Checking...</span></span>
+        </div>
+        <div class="status-item status-message hidden" id="gemini-status-message" role="alert" aria-live="polite">
+        </div>
+    </div>
+
+    <div class="settings-overlay hidden" id="settingsModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="settings-panel">
+            <div class="settings-header">
+                <div>
+                    <p class="eyebrow">Configuration</p>
+                    <h2>Processing &amp; Gemini Settings</h2>
+                    <p class="settings-helper">Tune YOLO detection, Gemini preferences, and models in one place.</p>
+                </div>
+                <button class="settings-close" id="closeSettingsBtn" aria-label="Close settings">×</button>
+            </div>
+
+            <div class="settings-grid">
+                <div class="option-group">
+                    <h3>Processing Options</h3>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="skipBlank" checked>
+                        <label for="skipBlank">Skip blank/white tiles</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="skipEdges" checked>
+                        <label for="skipEdges">Skip document edge tiles</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="useParallel" checked>
+                        <label for="useParallel">Enable parallel processing</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="useCache" checked>
+                        <label for="useCache">Use result caching</label>
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <h3>Detection Threshold</h3>
+                    <div class="slider-group">
+                        <label for="confidence">Confidence Threshold: <span class="slider-value"
+                                id="confidenceValue">0.50</span></label>
+                        <input type="range" id="confidence" min="0" max="1" step="0.05" value="0.5">
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <h3>Gemini Options</h3>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="sendGeminiImages" checked>
+                        <label for="sendGeminiImages">Send key pages to Gemini as images (cover, electrical/fire alarm,
+                            mechanical)</label>
+                    </div>
+                    <div class="model-selector">
+                        <label for="geminiModelSelect">Gemini Model</label>
+                        <select id="geminiModelSelect" aria-label="Select Gemini text model"></select>
+                        <span class="status-helper" id="model-info">-</span>
+                    </div>
+                    <div class="settings-textarea">
+                        <label for="geminiSystemInstructions">Gemini System Instructions</label>
+                        <textarea id="geminiSystemInstructions" rows="6"
+                            placeholder="Describe how Gemini should analyze your fire alarm scope."></textarea>
+                        <p class="settings-helper">These instructions are prefixed to every Gemini request. Clear the
+                            field to send no system prompt.</p>
+                        <div class="settings-actions">
+                            <button class="btn btn-secondary" id="saveGeminiInstructionsBtn" type="button">Save
+                                Instructions</button>
+                            <button class="btn" id="resetGeminiInstructionsBtn" type="button">Reset to Default</button>
+                        </div>
+                        <span class="status-helper" id="geminiInstructionsStatus"> </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="imageModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-content">
+            <span class="modal-close" id="modalClose" role="button" aria-label="Close preview">&times;</span>
+            <img class="modal-image" id="modalImage" alt="Annotated page preview">
+            <div class="modal-info" id="modalInfo"></div>
+            <div class="modal-controls">
+                <button class="modal-btn download" id="modalDownload">Download PDF</button>
+            </div>
+        </div>
+    </div>
+`;
+
+export default function TakeoffPanel() {
+  const rootRef = useRef(null);
+  const mountId = useRef(0);
+
+  const cleanup = useCallback(() => {
+    // Remove injected CSS
+    const link = document.getElementById('takeoff-scoped-css');
+    if (link) link.remove();
+
+    // Remove injected script
+    const script = document.getElementById('takeoff-main-js');
+    if (script) script.remove();
+
+    // Clean up any global state the takeoff JS may have created
+    // (the script uses window-level event listeners, etc.)
+  }, []);
+
+  useEffect(() => {
+    const currentMount = ++mountId.current;
+    const root = rootRef.current;
+    if (!root) return;
+
+    // Inject the HTML
+    root.innerHTML = TAKEOFF_BODY_HTML;
+
+    // Inject scoped CSS into <head>
+    const link = document.createElement('link');
+    link.id = 'takeoff-scoped-css';
+    link.rel = 'stylesheet';
+    link.href = '/takeoff/static/css/style.css';
+    document.head.appendChild(link);
+
+    // Inject main.js after HTML is in the DOM so getElementById calls work.
+    // Use a small delay to ensure the browser has parsed the innerHTML.
+    const timer = setTimeout(() => {
+      if (mountId.current !== currentMount) return; // component unmounted
+      const script = document.createElement('script');
+      script.id = 'takeoff-main-js';
+      script.src = '/takeoff/static/js/main.js';
+      root.appendChild(script);
+    }, 50);
+
+    return () => {
+      clearTimeout(timer);
+      cleanup();
+      // Clear the container HTML
+      if (root) root.innerHTML = '';
+    };
+  }, [cleanup]);
+
+  return (
+    <div
+      ref={rootRef}
+      className="takeoff-root"
+      style={{ minHeight: 'calc(100vh - 200px)' }}
+    />
+  );
+}

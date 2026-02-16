@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, EyeOff, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen } from 'lucide-react';
+import TakeoffPanel from './TakeoffPanel';
 
 // Utility functions moved outside to prevent re-creation
 const isExpired = (bidDate) => {
@@ -765,12 +766,8 @@ export default function LeadDashboard() {
         </div>
 
         {/* =================== TAKEOFF TAB =================== */}
-        <div className={activeTab === 'takeoff' ? 'h-[calc(100vh-200px)]' : 'hidden'}>
-          <iframe
-            src={`http://${window.location.hostname}:8000/takeoff/`}
-            className="w-full h-full border-0 rounded-2xl bg-slate-900"
-            title="Fire Alarm Takeoff Assistant"
-          />
+        <div className={activeTab === 'takeoff' ? '' : 'hidden'}>
+          {activeTab === 'takeoff' && <TakeoffPanel />}
         </div>
 
         {/* =================== POINT TO FILE MODAL =================== */}

@@ -39,10 +39,10 @@ echo -e "${YELLOW}[INFO] Logs streaming to: $LOG_DIR/ ...${NC}"
 # Start Services
 # ----------------------
 echo -e "${YELLOW}[INFO] Starting Backend...${NC}"
-cd "$BACKEND_DIR"
-. venv/bin/activate
-# Point logs back to pi5_build/logs
-python3 api.py > "../pi5_build/$LOG_DIR/backend.log" 2>&1 &
+cd "$SCRIPT_DIR/.."
+. backend/venv/bin/activate
+# Run as module from project root to prevent double-import (double logging)
+python3 -m backend.api > "pi5_build/$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo -e "${GREEN}[OK] Backend started (PID: $BACKEND_PID)${NC}"
 
