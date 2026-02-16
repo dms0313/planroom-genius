@@ -182,7 +182,7 @@ class LoydBuildsBetterScraper:
         for attempt in range(max_retries):
             try:
                 log_status(f"Navigating to {url}" + (f" (retry {attempt})" if attempt else ""))
-                await self._page.goto(url, wait_until='networkidle', timeout=60000)
+                await self._page.goto(url, wait_until='domcontentloaded', timeout=90000)
                 await asyncio.sleep(2)
                 return True
             except Exception as e:

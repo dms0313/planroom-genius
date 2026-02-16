@@ -229,19 +229,19 @@ class PlanHubAPIClient:
             page.on("request", _on_request)
 
             # Navigate to login
-            await page.goto(self.config.LOGIN_URL, wait_until="networkidle", timeout=60000)
+            await page.goto(self.config.LOGIN_URL, wait_until="domcontentloaded", timeout=90000)
             await asyncio.sleep(2)
 
             # Check if already logged in (cookie session)
             if not captured_token:
                 # Try navigating to project list to trigger an API call
-                await page.goto(self.config.PROJECT_LIST_URL, wait_until="networkidle", timeout=60000)
+                await page.goto(self.config.PROJECT_LIST_URL, wait_until="domcontentloaded", timeout=90000)
                 await asyncio.sleep(3)
 
             # If still no token, perform login
             if not captured_token:
                 log_status("Performing login...")
-                await page.goto(self.config.LOGIN_URL, wait_until="networkidle", timeout=60000)
+                await page.goto(self.config.LOGIN_URL, wait_until="domcontentloaded", timeout=90000)
                 await asyncio.sleep(2)
 
                 try:
@@ -260,8 +260,8 @@ class PlanHubAPIClient:
                     if not captured_token:
                         await page.goto(
                             self.config.PROJECT_LIST_URL,
-                            wait_until="networkidle",
-                            timeout=60000,
+                            wait_until="domcontentloaded",
+                            timeout=90000,
                         )
                         await asyncio.sleep(5)
                 except Exception as e:
