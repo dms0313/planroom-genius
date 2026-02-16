@@ -1169,9 +1169,16 @@ export default function LeadDashboard() {
               <div className="h-[calc(100%-40px)] overflow-y-auto p-3 font-mono text-xs">
                 {consoleLogs.length === 0 ? (
                   <div className="text-slate-500 italic">No logs yet. Click "Scan" to start scraping...</div>
-                ) : consoleLogs.map((log, i) => (
-                  <div key={i} className={`py-0.5 ${log.includes('ERROR') ? 'text-red-400' : log.includes('TIMEOUT') ? 'text-yellow-400' : log.includes('OK') || log.includes('Complete') ? 'text-green-400' : log.includes('LOGIN') ? 'text-orange-400 font-bold' : log.includes('Found') ? 'text-blue-400' : 'text-slate-300'}`}>{log}</div>
-                ))}
+                ) : consoleLogs.map((log, i) => {
+                  const tagColors = { '[BC]': 'text-cyan-400', '[PH]': 'text-violet-400', '[LBB]': 'text-amber-400', '[BPR]': 'text-emerald-400' };
+                  const tagMatch = log.match(/^\[(?:BC|PH|LBB|BPR)\]/);
+                  const lineColor = log.includes('ERROR') ? 'text-red-400' : log.includes('TIMEOUT') ? 'text-yellow-400' : log.includes('OK') || log.includes('Complete') ? 'text-green-400' : log.includes('LOGIN') ? 'text-orange-400 font-bold' : log.includes('Found') ? 'text-blue-400' : 'text-slate-300';
+                  return (
+                    <div key={i} className={`py-0.5 ${lineColor}`}>
+                      {tagMatch ? <><span className={`${tagColors[tagMatch[0]]} font-bold`}>{tagMatch[0]}</span>{log.slice(tagMatch[0].length)}</> : log}
+                    </div>
+                  );
+                })}
                 <div ref={consoleEndRef} />
               </div>
             )}

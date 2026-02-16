@@ -6,8 +6,12 @@ from datetime import datetime
 from io import BytesIO
 from typing import Any, Dict, Iterable, List
 
-from docx import Document
-from docx.shared import Pt
+try:
+    from docx import Document
+    from docx.shared import Pt
+    _DOCX_AVAILABLE = True
+except ImportError:
+    _DOCX_AVAILABLE = False
 
 
 def _format_value(value: Any) -> str:
@@ -48,6 +52,8 @@ def _format_page_label(page: Any) -> str:
 
 def build_gemini_report(results: Dict[str, Any]) -> BytesIO:
     """Render Gemini AI analysis results into a downloadable DOCX file."""
+    if not _DOCX_AVAILABLE:
+        raise RuntimeError("python-docx is required for report generation. Install with: pip install python-docx")
 
     document = Document()
     heading = document.add_heading("Gemini Fire Alarm Detailed Report", level=0)
