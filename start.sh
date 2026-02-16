@@ -8,11 +8,15 @@ if [ -z "$BASH_VERSION" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PYTHON="$SCRIPT_DIR/backend/venv/bin/python"
 
-if [ ! -f "$PYTHON" ]; then
+# Find python in venv (Bookworm may only have python3)
+if [ -f "$SCRIPT_DIR/backend/venv/bin/python" ]; then
+    PYTHON="$SCRIPT_DIR/backend/venv/bin/python"
+elif [ -f "$SCRIPT_DIR/backend/venv/bin/python3" ]; then
+    PYTHON="$SCRIPT_DIR/backend/venv/bin/python3"
+else
     echo "Error: Python venv not found. Run setup first:"
-    echo "  python3 setup.py"
+    echo "  bash pi5-setup.sh"
     exit 1
 fi
 

@@ -41,6 +41,17 @@ else
 fi
 echo "RAM detected: ${RAM_GB_INT}GB -> MemoryMax=${MEM_LIMIT}"
 
+# Find python executable (Bookworm may only have python3)
+if [ -f "$INSTALL_DIR/backend/venv/bin/python" ]; then
+    VENV_PYTHON="$INSTALL_DIR/backend/venv/bin/python"
+elif [ -f "$INSTALL_DIR/backend/venv/bin/python3" ]; then
+    VENV_PYTHON="$INSTALL_DIR/backend/venv/bin/python3"
+else
+    echo "Error: Python venv not found. Run pi5-setup.sh first."
+    exit 1
+fi
+echo "Python: $VENV_PYTHON"
+
 # Generate customized service file
 cat > /tmp/planroom-genius.service << EOF
 [Unit]
@@ -53,7 +64,7 @@ Type=simple
 User=$CURRENT_USER
 Group=$CURRENT_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/backend/venv/bin/python $INSTALL_DIR/start.py
+ExecStart=$VENV_PYTHON $INSTALL_DIR/start.py
 Restart=always
 RestartSec=10
 Environment="HEADLESS=true"
