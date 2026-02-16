@@ -33,7 +33,13 @@ echo -e "${YELLOW}[INFO] Stopping any existing instances...${NC}"
 pkill -f "python3 -m backend.api" 2>/dev/null
 pkill -f "python3 api.py" 2>/dev/null
 pkill -f "node.*vite" 2>/dev/null
+pkill -f chromium 2>/dev/null
 sleep 1
+
+# Remove stale Chromium lock files left by crashed browser instances
+rm -f /home/pi/.config/chromium/SingletonLock 2>/dev/null
+rm -f "$SCRIPT_DIR/backend/planroom_agent_profile/SingletonLock" 2>/dev/null
+rm -f "$SCRIPT_DIR/../backend/playwright_profile/SingletonLock" 2>/dev/null
 
 # Logging Setup
 mkdir -p "$LOG_DIR"
