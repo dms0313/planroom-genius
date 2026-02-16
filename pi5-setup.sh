@@ -1,16 +1,15 @@
 #!/bin/bash
 #
-# Planroom Genius - Raspberry Pi 5 Quick Setup
+# Planroom Genius - Raspberry Pi 5 Complete Setup
 # Optimized for Raspberry Pi 5 with Bookworm OS (64-bit)
 #
-# Usage: curl -sSL https://your-repo/pi5-setup.sh | bash
-#    or: chmod +x pi5-setup.sh && ./pi5-setup.sh
+# Usage: chmod +x pi5-setup.sh && ./pi5-setup.sh
 #
 
 set -e
 
 echo "=================================================="
-echo "  PLANROOM GENIUS - Raspberry Pi 5 Quick Setup"
+echo "  PLANROOM GENIUS - Raspberry Pi 5 Complete Setup"
 echo "=================================================="
 echo ""
 
@@ -18,16 +17,28 @@ echo ""
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Check if running on Pi 5
+INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
+CURRENT_USER=$(whoami)
+
+log_ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
+log_warn() { echo -e "  ${YELLOW}⚠${NC} $1"; }
+log_err()  { echo -e "  ${RED}✗${NC} $1"; }
+log_info() { echo -e "  ${CYAN}→${NC} $1"; }
+
+# ──────────────────────────────────────────────
+# PRE-FLIGHT CHECKS
+# ──────────────────────────────────────────────
+
 check_pi5() {
     echo -n "Checking hardware... "
     if [ -f /proc/device-tree/model ]; then
-        MODEL=$(cat /proc/device-tree/model | tr -d '\0')
+        MODEL=$(tr -d '\0' < /proc/device-tree/model)
         if [[ "$MODEL" == *"Raspberry Pi 5"* ]]; then
             echo -e "${GREEN}Raspberry Pi 5 detected${NC}"
-            echo "  Model: $MODEL"
+            log_info "Model: $MODEL"
             return 0
         fi
     fi
@@ -47,50 +58,49 @@ check_pi5() {
     fi
 }
 
-# Check 64-bit OS
 check_64bit() {
     echo -n "Checking OS architecture... "
     ARCH=$(uname -m)
     DPKG_ARCH=$(dpkg --print-architecture 2>/dev/null || echo "unknown")
     KERNEL_BITS=$(getconf LONG_BIT 2>/dev/null || echo "unknown")
 
-    echo ""
-    echo "  uname -m: $ARCH"
-    echo "  dpkg arch: $DPKG_ARCH"
-    echo "  kernel bits: $KERNEL_BITS"
-
-    # Check multiple indicators for 64-bit
     if [[ "$ARCH" == "aarch64" ]] || [[ "$ARCH" == "arm64" ]] || \
        [[ "$DPKG_ARCH" == "arm64" ]] || [[ "$KERNEL_BITS" == "64" ]]; then
-        echo -e "  ${GREEN}64-bit OS confirmed${NC}"
+        echo -e "${GREEN}64-bit OS confirmed${NC}"
+        log_info "Arch: $ARCH / dpkg: $DPKG_ARCH / kernel: ${KERNEL_BITS}-bit"
     else
-        echo -e "  ${YELLOW}Warning: Could not confirm 64-bit OS${NC}"
-        echo ""
-        echo "  Your system reports: $ARCH / $DPKG_ARCH / ${KERNEL_BITS}-bit"
-        echo "  Pi 5 requires 64-bit for optimal performance."
-        echo ""
-        echo "  Continue anyway? (y/n)"
-        read -r response
-        if [[ ! "$response" =~ ^[Yy]$ ]]; then
-            echo "Setup cancelled."
-            exit 1
-        fi
+        echo -e "${RED}ERROR: 64-bit OS required${NC}"
+        echo "  Raspberry Pi OS (64-bit) Bookworm is required."
+        echo "  Re-image your SD card with the 64-bit version from:"
+        echo "  https://www.raspberrypi.com/software/"
+        exit 1
     fi
 }
 
-# Check RAM
 check_ram() {
     echo -n "Checking RAM... "
     RAM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
     RAM_GB=$(echo "scale=1; $RAM_KB / 1024 / 1024" | bc)
+    RAM_GB_INT=$(echo "$RAM_GB" | cut -d. -f1)
     echo -e "${GREEN}${RAM_GB} GB${NC}"
 
-    if (( $(echo "$RAM_GB < 4" | bc -l) )); then
-        echo -e "${YELLOW}Warning: 4GB+ RAM recommended for browser automation${NC}"
+    if (( RAM_GB_INT < 4 )); then
+        log_warn "4GB+ RAM recommended. 2GB will work but browser may be slow."
     fi
 }
 
-# Check for active cooler
+check_disk_space() {
+    echo -n "Checking disk space... "
+    AVAIL_MB=$(df -m "$INSTALL_DIR" | tail -1 | awk '{print $4}')
+    AVAIL_GB=$(echo "scale=1; $AVAIL_MB / 1024" | bc)
+    echo -e "${GREEN}${AVAIL_GB} GB available${NC}"
+
+    if (( AVAIL_MB < 3000 )); then
+        log_err "Need at least 3GB free disk space (Chromium ~400MB + deps)"
+        exit 1
+    fi
+}
+
 check_cooling() {
     echo -n "Checking cooling... "
     if [ -f /sys/class/thermal/cooling_device0/type ]; then
@@ -101,10 +111,9 @@ check_cooling() {
         fi
     fi
     echo -e "${YELLOW}No active cooler detected${NC}"
-    echo "  Tip: Active cooler recommended for sustained workloads"
+    log_warn "Active cooler recommended for sustained browser workloads"
 }
 
-# Get current temperature
 check_temp() {
     echo -n "Checking temperature... "
     if command -v vcgencmd &> /dev/null; then
@@ -115,43 +124,60 @@ check_temp() {
     fi
 }
 
-# Update system
+# ──────────────────────────────────────────────
+# INSTALLATION STEPS
+# ──────────────────────────────────────────────
+
 update_system() {
     echo ""
-    echo "[1/7] Updating system packages..."
+    echo -e "${CYAN}[1/9] Updating system packages...${NC}"
     sudo apt-get update -qq
     sudo apt-get upgrade -y -qq
-    echo -e "${GREEN}✓ System updated${NC}"
+    log_ok "System updated"
 }
 
-# Install Python
 install_python() {
     echo ""
-    echo "[2/7] Installing Python 3 with venv support..."
-    sudo apt-get install -y -qq python3 python3-pip python3-venv python3-full
+    echo -e "${CYAN}[2/9] Installing Python 3 with venv support...${NC}"
+    sudo apt-get install -y -qq \
+        python3 \
+        python3-pip \
+        python3-venv \
+        python3-full \
+        python3-dev \
+        build-essential \
+        bc
     PYTHON_VERSION=$(python3 --version)
-    echo -e "${GREEN}✓ $PYTHON_VERSION installed${NC}"
+    log_ok "$PYTHON_VERSION installed"
 }
 
-# Install Node.js
 install_node() {
     echo ""
-    echo "[3/7] Installing Node.js 20 LTS..."
-    if ! command -v node &> /dev/null; then
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - > /dev/null 2>&1
-        sudo apt-get install -y -qq nodejs
+    echo -e "${CYAN}[3/9] Installing Node.js 20 LTS...${NC}"
+    if command -v node &> /dev/null; then
+        NODE_VERSION=$(node --version)
+        NODE_MAJOR=$(echo "$NODE_VERSION" | cut -d. -f1 | tr -d 'v')
+        if (( NODE_MAJOR >= 20 )); then
+            log_ok "Node.js $NODE_VERSION already installed"
+            return
+        fi
+        log_warn "Node.js $NODE_VERSION is too old, upgrading..."
     fi
+
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - > /dev/null 2>&1
+    sudo apt-get install -y -qq nodejs
     NODE_VERSION=$(node --version)
-    echo -e "${GREEN}✓ Node.js $NODE_VERSION installed${NC}"
+    log_ok "Node.js $NODE_VERSION installed"
 }
 
-# Install browser dependencies
-install_browser_deps() {
+install_chromium_and_deps() {
     echo ""
-    echo "[4/7] Installing Chromium and browser dependencies..."
+    echo -e "${CYAN}[4/9] Installing Chromium browser and dependencies for ARM64...${NC}"
+
+    # Install system Chromium (ARM64 native from Bookworm repos)
+    # This is the primary browser that Playwright will use as a fallback
     sudo apt-get install -y -qq \
         chromium-browser \
-        chromium-codecs-ffmpeg-extra \
         libgbm1 \
         libxkbcommon0 \
         libatk1.0-0 \
@@ -166,122 +192,276 @@ install_browser_deps() {
         libpango-1.0-0 \
         libcairo2 \
         libatspi2.0-0 \
-        libgtk-3-0
-    echo -e "${GREEN}✓ Chromium and dependencies installed${NC}"
+        libgtk-3-0 \
+        libglib2.0-0 \
+        libnss3 \
+        libnspr4 \
+        libdbus-1-3 \
+        libxext6 \
+        libx11-6 \
+        libx11-xcb1 \
+        libxcb1 \
+        libxshmfence1 \
+        fonts-liberation \
+        xdg-utils \
+        wget \
+        ca-certificates
+
+    # Verify chromium-browser is working
+    if command -v chromium-browser &> /dev/null; then
+        CHROMIUM_VERSION=$(chromium-browser --version 2>/dev/null | head -1)
+        log_ok "System Chromium installed: $CHROMIUM_VERSION"
+    else
+        log_warn "chromium-browser command not found, Playwright will use its own"
+    fi
+
+    # Install optional codecs (may not be available on all Bookworm variants)
+    sudo apt-get install -y -qq chromium-codecs-ffmpeg 2>/dev/null || \
+        log_warn "chromium-codecs-ffmpeg not available (non-critical)"
+
+    log_ok "Browser dependencies installed"
 }
 
-# Setup Python environment
 setup_python_env() {
     echo ""
-    echo "[5/7] Setting up Python virtual environment..."
+    echo -e "${CYAN}[5/9] Setting up Python virtual environment...${NC}"
 
-    # Remove existing venv if present
-    if [ -d "backend/venv" ]; then
-        rm -rf backend/venv
+    VENV_PATH="$INSTALL_DIR/backend/venv"
+
+    # Remove existing venv if present (clean install)
+    if [ -d "$VENV_PATH" ]; then
+        log_info "Removing existing venv..."
+        rm -rf "$VENV_PATH"
     fi
 
     # Create venv with system site packages for Pi compatibility
-    python3 -m venv --system-site-packages backend/venv
+    python3 -m venv --system-site-packages "$VENV_PATH"
 
     # Upgrade pip and install dependencies
-    backend/venv/bin/pip install --upgrade pip wheel setuptools -q
-    backend/venv/bin/pip install -r backend/requirements.txt -q
+    "$VENV_PATH/bin/pip" install --upgrade pip wheel setuptools -q
+    "$VENV_PATH/bin/pip" install -r "$INSTALL_DIR/backend/requirements.txt" -q
 
-    echo -e "${GREEN}✓ Python environment ready${NC}"
+    log_ok "Python environment ready"
 }
 
-# Setup Playwright
 setup_playwright() {
     echo ""
-    echo "[6/7] Installing Playwright for ARM64..."
-    backend/venv/bin/python -m playwright install chromium
-    backend/venv/bin/python -m playwright install-deps chromium
-    echo -e "${GREEN}✓ Playwright ready${NC}"
-}
+    echo -e "${CYAN}[6/9] Installing Playwright Chromium for ARM64...${NC}"
 
-# Setup frontend
-setup_frontend() {
-    echo ""
-    echo "[7/7] Installing frontend dependencies..."
-    cd frontend
-    npm install -q
-    cd ..
-    echo -e "${GREEN}✓ Frontend ready${NC}"
-}
+    VENV_PYTHON="$INSTALL_DIR/backend/venv/bin/python"
 
-# Create .env if needed
-setup_env() {
-    if [ ! -f .env ]; then
-        if [ -f .env.example ]; then
-            cp .env.example .env
-            echo "" >> .env
-            echo "# Raspberry Pi 5 Optimizations" >> .env
-            echo "HEADLESS=true" >> .env
-            echo -e "${GREEN}✓ Created .env from template${NC}"
+    # Install Playwright's bundled Chromium (optimized for automation)
+    "$VENV_PYTHON" -m playwright install chromium 2>&1 | tail -3
+
+    # Install system dependencies that Playwright needs
+    "$VENV_PYTHON" -m playwright install-deps chromium 2>&1 | tail -3
+
+    # Verify Playwright can launch
+    echo "  Verifying Playwright browser launch..."
+    if "$VENV_PYTHON" -c "
+import asyncio
+from playwright.async_api import async_playwright
+async def test():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-gpu'])
+        page = await browser.new_page()
+        await page.goto('about:blank')
+        title = await page.title()
+        await browser.close()
+        return True
+result = asyncio.run(test())
+print('Browser launch: OK')
+" 2>/dev/null; then
+        log_ok "Playwright Chromium verified and working"
+    else
+        log_warn "Playwright browser launch test failed"
+        log_info "Trying with system Chromium as fallback..."
+
+        # Configure Playwright to use system Chromium
+        CHROMIUM_PATH=$(which chromium-browser 2>/dev/null)
+        if [ -n "$CHROMIUM_PATH" ]; then
+            log_info "System Chromium at: $CHROMIUM_PATH"
+            log_info "Set PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$CHROMIUM_PATH if needed"
         fi
     fi
 }
 
-# Make scripts executable
-setup_permissions() {
-    chmod +x start.sh stop.sh start.py setup.py 2>/dev/null || true
+setup_frontend() {
+    echo ""
+    echo -e "${CYAN}[7/9] Building frontend...${NC}"
+
+    cd "$INSTALL_DIR/frontend"
+    npm install -q 2>&1 | tail -3
+
+    # Build production assets (so we don't need vite dev server in production)
+    npx vite build 2>&1 | tail -3
+
+    cd "$INSTALL_DIR"
+    log_ok "Frontend ready"
 }
 
-# Print final instructions
+setup_env() {
+    echo ""
+    echo -e "${CYAN}[8/9] Configuring environment...${NC}"
+
+    if [ ! -f "$INSTALL_DIR/.env" ]; then
+        if [ -f "$INSTALL_DIR/.env.example" ]; then
+            cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
+            log_ok "Created .env from template"
+        else
+            # Create minimal .env
+            cat > "$INSTALL_DIR/.env" << 'ENVEOF'
+# Planroom Genius - Pi 5 Configuration
+# Fill in your credentials below
+
+GEMINI_API_KEY=your_gemini_api_key_here
+SITE_LOGIN=your_email@domain.com
+SITE_PW=your_password
+BIDPLANROOM_EMAIL=your_email@domain.com
+BIDPLANROOM_PW=your_password
+LOYD_LOGIN=your_email@domain.com
+LOYD_PW=your_password
+HEADLESS=true
+USE_GOOGLE_DRIVE=false
+ENVEOF
+            log_ok "Created .env template"
+        fi
+        log_warn "You MUST edit .env with your actual credentials before running!"
+    else
+        log_ok ".env already exists (preserving existing config)"
+    fi
+
+    # Ensure HEADLESS=true is set for Pi
+    if ! grep -q "HEADLESS=true" "$INSTALL_DIR/.env"; then
+        echo "" >> "$INSTALL_DIR/.env"
+        echo "# Raspberry Pi 5 - headless mode" >> "$INSTALL_DIR/.env"
+        echo "HEADLESS=true" >> "$INSTALL_DIR/.env"
+        log_info "Added HEADLESS=true to .env"
+    fi
+}
+
+setup_permissions_and_dirs() {
+    echo ""
+    echo -e "${CYAN}[9/9] Setting up permissions and directories...${NC}"
+
+    # Create necessary directories
+    mkdir -p "$INSTALL_DIR/backend/downloads"
+    mkdir -p "$INSTALL_DIR/backend/data"
+    mkdir -p "$INSTALL_DIR/backend/backups"
+    mkdir -p "$INSTALL_DIR/backend/playwright_profile"
+
+    # Make scripts executable
+    chmod +x "$INSTALL_DIR/start.sh" 2>/dev/null || true
+    chmod +x "$INSTALL_DIR/stop.sh" 2>/dev/null || true
+    chmod +x "$INSTALL_DIR/start.py" 2>/dev/null || true
+    chmod +x "$INSTALL_DIR/setup.py" 2>/dev/null || true
+    chmod +x "$INSTALL_DIR/install-service.sh" 2>/dev/null || true
+    chmod +x "$INSTALL_DIR/pi5-setup.sh" 2>/dev/null || true
+
+    # Ensure the Chromium user data dir exists
+    mkdir -p "$HOME/.config/chromium/Default"
+
+    log_ok "Permissions and directories configured"
+}
+
+# ──────────────────────────────────────────────
+# OPTIONAL: SWAP CONFIGURATION
+# ──────────────────────────────────────────────
+
+configure_swap() {
+    RAM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    RAM_GB_INT=$(echo "$RAM_KB / 1024 / 1024" | bc)
+
+    if (( RAM_GB_INT <= 4 )); then
+        echo ""
+        echo -e "${CYAN}Optimizing swap for 4GB Pi 5...${NC}"
+
+        CURRENT_SWAP=$(grep CONF_SWAPSIZE /etc/dphys-swapfile 2>/dev/null | grep -v "^#" | cut -d= -f2)
+        if [ -n "$CURRENT_SWAP" ] && (( CURRENT_SWAP >= 2048 )); then
+            log_ok "Swap already at ${CURRENT_SWAP}MB"
+        else
+            echo "  Browser automation benefits from 2GB+ swap on 4GB models."
+            echo -n "  Increase swap to 2GB? (y/n) "
+            read -r response
+            if [[ "$response" =~ ^[Yy]$ ]]; then
+                sudo sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=2048/' /etc/dphys-swapfile
+                sudo dphys-swapfile setup
+                sudo dphys-swapfile swapon
+                log_ok "Swap increased to 2GB"
+            fi
+        fi
+    fi
+}
+
+# ──────────────────────────────────────────────
+# SUCCESS MESSAGE
+# ──────────────────────────────────────────────
+
 print_success() {
+    IP=$(hostname -I | awk '{print $1}')
+
     echo ""
     echo "=================================================="
     echo -e "${GREEN}  SETUP COMPLETE!${NC}"
     echo "=================================================="
     echo ""
-    echo "Next steps:"
+    echo "  Next steps:"
     echo ""
-    echo "  1. Configure your credentials:"
-    echo "     nano .env"
+    echo "  1. Edit your credentials:"
+    echo -e "     ${CYAN}nano $INSTALL_DIR/.env${NC}"
     echo ""
     echo "  2. Start the application:"
-    echo "     ./start.sh"
+    echo -e "     ${CYAN}$INSTALL_DIR/start.sh${NC}"
     echo ""
     echo "  3. Access the dashboard:"
-    IP=$(hostname -I | awk '{print $1}')
-    echo "     Local:   http://localhost:5173"
-    echo "     Network: http://${IP}:5173"
+    echo -e "     Local:   ${CYAN}http://localhost:5173${NC}"
+    echo -e "     Network: ${CYAN}http://${IP}:5173${NC}"
     echo ""
-    echo "Pi 5 Tips:"
-    echo "  - Active cooler keeps CPU at optimal temps under load"
-    echo "  - App runs headless by default (no GUI needed)"
-    echo "  - For autostart on boot, see: systemctl enable planroom-genius"
+    echo "  4. (Optional) Install as system service for auto-start:"
+    echo -e "     ${CYAN}$INSTALL_DIR/install-service.sh${NC}"
+    echo ""
+    echo "  Pi 5 Notes:"
+    echo "  - App runs headless (no GUI needed)"
+    echo "  - Active cooler recommended for sustained scraping"
+    echo "  - Logs: journalctl -u planroom-genius -f (if using service)"
+    echo "  - Stop: $INSTALL_DIR/stop.sh"
     echo ""
 }
 
-# Main execution
+# ──────────────────────────────────────────────
+# MAIN
+# ──────────────────────────────────────────────
+
 main() {
-    # Pre-flight checks
+    echo "Pre-flight checks:"
+    echo ""
+
     check_pi5
     check_64bit
     check_ram
+    check_disk_space
     check_cooling
     check_temp
 
     echo ""
     echo "Ready to install Planroom Genius?"
+    echo "This will install: Python 3, Node.js 20, Chromium, Playwright, and all dependencies."
     echo "Press Enter to continue or Ctrl+C to cancel..."
     read -r
 
-    # Installation steps
     update_system
     install_python
     install_node
-    install_browser_deps
+    install_chromium_and_deps
     setup_python_env
     setup_playwright
     setup_frontend
     setup_env
-    setup_permissions
+    setup_permissions_and_dirs
+    configure_swap
 
-    # Done!
     print_success
 }
 
-# Run main function
+# Run
 main

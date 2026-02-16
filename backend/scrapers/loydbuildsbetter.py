@@ -126,16 +126,27 @@ class LoydBuildsBetterScraper:
             '--disable-dev-shm-usage',
             '--no-sandbox',
         ]
+        # Add Pi-optimized browser args if on Pi 5
+        pi_args = self.config.get_browser_args()
+        if pi_args:
+            launch_args = list(set(launch_args + pi_args))
 
         log_status(f"Launching browser (headless={self.config.HEADLESS})")
 
-        self._browser_context = await self._playwright.chromium.launch_persistent_context(
+        launch_kwargs = dict(
             user_data_dir=profile_dir,
             headless=self.config.HEADLESS,
             args=launch_args,
             viewport={'width': self.config.VIEWPORT_WIDTH, 'height': self.config.VIEWPORT_HEIGHT},
             accept_downloads=True,
             ignore_https_errors=True,
+        )
+        chrome_path = self.config.get_chromium_executable()
+        if chrome_path:
+            launch_kwargs['executable_path'] = chrome_path
+
+        self._browser_context = await self._playwright.chromium.launch_persistent_context(
+            **launch_kwargs,
         )
 
         # Use existing page or create one

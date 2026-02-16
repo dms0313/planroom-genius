@@ -1,11 +1,26 @@
 import json
 import os
+import re
 import logging
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 DB_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "leads_db.json")
+
+
+def _compute_match_key(lead):
+    """Generate a normalized key for cross-source duplicate matching."""
+    name = (lead.get("name") or "").lower().strip()
+    location = (lead.get("location") or lead.get("city", "") or "").lower().strip()
+    # Remove common noise words and punctuation
+    name = re.sub(r"[^a-z0-9 ]", "", name)
+    name = re.sub(r"\s+", " ", name).strip()
+    location = re.sub(r"[^a-z0-9 ]", "", location)
+    location = re.sub(r"\s+", " ", location).strip()
+    if not name:
+        return None
+    return f"{name}|{location}" if location else name
 
 def load_leads():
     """Load leads from the JSON database."""
@@ -104,6 +119,14 @@ def save_leads(new_leads):
     existing_by_location = {(l.get('location'), l.get('site')): i for i, l in enumerate(existing) if l.get('location') and l.get('location') != 'N/A'}
     existing_by_name = {(l.get('name'), l.get('site')): i for i, l in enumerate(existing)}
 
+    # Cross-source lookup by match_key (ignoring site)
+    existing_by_match_key = {}
+    for i, l in enumerate(existing):
+        mk = _compute_match_key(l)
+        if mk:
+            l['match_key'] = mk
+            existing_by_match_key[mk] = i
+
     added_count = 0
     merged_count = 0
 
@@ -136,6 +159,27 @@ def save_leads(new_leads):
                 duplicate_index = existing_by_name[name_key]
                 logger.debug(f"Duplicate lead found (by name): {lead.get('name')}")
 
+        # Cross-source match by match_key (if no same-source duplicate found)
+        if duplicate_index is None:
+            mk = _compute_match_key(lead)
+            if mk:
+                lead['match_key'] = mk
+                if mk in existing_by_match_key:
+                    cross_index = existing_by_match_key[mk]
+                    primary = existing[cross_index]
+                    # Only match cross-source (same source already handled above)
+                    if primary.get('site') != lead.get('site'):
+                        # Collect GC/source info into also_listed_by
+                        also_listed = primary.get('also_listed_by', [])
+                        new_entry = {"gc": lead.get('gc', 'N/A'), "site": lead.get('site', 'Unknown')}
+                        if new_entry not in also_listed:
+                            also_listed.append(new_entry)
+                        primary['also_listed_by'] = also_listed
+                        existing[cross_index] = merge_lead_info(primary, lead)
+                        merged_count += 1
+                        logger.info(f"Cross-source merge for: {lead.get('name')} ({lead.get('site')} -> {primary.get('site')})")
+                        continue
+
         if duplicate_index is not None:
             # Merge information into existing lead
             existing[duplicate_index] = merge_lead_info(existing[duplicate_index], lead)
@@ -148,6 +192,11 @@ def save_leads(new_leads):
         if 'discovered_at' not in lead:
             lead['discovered_at'] = datetime.now().isoformat()
 
+        # Compute match_key for new lead
+        mk = _compute_match_key(lead)
+        if mk:
+            lead['match_key'] = mk
+
         # Add to tracking dictionaries
         new_index = len(existing)
         if lead.get('id'):
@@ -155,6 +204,8 @@ def save_leads(new_leads):
         if lead.get('location') and lead.get('location') != 'N/A':
             existing_by_location[(lead.get('location'), lead.get('site'))] = new_index
         existing_by_name[(lead.get('name'), lead.get('site'))] = new_index
+        if mk:
+            existing_by_match_key[mk] = new_index
 
         existing.append(lead)
         added_count += 1
@@ -260,6 +311,53 @@ def deduplicate_database():
                 seen_by_location[(lead.get('location'), lead.get('site'))] = new_index
             seen_by_name[(lead.get('name'), lead.get('site'))] = new_index
             deduplicated.append(lead)
+
+    # === Pass 2: Cross-source dedup by match_key ===
+    cross_source_groups = {}
+    for i, lead in enumerate(deduplicated):
+        mk = _compute_match_key(lead)
+        if mk:
+            lead['match_key'] = mk
+            cross_source_groups.setdefault(mk, []).append(i)
+
+    # Process groups with multiple entries (cross-source duplicates)
+    indices_to_remove = set()
+    for mk, indices in cross_source_groups.items():
+        if len(indices) < 2:
+            continue
+
+        # Pick the lead with most non-empty fields as primary
+        def _richness(idx):
+            lead = deduplicated[idx]
+            count = sum(1 for v in lead.values() if v and v != "N/A")
+            # Bonus for having knowledge scan
+            if lead.get('knowledge_last_scanned'):
+                count += 10
+            return count
+
+        indices.sort(key=_richness, reverse=True)
+        primary_idx = indices[0]
+        primary = deduplicated[primary_idx]
+
+        also_listed = primary.get('also_listed_by', [])
+        for sec_idx in indices[1:]:
+            secondary = deduplicated[sec_idx]
+            # Collect GC/source info
+            new_entry = {"gc": secondary.get('gc', 'N/A'), "site": secondary.get('site', 'Unknown')}
+            if new_entry not in also_listed:
+                also_listed.append(new_entry)
+            # Merge useful fields from secondary
+            primary = merge_lead_info(primary, secondary)
+            indices_to_remove.add(sec_idx)
+            logger.info(f"Cross-source dedup: merged '{secondary.get('name')}' ({secondary.get('site')}) into primary ({primary.get('site')})")
+
+        if also_listed:
+            primary['also_listed_by'] = also_listed
+        deduplicated[primary_idx] = primary
+
+    if indices_to_remove:
+        deduplicated = [lead for i, lead in enumerate(deduplicated) if i not in indices_to_remove]
+        logger.info(f"Cross-source dedup removed {len(indices_to_remove)} duplicates")
 
     # Save deduplicated leads
     try:

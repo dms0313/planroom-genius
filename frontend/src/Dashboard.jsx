@@ -22,6 +22,8 @@ const scoreBg = (score) => {
 const badgeColor = (badge) => {
   if (badge === 'NO FA') return 'bg-red-500/20 text-red-400 border-red-500/30';
   if (badge === 'DEAL BREAKER') return 'bg-red-600/20 text-red-300 border-red-600/30';
+  if (badge === 'COMPATIBLE MFR') return 'bg-green-500/20 text-green-400 border-green-500/30';
+  if (badge === 'INCOMPATIBLE MFR') return 'bg-red-500/20 text-red-400 border-red-500/30';
   if (badge === 'EXISTING') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
   if (badge === 'NEW SYSTEM') return 'bg-green-500/20 text-green-400 border-green-500/30';
   if (badge === 'MODIFICATION') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
@@ -40,6 +42,15 @@ const getHighlightBg = (highlight) => {
   if (highlight === 'yellow') return 'bg-yellow-500/10 border-l-2 border-yellow-500';
   if (highlight === 'red') return 'bg-red-500/10 border-l-2 border-red-500';
   return '';
+};
+
+const formatDate = (dateStr) => {
+  if (!dateStr || dateStr === 'N/A' || dateStr === 'TBD') return dateStr || 'N/A';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch { return dateStr; }
 };
 
 const stripHtml = (html) => {
@@ -844,7 +855,7 @@ export default function LeadDashboard() {
                   <div className="text-xs text-slate-500 uppercase tracking-wide mb-2">Project Info</div>
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center gap-2 text-slate-300"><MapPin size={14} className="text-slate-500" />{companyPopup.location || "N/A"}</div>
-                    <div className="flex items-center gap-2 text-slate-300"><Calendar size={14} className="text-slate-500" />Bid Date: {companyPopup.bid_date || "N/A"}</div>
+                    <div className="flex items-center gap-2 text-slate-300"><Calendar size={14} className="text-slate-500" />Bid Date: {formatDate(companyPopup.bid_date)}</div>
                   </div>
                 </div>
               </div>
@@ -895,11 +906,36 @@ export default function LeadDashboard() {
                     )}
                   </div>
                 </div>
+                {descriptionPopup.also_listed_by && descriptionPopup.also_listed_by.length > 0 && (
+                  <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
+                    <div className="text-[10px] text-blue-400 uppercase tracking-wide mb-2 flex items-center gap-1"><Building2 size={10} />Also Bidding</div>
+                    <ul className="space-y-1">
+                      {descriptionPopup.also_listed_by.map((entry, idx) => (
+                        <li key={idx} className="text-sm text-slate-300 flex items-center gap-2">
+                          <Building2 size={12} className="text-slate-500" />
+                          {entry.gc || 'Unknown'} <span className="text-slate-500 text-xs">(via {entry.site})</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="flex gap-2 flex-wrap">
                   {descriptionPopup.sprinklered && <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30">Sprinklered</span>}
                   {descriptionPopup.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/30">Has Budget</span>}
                   {descriptionPopup.knowledge_badges && descriptionPopup.knowledge_badges.map((b, idx) => (
-                    <span key={idx} className={`text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)}`}>{b}</span>
+                    <span key={idx} className={`relative group text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)} cursor-default`}>
+                      {b}
+                      {b === 'REQ MFR' && descriptionPopup.knowledge_required_manufacturers?.length > 0 && (
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-amber-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                          {descriptionPopup.knowledge_required_manufacturers.join(', ')}
+                        </span>
+                      )}
+                      {b === 'REQ VENDOR' && descriptionPopup.knowledge_required_vendors?.length > 0 && (
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-orange-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                          {descriptionPopup.knowledge_required_vendors.join(', ')}
+                        </span>
+                      )}
+                    </span>
                   ))}
                 </div>
 
@@ -1405,7 +1441,7 @@ const LeadTable = ({
                       </div>
                     </td>
                     <td className="px-4 py-2 text-slate-400 truncate max-w-[120px]" title={lead.location}>{lead.location || "N/A"}</td>
-                    <td className={`px-4 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{lead.bid_date}</td>
+                    <td className={`px-4 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{formatDate(lead.bid_date)}</td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex justify-center gap-1">
                         {lead.gdrive_link ? (
@@ -1455,7 +1491,19 @@ const LeadTable = ({
                               </p>
                               <div className="flex gap-2 mt-3 flex-wrap">
                                 {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
-                                  <span key={idx} className={`text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)}`}>{b}</span>
+                                  <span key={idx} className={`relative group text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)} cursor-default`}>
+                                    {b}
+                                    {b === 'REQ MFR' && lead.knowledge_required_manufacturers?.length > 0 && (
+                                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-amber-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                                        {lead.knowledge_required_manufacturers.join(', ')}
+                                      </span>
+                                    )}
+                                    {b === 'REQ VENDOR' && lead.knowledge_required_vendors?.length > 0 && (
+                                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-orange-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                                        {lead.knowledge_required_vendors.join(', ')}
+                                      </span>
+                                    )}
+                                  </span>
                                 ))}
                                 {lead.sprinklered && <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full border border-red-500/20">Sprinklered</span>}
                               </div>

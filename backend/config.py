@@ -191,6 +191,24 @@ class ScraperConfig:
             return PiOptimizations.get_browser_args(headless=cls.HEADLESS)
         return []
 
+    @classmethod
+    def get_chromium_executable(cls):
+        """Get the Chromium executable path, with system fallback for ARM64"""
+        # Check environment override first
+        env_path = os.getenv('PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH')
+        if env_path and os.path.exists(env_path):
+            return env_path
+
+        # On Pi/ARM64, fall back to system chromium-browser if Playwright's isn't available
+        if IS_PI5 or platform.machine() in ('aarch64', 'arm64'):
+            import shutil
+            system_chromium = shutil.which('chromium-browser')
+            if system_chromium:
+                return system_chromium
+
+        # Let Playwright use its own bundled browser (default)
+        return None
+
 
 class BuildingConnectedConfig(ScraperConfig):
     """BuildingConnected-specific configuration"""

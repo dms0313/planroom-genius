@@ -38,6 +38,62 @@ def get_status():
 
 
 # ---------------------------------------------------------------------------
+# Manufacturer compatibility
+# ---------------------------------------------------------------------------
+
+# Our compatible manufacturers (we can bid these)
+COMPATIBLE_MANUFACTURERS = {
+    "gamewell", "fci", "gamewell-fci", "firelite", "fire-lite", "fire lite",
+    "silent knight", "silentknight",
+}
+
+# Incompatible manufacturers (existing-to-remain = can't bid)
+INCOMPATIBLE_MANUFACTURERS = {
+    "est", "edwards", "siemens", "simplex", "ge", "potter", "kidde",
+    "notifier", "honeywell", "bosch", "hochiki", "mircom", "vigilant",
+    "farenhyt", "autocall",
+}
+
+
+def _adjust_score_for_manufacturers(analysis):
+    """Adjust scope_score based on manufacturer compatibility."""
+    raw_mfrs = analysis.get("required_manufacturers") or []
+    if not raw_mfrs:
+        return
+
+    normalized = [m.lower().strip() for m in raw_mfrs]
+
+    has_compatible = any(
+        any(cm in n for cm in COMPATIBLE_MANUFACTURERS) for n in normalized
+    )
+    has_incompatible = any(
+        any(im in n for im in INCOMPATIBLE_MANUFACTURERS) for n in normalized
+    )
+
+    system_type = analysis.get("system_type", "unknown")
+    score = analysis.get("scope_score", 0)
+
+    # Case 1: Existing system with ONLY incompatible manufacturers — hard cap
+    if system_type == "existing" and has_incompatible and not has_compatible:
+        analysis["scope_score"] = min(score, 15)
+        analysis["manufacturer_incompatible"] = True
+        deal_breakers = list(analysis.get("deal_breakers") or [])
+        deal_breakers.append(f"Incompatible existing system ({', '.join(raw_mfrs)})")
+        analysis["deal_breakers"] = deal_breakers
+        return
+
+    # Case 2: Any compatible manufacturer listed — boost
+    if has_compatible:
+        analysis["scope_score"] = min(score + 10, 100)
+        analysis["manufacturer_compatible"] = True
+
+    # Case 3: Only one manufacturer listed and it's incompatible (any system type)
+    if has_incompatible and not has_compatible:
+        analysis["scope_score"] = max(score - 25, 0)
+        analysis["manufacturer_incompatible"] = True
+
+
+# ---------------------------------------------------------------------------
 # Cache helpers
 # ---------------------------------------------------------------------------
 
@@ -177,11 +233,16 @@ def download_gdrive_files_for_leads(leads):
             if local_path:
                 downloaded += 1
                 logger.info(f"Downloaded: {local_path}")
-                
-                # If it's a ZIP, extract it now
+
+                # Create a project-named folder for this lead
+                project_name_clean = "".join(
+                    c for c in lead_name[:60] if c.isalnum() or c in " -_"
+                ).strip()
+                project_folder = os.path.join(DOWNLOAD_DIR, project_name_clean) if project_name_clean else None
+
                 if local_path.lower().endswith(".zip"):
-                    base_name = os.path.splitext(os.path.basename(local_path))[0]
-                    extract_dir = os.path.join(DOWNLOAD_DIR, base_name)
+                    # Extract ZIP into a project-named folder
+                    extract_dir = project_folder or os.path.join(DOWNLOAD_DIR, os.path.splitext(os.path.basename(local_path))[0])
                     if not os.path.exists(extract_dir):
                         try:
                             os.makedirs(extract_dir, exist_ok=True)
@@ -196,6 +257,17 @@ def download_gdrive_files_for_leads(leads):
                             _unzip_nested(extract_dir)
                         except Exception as e:
                             logger.warning(f"Failed to extract {local_path}: {e}")
+                elif project_folder:
+                    # Non-ZIP file (PDF, etc.) — move into a project-named folder
+                    # so the knowledge scanner can find it as a directory target
+                    try:
+                        os.makedirs(project_folder, exist_ok=True)
+                        target = os.path.join(project_folder, os.path.basename(local_path))
+                        if not os.path.exists(target):
+                            os.replace(local_path, target)
+                        logger.info(f"Moved to project folder: {project_name_clean}/")
+                    except Exception as e:
+                        logger.warning(f"Failed to move file to project folder: {e}")
         except Exception as e:
             logger.warning(f"Failed to download GDrive file for '{lead_name}': {e}")
 
@@ -556,6 +628,7 @@ Guidelines:
     * "bid" when scope is clear and winnable.
     * "review" when viable but uncertain/risky and needs human estimator review.
     * "skip" when poor fit, no FA scope, or hard constraints.
+- required_manufacturers: Extract EXACT manufacturer names from plans/specs (e.g., "Gamewell-FCI", "EST", "Simplex", "Siemens"). Include the existing panel manufacturer if visible on plans.
 - required_vendors/required_manufacturers/deal_breakers should remain concise factual lists.
 - scope_score remains a 0-100 attractiveness score.
 
@@ -844,6 +917,10 @@ def _compute_badges(analysis):
         badges.append("REQ VENDOR")
     if analysis.get("required_manufacturers"):
         badges.append("REQ MFR")
+    if analysis.get("manufacturer_compatible"):
+        badges.append("COMPATIBLE MFR")
+    if analysis.get("manufacturer_incompatible"):
+        badges.append("INCOMPATIBLE MFR")
     if analysis.get("deal_breakers"):
         badges.append("DEAL BREAKER")
     return badges
@@ -1103,6 +1180,9 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
     aggregate["required_vendors"] = list(aggregate.get("required_vendors") or heuristic_analysis.get("required_vendors") or [])
     aggregate["required_manufacturers"] = list(aggregate.get("required_manufacturers") or heuristic_analysis.get("required_manufacturers") or [])
     aggregate["deal_breakers"] = list(aggregate.get("deal_breakers") or heuristic_analysis.get("deal_breakers") or [])
+    aggregate["required_codes"] = list(aggregate.get("required_codes") or heuristic_analysis.get("required_codes") or [])
+    aggregate["evidence"] = aggregate.get("evidence") or heuristic_analysis.get("evidence") or []
+    aggregate["validation_warnings"] = list(aggregate.get("validation_warnings") or heuristic_analysis.get("validation_warnings") or [])
     notes = aggregate.get("notes") or ""
     if isinstance(notes, list):
         notes = "\n".join(str(n) for n in notes)
@@ -1110,6 +1190,9 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
         notes = f"{notes}\n[diagnostics] files_processed={len(diagnostics)}, files_with_selected_pages={len(project_context_files)}".strip()
     aggregate["notes"] = [str(notes)] if notes else []
     aggregate["scope_score"] = int(aggregate.get("scope_score", 0))
+
+    # Adjust score based on manufacturer compatibility
+    _adjust_score_for_manufacturers(aggregate)
 
     # Match to lead and update (if not provided)
     lead = matched_lead

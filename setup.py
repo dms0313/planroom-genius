@@ -282,12 +282,27 @@ def setup_raspberry_pi_5():
         if os.path.exists('.env.example'):
             shutil.copy('.env.example', '.env')
             print("   Created .env from .env.example")
+        else:
+            with open('.env', 'w') as f:
+                f.write("# Planroom Genius - Pi 5 Configuration\n")
+                f.write("GEMINI_API_KEY=your_gemini_api_key_here\n")
+                f.write("SITE_LOGIN=your_email@domain.com\n")
+                f.write("SITE_PW=your_password\n")
+                f.write("BIDPLANROOM_EMAIL=your_email@domain.com\n")
+                f.write("BIDPLANROOM_PW=your_password\n")
+                f.write("LOYD_LOGIN=your_email@domain.com\n")
+                f.write("LOYD_PW=your_password\n")
+                f.write("HEADLESS=true\n")
+                f.write("USE_GOOGLE_DRIVE=false\n")
+            print("   Created .env template")
 
-        # Append Pi 5 specific settings
+    # Ensure HEADLESS=true is set for Pi
+    with open('.env', 'r') as f:
+        env_content = f.read()
+    if 'HEADLESS=true' not in env_content:
         with open('.env', 'a') as f:
-            f.write("\n# Raspberry Pi 5 Optimizations\n")
+            f.write("\n# Raspberry Pi 5 - headless mode\n")
             f.write("HEADLESS=true\n")
-            f.write("# GPU memory is managed by kernel on Pi 5 (no config.txt needed)\n")
 
     # Check and configure swap if low RAM
     if pi_info['ram_gb'] <= 4:

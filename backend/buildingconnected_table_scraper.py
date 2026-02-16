@@ -494,6 +494,9 @@ class BCAPIClient:
 
                 if r.status_code >= 400:
                     log_status(f"HTTP {r.status_code} for {method} {url}")
+                    # Don't retry 404 (not found) or 403 (forbidden) — won't change
+                    if r.status_code in (404, 403):
+                        return None
                     if attempt < 2:
                         await asyncio.sleep(2 ** attempt)
                         continue
@@ -760,8 +763,9 @@ class BuildingConnectedTableScraper:
                 project_name_clean = "".join(
                     c for c in lead["name"][:60] if c.isalnum() or c in " -_"
                 ).strip()
-                expected_filename = f"{project_name_clean}.zip"
-                existing = check_file_exists(expected_filename, source="BuildingConnected")
+                existing = check_file_exists(f"{project_name_clean}.zip", source="BuildingConnected")
+                if not existing:
+                    existing = check_file_exists(f"{project_name_clean}.pdf", source="BuildingConnected")
                 if existing:
                     log_status("File already in Google Drive, skipping download")
                     lead["gdrive_file_id"] = existing.get("file_id")

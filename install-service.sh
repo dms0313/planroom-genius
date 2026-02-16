@@ -31,11 +31,20 @@ echo "Creating service file for user: $CURRENT_USER"
 echo "Install directory: $INSTALL_DIR"
 echo ""
 
+# Detect RAM for memory limit
+RAM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+RAM_GB_INT=$(echo "$RAM_KB / 1024 / 1024" | bc)
+if (( RAM_GB_INT >= 8 )); then
+    MEM_LIMIT="4G"
+else
+    MEM_LIMIT="2G"
+fi
+echo "RAM detected: ${RAM_GB_INT}GB -> MemoryMax=${MEM_LIMIT}"
+
 # Generate customized service file
 cat > /tmp/planroom-genius.service << EOF
 [Unit]
 Description=Planroom Genius - Construction Lead Intelligence
-Documentation=https://github.com/yourusername/planroom-genius
 After=network-online.target
 Wants=network-online.target
 
@@ -49,12 +58,16 @@ Restart=always
 RestartSec=10
 Environment="HEADLESS=true"
 Environment="HOME=/home/$CURRENT_USER"
-MemoryMax=2G
+Environment="XDG_CONFIG_HOME=/home/$CURRENT_USER/.config"
+Environment="PLAYWRIGHT_BROWSERS_PATH=/home/$CURRENT_USER/.cache/ms-playwright"
+MemoryMax=${MEM_LIMIT}
 CPUQuota=80%
+NoNewPrivileges=true
+PrivateTmp=true
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=planroom-genius
-TimeoutStartSec=60
+TimeoutStartSec=90
 TimeoutStopSec=30
 
 [Install]

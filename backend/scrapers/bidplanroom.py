@@ -467,16 +467,16 @@ class BidplanroomScraper:
         try:
             files_before = set(os.listdir(self.download_dir)) if os.path.exists(self.download_dir) else set()
 
-            # Step 1: Click "View Plans" link
+            # Step 1: Click "View Plans" link on the project details page
             view_plans_clicked = await self._page.evaluate("""() => {
                 const el = document.querySelector(
-                    '#project-info-container div:nth-child(4) a span'
+                    '#project-info-container > div:nth-child(4) > div > div > a:nth-child(1) > span'
                 );
                 if (el) { el.click(); return true; }
                 const links = document.querySelectorAll('a');
                 for (const link of links) {
                     const text = link.textContent.toLowerCase();
-                    if (text.includes('view plans') || text.includes('plans')) {
+                    if (text.includes('view plans')) {
                         link.click();
                         return true;
                     }
@@ -491,52 +491,83 @@ class BidplanroomScraper:
             log_status("  Clicked View Plans, waiting for viewer...")
             await asyncio.sleep(3)
 
-            # Step 2: Check for launch-plans-btn
-            launch_clicked = await self._page.evaluate("""() => {
-                const btn = document.querySelector('#launch-plans-btn');
-                if (btn) { btn.click(); return true; }
-                return false;
-            }""")
-            if launch_clicked:
-                log_status("  Clicked launch plans button")
-                await asyncio.sleep(5)
+            # Step 2: Click "Open Project Plan Folder" — this opens a new tab with the Bluebeam viewer
+            viewer_page = None
+            try:
+                async with self._ctx.expect_page(timeout=15000) as new_page_info:
+                    launch_clicked = await self._page.evaluate("""() => {
+                        const el = document.querySelector('#launch-plans-btn > span');
+                        if (el) { el.click(); return true; }
+                        const btn = document.querySelector('#launch-plans-btn');
+                        if (btn) { btn.click(); return true; }
+                        return false;
+                    }""")
+                    if not launch_clicked:
+                        log_status("  Could not find Open Project Plan Folder button")
+                        return False
+                viewer_page = await new_page_info.value
+                log_status("  Opened Bluebeam viewer in new tab")
+            except Exception:
+                # Fallback: check if a new page already appeared
+                pages = self._ctx.pages
+                if len(pages) > 1:
+                    viewer_page = pages[-1]
+                    log_status("  Found Bluebeam viewer tab")
+                else:
+                    log_status("  No new tab opened for viewer, trying current page")
+                    viewer_page = self._page
 
-            await asyncio.sleep(5)
+            # Wait for the Bluebeam viewer app to load
+            try:
+                await viewer_page.wait_for_selector('#applicationHost', timeout=20000)
+                log_status("  Bluebeam viewer loaded")
+            except Exception:
+                log_status("  Waiting extra time for viewer to load...")
+                await asyncio.sleep(10)
 
-            # Step 3: Click Select All
-            select_clicked = await self._page.evaluate("""() => {
-                const labels = document.querySelectorAll('label');
+            # Step 3: Click Select All checkbox
+            select_clicked = await viewer_page.evaluate("""() => {
+                const el = document.querySelector(
+                    '#applicationHost > div > div.css-13bog6r-shell > div.css-anjy84-content > div > div.css-ndbj9-container > div > div.css-1s7evc > label > label > input'
+                );
+                if (el) { el.click(); return true; }
+                // Fallback: find any checkbox-like input inside #applicationHost
+                const cb = document.querySelector('#applicationHost label input[type="checkbox"]');
+                if (cb) { cb.click(); return true; }
+                const labels = document.querySelectorAll('#applicationHost label');
                 for (const label of labels) {
                     if (label.textContent.toLowerCase().includes('select all')) {
                         label.click();
                         return true;
                     }
                 }
-                const cb = document.querySelector(
-                    '#applicationHost label, [class*="selectAll"] label'
-                );
-                if (cb) { cb.click(); return true; }
                 return false;
             }""")
 
             if select_clicked:
                 log_status("  Selected all files")
                 await asyncio.sleep(1)
+            else:
+                log_status("  Could not find Select All checkbox")
 
-            # Step 4: Click Download
-            download_clicked = await self._page.evaluate("""() => {
-                const btns = document.querySelectorAll('button');
+            # Step 4: Click Download button
+            download_clicked = await viewer_page.evaluate("""() => {
+                const el = document.querySelector(
+                    '#applicationHost > div > div.css-13bog6r-shell > div.css-anjy84-content > div > div:nth-child(7) > div.css-1c7oem8 > div > div > div.css-1tepa3u-downloadButton > button > div'
+                );
+                if (el) { el.click(); return true; }
+                // Fallback: find download button inside #applicationHost
+                const dlBtn = document.querySelector(
+                    '#applicationHost [class*="downloadButton"] button'
+                );
+                if (dlBtn) { dlBtn.click(); return true; }
+                const btns = document.querySelectorAll('#applicationHost button');
                 for (const btn of btns) {
-                    const text = btn.textContent.toLowerCase();
-                    if (text.includes('download')) {
+                    if (btn.textContent.toLowerCase().includes('download')) {
                         btn.click();
                         return true;
                     }
                 }
-                const dlBtn = document.querySelector(
-                    '[class*="downloadButton"] button, div[class*="download"] button'
-                );
-                if (dlBtn) { dlBtn.click(); return true; }
                 return false;
             }""")
 
@@ -545,7 +576,14 @@ class BidplanroomScraper:
                 await asyncio.sleep(15)
             else:
                 log_status("  Could not find Download button")
+                # Close the viewer tab if it's separate
+                if viewer_page != self._page:
+                    await viewer_page.close()
                 return False
+
+            # Close the viewer tab now that download has started
+            if viewer_page != self._page:
+                await viewer_page.close()
 
             # Check for new files
             files_after = set(os.listdir(self.download_dir)) if os.path.exists(self.download_dir) else set()
@@ -559,15 +597,21 @@ class BidplanroomScraper:
                 local_path = os.path.join(self.download_dir, new_file)
                 log_status(f"  Downloaded: {new_file}")
 
+                # Build a clean project name for folder/file naming
+                project_name_clean = "".join(
+                    c for c in lead.get("name", "project")[:50]
+                    if c.isalnum() or c in " -_"
+                ).strip()
+
+                # Ensure filename has an extension (browser UUIDs often lack one)
+                _, ext = os.path.splitext(new_file)
+                if not ext:
+                    ext = ".zip"  # default to .zip for Bluebeam viewer downloads
+                gdrive_filename = f"{project_name_clean}{ext}"
+
                 # Google Drive upload
                 if GDRIVE_AVAILABLE and should_use_gdrive():
                     try:
-                        project_name_clean = "".join(
-                            c for c in lead.get("name", "project")[:50]
-                            if c.isalnum() or c in " -_"
-                        ).strip()
-                        gdrive_filename = f"{project_name_clean}_{new_file}"
-
                         result = upload_and_cleanup(
                             local_path,
                             filename=gdrive_filename,
@@ -578,6 +622,7 @@ class BidplanroomScraper:
                         if result:
                             lead["gdrive_file_id"] = result.get("file_id")
                             lead["gdrive_link"] = result.get("web_link")
+                            lead["gdrive_download_link"] = result.get("download_link")
                             lead["download_link"] = result.get("web_link")
                             lead["storage_type"] = "gdrive"
                             log_status("  Uploaded to Google Drive")

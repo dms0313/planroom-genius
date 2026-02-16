@@ -580,8 +580,9 @@ class PlanHubScraper:
                 project_name_clean = "".join(
                     c for c in lead["name"][:60] if c.isalnum() or c in " -_"
                 ).strip()
-                expected_filename = f"{project_name_clean}.zip"
-                existing = check_file_exists(expected_filename, source="PlanHub")
+                existing = check_file_exists(f"{project_name_clean}.zip", source="PlanHub")
+                if not existing:
+                    existing = check_file_exists(f"{project_name_clean}.pdf", source="PlanHub")
                 if existing:
                     log_status(f"File already in Google Drive, skipping download")
                     lead["gdrive_file_id"] = existing.get("file_id")
@@ -676,10 +677,32 @@ class PlanHubScraper:
         if not leads:
             return
 
-        leads_to_download = [
-            lead for lead in leads
-            if not lead.get("download_link") and not lead.get("local_file_path")
-        ]
+        leads_to_download = []
+        for lead in leads:
+            # Skip if already have files from this run
+            if lead.get("download_link") or lead.get("local_file_path") or lead.get("gdrive_link"):
+                continue
+            # Check Google Drive for existing file
+            if GDRIVE_AVAILABLE and should_use_gdrive():
+                try:
+                    project_name_clean = "".join(
+                        c for c in lead.get("name", "")[:60] if c.isalnum() or c in " -_"
+                    ).strip()
+                    if project_name_clean:
+                        existing = check_file_exists(f"{project_name_clean}.zip", source="PlanHub")
+                        if not existing:
+                            existing = check_file_exists(f"{project_name_clean}.pdf", source="PlanHub")
+                        if existing:
+                            log_status(f"  File already in Google Drive: {project_name_clean}")
+                            lead["gdrive_file_id"] = existing.get("file_id")
+                            lead["gdrive_link"] = existing.get("web_link")
+                            lead["gdrive_download_link"] = existing.get("download_link")
+                            lead["download_link"] = existing.get("web_link")
+                            lead["storage_type"] = "gdrive"
+                            continue
+                except Exception as e:
+                    log_status(f"  GDrive pre-check error: {e}")
+            leads_to_download.append(lead)
         if not leads_to_download:
             log_status("All leads already have files, skipping browser download")
             return
