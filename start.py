@@ -37,7 +37,12 @@ def get_python_executable():
     if current_platform == "windows":
         return os.path.join("backend", "venv", "Scripts", "python.exe")
     else:
-        return os.path.join("backend", "venv", "bin", "python")
+        # On some Linux distros (Raspberry Pi OS Bookworm), venv only creates python3
+        for name in ["python", "python3"]:
+            path = os.path.join("backend", "venv", "bin", name)
+            if os.path.exists(path):
+                return path
+        return os.path.join("backend", "venv", "bin", "python3")
 
 def get_npm_executable():
     """Get the npm command"""
