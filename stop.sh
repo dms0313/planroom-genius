@@ -3,6 +3,10 @@
 # Planroom Genius - Stop Script (Linux / Raspberry Pi 5)
 #
 
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
 echo "Stopping Planroom Genius..."
 
 # Kill backend (uvicorn on port 8000)
