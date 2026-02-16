@@ -96,6 +96,15 @@ async def manual_login():
         if chrome_path:
             launch_kwargs["executable_path"] = chrome_path
 
+        # Clean up stale SingletonLock from previous crashes
+        lock_file = os.path.join(profile_dir, "SingletonLock")
+        if os.path.exists(lock_file):
+            try:
+                os.remove(lock_file)
+                print(f"  Removed stale SingletonLock: {lock_file}")
+            except OSError:
+                pass
+
         ctx = await pw.chromium.launch_persistent_context(**launch_kwargs)
 
         # Get or create first page

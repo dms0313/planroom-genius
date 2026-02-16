@@ -145,6 +145,15 @@ class LoydBuildsBetterScraper:
         if chrome_path:
             launch_kwargs['executable_path'] = chrome_path
 
+        # Clean up stale SingletonLock from previous crashes
+        lock_file = os.path.join(profile_dir, "SingletonLock")
+        if os.path.exists(lock_file):
+            try:
+                os.remove(lock_file)
+                log_status("Removed stale SingletonLock file")
+            except OSError:
+                pass
+
         self._browser_context = await self._playwright.chromium.launch_persistent_context(
             **launch_kwargs,
         )
@@ -193,31 +202,50 @@ class LoydBuildsBetterScraper:
         return False
 
     async def _is_logged_in(self):
-        """Check if we're already logged in (session cookies still valid)."""
+        """Check if we're already logged in (session cookies still valid).
+
+        Squarespace renders sqs-block divs even on the paywall page, so we
+        must check page text for paywall indicators before trusting DOM
+        structure.
+        """
         try:
             url = self._page.url
 
-            # If we're on the bids page and can see actual project content, we're in
+            # If we're on the bids page, inspect the actual page text
             if "/bids" in url:
-                # Look for Squarespace content blocks (only visible when authenticated)
+                text = await self._page.evaluate('() => document.body.innerText')
+                text_lower = text.lower()[:2000]
+
+                # Paywall indicators — if ANY are present, we are NOT logged in
+                paywall_phrases = [
+                    'log in or sign up',
+                    'log in to continue',
+                    'member area',
+                    'this content is for members',
+                    'create a free account',
+                    'sign up for a free account',
+                ]
+                if any(phrase in text_lower for phrase in paywall_phrases):
+                    log_status("Not logged in (paywall text detected)")
+                    return False
+
+                # Positive signals that real project content is visible
+                content_keywords = [
+                    'bid date', 'due date', 'view document',
+                    'plans', 'drawing', 'addendum', 'specifications',
+                ]
+                has_content = any(kw in text_lower for kw in content_keywords)
+
+                if has_content:
+                    log_status("Already logged in (project content detected)")
+                    return True
+
+                # Fallback: if there are many content blocks and no paywall text
                 blocks = await self._page.query_selector_all(
                     'div[id^="block-yui"], div.sqs-block'
                 )
-                if len(blocks) > 2:
-                    # Page has content blocks = we're past the paywall
-                    log_status("Already logged in (content blocks visible)")
-                    return True
-
-                # Check if page text has project-like content (not paywall text)
-                text = await self._page.evaluate('() => document.body.innerText')
-                text_lower = text.lower()[:1000]
-
-                # If we see bid/project keywords and NOT paywall keywords, we're logged in
-                has_content = any(kw in text_lower for kw in ['bid date', 'due date', 'view document', 'plans', 'drawing'])
-                has_paywall = any(kw in text_lower for kw in ['log in to continue', 'member area', 'this content is for members'])
-
-                if has_content and not has_paywall:
-                    log_status("Already logged in (project content detected)")
+                if len(blocks) > 5:
+                    log_status("Already logged in (many content blocks, no paywall text)")
                     return True
 
             return False

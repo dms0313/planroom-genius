@@ -200,6 +200,15 @@ class BCAPIClient:
                 "playwright_profile",
             )
 
+            # Clean up stale SingletonLock from previous crashes
+            lock_file = os.path.join(playwright_profile, "SingletonLock")
+            if os.path.exists(lock_file):
+                try:
+                    os.remove(lock_file)
+                    log_status("Removed stale SingletonLock file")
+                except OSError:
+                    pass
+
             ctx = await pw.chromium.launch_persistent_context(
                 user_data_dir=playwright_profile,
                 headless=ScraperConfig.HEADLESS if ScraperConfig else True,

@@ -205,6 +205,15 @@ class PlanHubAPIClient:
                 "--mute-audio",
             ]
 
+            # Clean up stale SingletonLock from previous crashes
+            lock_file = os.path.join(self.config.CHROME_USER_DATA_DIR, "SingletonLock")
+            if os.path.exists(lock_file):
+                try:
+                    os.remove(lock_file)
+                    log_status("Removed stale SingletonLock file")
+                except OSError:
+                    pass
+
             ctx = await pw.chromium.launch_persistent_context(
                 user_data_dir=self.config.CHROME_USER_DATA_DIR,
                 headless=self.config.HEADLESS,
@@ -720,6 +729,15 @@ class PlanHubScraper:
         try:
             pw = await async_playwright().start()
             chrome_path = self._api._find_chrome_executable()
+
+            # Clean up stale SingletonLock from previous crashes
+            lock_file = os.path.join(self.config.CHROME_USER_DATA_DIR, "SingletonLock")
+            if os.path.exists(lock_file):
+                try:
+                    os.remove(lock_file)
+                    log_status("Removed stale SingletonLock file")
+                except OSError:
+                    pass
 
             ctx = await pw.chromium.launch_persistent_context(
                 user_data_dir=self.config.CHROME_USER_DATA_DIR,

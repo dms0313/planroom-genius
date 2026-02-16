@@ -7,7 +7,12 @@ import os
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
-from werkzeug.security import generate_password_hash
+try:
+    from werkzeug.security import generate_password_hash
+except ImportError:
+    # werkzeug is optional — only needed when REQUIRE_LOGIN is enabled
+    def generate_password_hash(password):  # type: ignore[misc]
+        raise RuntimeError("werkzeug is required for password hashing. Install with: pip install werkzeug")
 
 # Load environment variables
 try:
