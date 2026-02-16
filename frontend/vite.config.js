@@ -5,6 +5,13 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    open: true
+    open: true,
+    proxy: {
+      // Forward takeoff API and static asset requests to the backend
+      '/takeoff': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
   }
 })
