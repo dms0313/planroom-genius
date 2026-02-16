@@ -27,8 +27,8 @@ Group=pi
 # Working directory (change path if installed elsewhere)
 WorkingDirectory=/home/pi/planroom-genius
 
-# Start command
-ExecStart=/home/pi/planroom-genius/backend/venv/bin/python /home/pi/planroom-genius/start.py
+# Start command — uses start_pi.sh which kills old instances before launching
+ExecStart=/bin/bash /home/pi/planroom-genius/pi5_build/start_pi.sh
 
 # Restart policy
 Restart=always
