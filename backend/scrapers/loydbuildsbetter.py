@@ -43,15 +43,10 @@ def get_lbb_logs():
 
 
 def log_status(msg):
-    """Log to both console and web UI."""
+    """Log to console and buffer (scheduler collector forwards to web UI)."""
     global _lbb_log_buffer
     print(f"[LBB] {msg}", flush=True)
     _lbb_log_buffer.append(f"[LBB] {msg}")
-    try:
-        from services.scheduler import add_to_log
-        add_to_log(f"[LBB] {msg}")
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------

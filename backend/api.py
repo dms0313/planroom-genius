@@ -17,12 +17,13 @@ if sys.platform == 'win32':
 
 import logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure logging — only add a handler if root has none to prevent duplicates
 logger = logging.getLogger(__name__)
+if not logging.root.handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
 
 app = FastAPI(
     title="Planroom Genius API",

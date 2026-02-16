@@ -47,15 +47,10 @@ def get_bpr_logs():
 
 
 def log_status(msg):
-    """Log to both console and web UI."""
+    """Log to console and buffer (scheduler collector forwards to web UI)."""
     global _bpr_log_buffer
     print(f"[BPR] {msg}", flush=True)
     _bpr_log_buffer.append(f"[BPR] {msg}")
-    try:
-        from services.scheduler import add_to_log
-        add_to_log(f"[BPR] {msg}")
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------
