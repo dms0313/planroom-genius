@@ -8,9 +8,16 @@
 
 .takeoff-root {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background: transparent;
     color: #e2e8f0;
-    padding: 0;
+}
+
+/* Standalone page (body.takeoff-root) gets full-page styles.
+   When embedded in the Dashboard the wrapper is a <div>, not <body>,
+   so these don't apply. */
+body.takeoff-root {
+    background: #020617;
+    padding: 32px 40px 80px;
+    min-height: 100vh;
 }
 
 .takeoff-root h1,
@@ -412,7 +419,7 @@
 }
 
 @media (max-width: 768px) {
-    .takeoff-root {
+    body.takeoff-root {
         padding: 20px 16px 70px;
     }
 
@@ -2224,7 +2231,7 @@
 }
 
 @media (min-width: 1200px) {
-    .takeoff-root {
+    body.takeoff-root {
         padding: 40px 60px 100px;
     }
 
