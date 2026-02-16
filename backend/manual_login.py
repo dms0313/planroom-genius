@@ -134,9 +134,15 @@ async def manual_login():
         print(f"  Opening Loyd Builds Better: {lbb_url}")
         await page4.goto(lbb_url, wait_until="domcontentloaded")
 
+        # Open Google Drive in a new tab
+        page5 = await ctx.new_page()
+        gdrive_url = "https://drive.google.com/"
+        print(f"  Opening Google Drive: {gdrive_url}")
+        await page5.goto(gdrive_url, wait_until="domcontentloaded")
+
         print()
         print("-" * 60)
-        print("  Browser is OPEN with all 4 planroom sites.")
+        print("  Browser is OPEN with all 5 sites.")
         print("  Log in to each site manually.")
         print("  Cookies will be saved to the persistent profile.")
         print("-" * 60)
