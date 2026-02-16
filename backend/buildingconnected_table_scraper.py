@@ -51,15 +51,10 @@ def get_bc_logs():
 
 
 def log_status(msg):
-    """Log to both console and web UI."""
+    """Log to console and buffer (scheduler collector forwards to web UI)."""
     global _log_buffer
     print(f"[BC] {msg}", flush=True)
     _log_buffer.append(f"[BC] {msg}")
-    try:
-        from services.scheduler import add_to_log
-        add_to_log(f"[BC] {msg}")
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------

@@ -19,17 +19,9 @@ from services.storage import save_leads, deduplicate_database
 from services.cleanup import cleanup_expired_projects
 from services.triage_agent import triage_projects
 
-# Configure logger to show in console
+# Configure logger (propagates to root handler — don't add extra handlers)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-# Add console handler if not present
-if not logger.handlers:
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
 
 # Global status tracking for API visibility
 scraper_status = {

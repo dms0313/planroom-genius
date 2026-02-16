@@ -48,15 +48,10 @@ def get_ph_logs():
 
 
 def log_status(msg):
-    """Log to both console and web UI."""
+    """Log to console and buffer (scheduler collector forwards to web UI)."""
     global _ph_log_buffer
     print(f"[PH] {msg}", flush=True)
     _ph_log_buffer.append(f"[PH] {msg}")
-    try:
-        from services.scheduler import add_to_log
-        add_to_log(f"[PH] {msg}")
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------
