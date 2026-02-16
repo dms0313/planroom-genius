@@ -3,6 +3,10 @@
 # Planroom Genius - Start Script (Linux / Raspberry Pi 5)
 #
 
+if [ -z "$BASH_VERSION" ]; then
+    exec bash "$0" "$@"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYTHON="$SCRIPT_DIR/backend/venv/bin/python"
 

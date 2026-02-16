@@ -4,7 +4,14 @@
 # Optimized for Raspberry Pi 5 with Bookworm OS (64-bit)
 #
 # Usage: chmod +x pi5-setup.sh && ./pi5-setup.sh
+#    or: bash pi5-setup.sh
 #
+
+# Ensure we're running under bash, not dash/sh
+if [ -z "$BASH_VERSION" ]; then
+    echo "Re-launching with bash..."
+    exec bash "$0" "$@"
+fi
 
 set -e
 
