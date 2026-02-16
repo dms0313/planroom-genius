@@ -17,13 +17,22 @@ if sys.platform == 'win32':
 
 import logging
 
-# Configure logging — only add a handler if root has none to prevent duplicates
-logger = logging.getLogger(__name__)
-if not logging.root.handlers:
+# Configure logging — forcibly cap the root logger to one StreamHandler.
+# On the Pi the module can be double-imported (as `api` AND `backend.api`)
+# and uvicorn adds its own handlers, causing every line to print N times.
+_root = logging.getLogger()
+_root.setLevel(logging.INFO)
+_stream_handlers = [h for h in _root.handlers if isinstance(h, logging.StreamHandler)]
+if len(_stream_handlers) > 1:
+    # Keep only the first StreamHandler, remove the rest
+    for h in _stream_handlers[1:]:
+        _root.removeHandler(h)
+elif not _stream_handlers:
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Planroom Genius API",
@@ -686,15 +695,35 @@ async def browse_directory(body: dict):
 
 @app.on_event("startup")
 def startup_event():
-    """Start the scheduler on startup."""
+    """Start the scheduler on startup and deduplicate log handlers."""
+    # Deduplicate root logger StreamHandlers (uvicorn, double-imports, etc.)
+    root = logging.getLogger()
+    seen = set()
+    for h in list(root.handlers):
+        key = (type(h), getattr(h, 'stream', None))
+        if key in seen:
+            root.removeHandler(h)
+        else:
+            seen.add(key)
+
+    # Prevent uvicorn loggers from duplicating through propagation
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        logging.getLogger(name).propagate = False
+
     import threading
     from backend.services.scheduler import start_scheduler
-    
+
     # Run scheduler in a separate daemon thread
     t = threading.Thread(target=start_scheduler, daemon=True)
     t.start()
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Prevent duplicate log lines: tell uvicorn loggers not to propagate
+    # to the root logger (which already has a handler from above).
+    for _name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        logging.getLogger(_name).propagate = False
+
     logger.info("Starting Planroom Genius API server...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
