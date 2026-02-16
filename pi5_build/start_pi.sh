@@ -28,6 +28,13 @@ if [ ! -d "$BACKEND_DIR/venv" ]; then
     exit 1
 fi
 
+# Kill any leftover instances from previous runs
+echo -e "${YELLOW}[INFO] Stopping any existing instances...${NC}"
+pkill -f "python3 -m backend.api" 2>/dev/null
+pkill -f "python3 api.py" 2>/dev/null
+pkill -f "node.*vite" 2>/dev/null
+sleep 1
+
 # Logging Setup
 mkdir -p "$LOG_DIR"
 # Clear logs
