@@ -845,6 +845,7 @@ export default function LeadDashboard() {
             setSearchQuery={setSearchQuery}
             showHidden={showHidden}
             setShowHidden={setShowHidden}
+            openPointToFile={openPointToFile}
           />
         </div>
 
@@ -1473,7 +1474,7 @@ const LeadTable = ({
   triggerKnowledgeScan, knowledgeScanning, triggerSingleScan, scanningIds,
   toggleLeadStyle, openEditModal, deleteLead, setCompanyPopup,
   setDescriptionPopup, API_BASE, sortConfig, setSortConfig,
-  searchQuery, setSearchQuery, showHidden, setShowHidden
+  searchQuery, setSearchQuery, showHidden, setShowHidden, openPointToFile
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedLeadId, setExpandedLeadId] = useState(null);
