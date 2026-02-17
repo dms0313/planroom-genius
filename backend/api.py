@@ -476,10 +476,30 @@ async def knowledge_file_override(lead_id: str, body: dict):
 
     rel_path = body.get("rel_path")
     classification = body.get("classification")
-    if not rel_path or classification not in ("plan", "spec", "other"):
-        raise HTTPException(status_code=400, detail="rel_path and classification (plan/spec/other) required")
+    if not rel_path or classification not in ("plan", "spec", "other", "ignore"):
+        raise HTTPException(status_code=400, detail="rel_path and classification (plan/spec/other/ignore) required")
 
     ok = set_file_override(lead_id, rel_path, classification)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Lead or folder not found")
+    return {"status": "success"}
+
+
+@app.post("/knowledge/files/{lead_id}/override-batch")
+async def knowledge_file_override_batch(lead_id: str, body: dict):
+    """Batch-set file classifications for all files in a project."""
+    from backend.services.knowledge import set_file_overrides_batch
+
+    overrides = body.get("overrides")
+    if not isinstance(overrides, dict) or not overrides:
+        raise HTTPException(status_code=400, detail="overrides dict required")
+
+    valid_classes = {"plan", "spec", "other", "ignore"}
+    for rel_path, cls in overrides.items():
+        if cls not in valid_classes:
+            raise HTTPException(status_code=400, detail=f"Invalid classification '{cls}' for {rel_path}")
+
+    ok = set_file_overrides_batch(lead_id, overrides)
     if not ok:
         raise HTTPException(status_code=404, detail="Lead or folder not found")
     return {"status": "success"}

@@ -803,7 +803,7 @@ def _call_gemini(images, context=""):
         "generationConfig": {"temperature": 0.1},
     }
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     
     max_retries = 5
     base_delay = 2.0
@@ -979,6 +979,20 @@ def list_project_files(lead_id):
             "size_kb": round(os.path.getsize(path) / 1024),
         })
 
+    # Include files that are overridden as "ignore" but weren't in the classification lists
+    # (they may have been excluded by _apply_overrides during scanning)
+    all_pdfs = _find_pdfs(folder)
+    existing_rels = {r["rel_path"] for r in results}
+    for path in all_pdfs:
+        rel = os.path.relpath(path, folder)
+        if rel not in existing_rels and overrides.get(rel) == "ignore":
+            results.append({
+                "filename": os.path.basename(path),
+                "rel_path": rel,
+                "classification": "ignore",
+                "size_kb": round(os.path.getsize(path) / 1024),
+            })
+
     return {"files": results, "folder": folder}
 
 
@@ -1122,6 +1136,32 @@ def set_file_override(lead_id, rel_path, classification):
     entry = cache.setdefault(folder_name, {})
     overrides = entry.setdefault("overrides", {})
     overrides[rel_path] = classification
+    # Clear signature to force rescan
+    entry.pop("signature", None)
+    _save_cache(cache)
+    return True
+
+
+def set_file_overrides_batch(lead_id, overrides_dict):
+    """Batch-set file classifications. overrides_dict maps rel_path -> classification."""
+    leads = load_leads()
+    lead = None
+    for l in leads:
+        if l.get("id") == lead_id:
+            lead = l
+            break
+    if not lead:
+        return False
+
+    folder = _find_download_folder_for_lead(lead)
+    if not folder:
+        return False
+
+    folder_name = os.path.basename(folder)
+    cache = _load_cache()
+    entry = cache.setdefault(folder_name, {})
+    overrides = entry.setdefault("overrides", {})
+    overrides.update(overrides_dict)
     # Clear signature to force rescan
     entry.pop("signature", None)
     _save_cache(cache)
@@ -1339,10 +1379,16 @@ def scan_local_downloads(lead_id=None, force_rescan=False):
     if _status["running"]:
         return _status
 
-    # If force_rescan, clear the cache first
-    if force_rescan:
-        logger.info("Force rescan requested - clearing knowledge cache")
-        _save_cache({})
+    # If force_rescan for ALL projects (no lead_id), clear the cache
+    # but preserve overrides. For single-lead rescans, only clear that project's signature.
+    if force_rescan and not lead_id:
+        logger.info("Force rescan requested - clearing knowledge cache (preserving overrides)")
+        old_cache = _load_cache()
+        new_cache = {}
+        for key, entry in old_cache.items():
+            if entry.get("overrides"):
+                new_cache[key] = {"overrides": entry["overrides"]}
+        _save_cache(new_cache)
 
     _status.update({
         "running": True,
@@ -1471,6 +1517,8 @@ def _apply_overrides(project_dir, plan_files, spec_files, other_files, overrides
             new_specs.append(abspath)
         elif cls == "other":
             new_other.append(abspath)
+        elif cls == "ignore":
+            pass  # Drop ignored files from all classification lists
         else:
             # Keep original classification
             if abspath in plan_files:
