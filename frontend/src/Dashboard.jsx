@@ -1601,6 +1601,7 @@ const LeadTable = ({
             <tr>
               <th className="px-2 py-3 whitespace-nowrap"></th>
               <SortHeader label="Project" sortKey="name" />
+              <th className="px-3 py-3 whitespace-nowrap">Tags</th>
               <SortHeader label="Company / GC" sortKey="company" />
               <SortHeader label="Contact" sortKey="contact_name" />
               <SortHeader label="Location" sortKey="location" />
@@ -1631,65 +1632,9 @@ const LeadTable = ({
                         {expandedLeadId === lead.id ? <ChevronUp size={14} className="text-orange-400" /> : <ChevronDown size={14} className="text-slate-500" />}
                         <div className="truncate max-w-[350px]">{lead.name}</div>
                       </button>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <div className="flex items-center gap-1.5 mt-0.5">
                         {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
-                        {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
                         <span className="text-[10px] text-slate-600">{lead.site}</span>
-                        {/* Tags */}
-                        {lead.tags && lead.tags.map((tag, idx) => (
-                          <span key={idx} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tag.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
-                            tag.color === 'red' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
-                              tag.color === 'blue' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                                tag.color === 'orange' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
-                                  tag.color === 'purple' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
-                                    tag.color === 'yellow' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
-                                      tag.color === 'teal' ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' :
-                                        'bg-slate-700 text-slate-300 border-slate-600'
-                            }`}>
-                            {tag.label}
-                            {tag.hover && (
-                              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">
-                                {tag.hover}
-                              </span>
-                            )}
-                          </span>
-                        ))}
-                        {/* Knowledge Badges */}
-                        {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
-                          <span key={`kb-${idx}`} className={`relative group/kb text-[10px] px-1.5 py-0.5 rounded border cursor-default ${badgeColor(b)}`}>
-                            {b}
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                              {badgeHover(b, lead)}
-                            </span>
-                          </span>
-                        ))}
-                        {/* Non-sprinkled badge (only when scanned and NOT sprinklered) */}
-                        {lead.knowledge_last_scanned && !lead.sprinklered && (
-                          <span className={`relative group/kb text-[10px] px-1.5 py-0.5 rounded border cursor-default ${badgeColor('NON-SPRINKLED')}`}>
-                            NON-SPRINKLED
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                              {badgeHover('NON-SPRINKLED', lead)}
-                            </span>
-                          </span>
-                        )}
-                        {/* Project type tags detected from name/description */}
-                        {detectProjectTags(lead).map((pt, idx) => (
-                          <span key={`pt-${idx}`} className={`relative group/kb text-[10px] px-1.5 py-0.5 rounded border cursor-default ${pt.color}`}>
-                            {pt.label}
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                              {pt.hover}
-                            </span>
-                          </span>
-                        ))}
-                        {/* Bid risk flags */}
-                        {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => (
-                          <span key={`rf-${idx}`} className={`relative group/kb text-[10px] px-1.5 py-0.5 rounded border cursor-default bg-red-500/10 text-red-400 border-red-500/20`}>
-                            {flag}
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                              Bid risk: {flag}
-                            </span>
-                          </span>
-                        ))}
                       </div>
                       {/* Short In-line Comment */}
                       <div className="mt-1">
@@ -1701,6 +1646,54 @@ const LeadTable = ({
                           placeholder="Add comment..."
                           className={`bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] ${getCommentColor(lead.highlight)} placeholder-slate-700 w-full focus:outline-none transition-colors`}
                         />
+                      </div>
+                    </td>
+                    {/* Tags column */}
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap gap-1 max-w-[220px]">
+                        {lead.has_budget && <span className="relative group/tag text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30 cursor-default">BUDGET<span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">Project has budget info</span></span>}
+                        {/* User tags */}
+                        {lead.tags && lead.tags.map((tag, idx) => (
+                          <span key={idx} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tag.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                            tag.color === 'red' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                              tag.color === 'blue' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                                tag.color === 'orange' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
+                                  tag.color === 'purple' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                                    tag.color === 'yellow' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                                      tag.color === 'teal' ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' :
+                                        'bg-slate-700 text-slate-300 border-slate-600'
+                            }`}>
+                            {tag.label}
+                            {tag.hover && <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{tag.hover}</span>}
+                          </span>
+                        ))}
+                        {/* Knowledge Badges */}
+                        {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
+                          <span key={`kb-${idx}`} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${badgeColor(b)}`}>
+                            {b}
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{badgeHover(b, lead)}</span>
+                          </span>
+                        ))}
+                        {lead.knowledge_last_scanned && !lead.sprinklered && (
+                          <span className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${badgeColor('NON-SPRINKLED')}`}>
+                            NO SPRINK
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{badgeHover('NON-SPRINKLED', lead)}</span>
+                          </span>
+                        )}
+                        {/* Project type tags */}
+                        {detectProjectTags(lead).map((pt, idx) => (
+                          <span key={`pt-${idx}`} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${pt.color}`}>
+                            {pt.label}
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{pt.hover}</span>
+                          </span>
+                        ))}
+                        {/* Bid risk flags */}
+                        {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => (
+                          <span key={`rf-${idx}`} className="relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default bg-red-500/10 text-red-400 border-red-500/20">
+                            {flag.length > 15 ? flag.slice(0, 13) + '...' : flag}
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">Bid risk: {flag}</span>
+                          </span>
+                        ))}
                       </div>
                     </td>
                     <td className="px-4 py-2">
@@ -1754,7 +1747,7 @@ const LeadTable = ({
                   </tr>
                   {expandedLeadId === lead.id && (
                     <tr key={`expanded-${lead.id}`} className="bg-slate-800/40 border-l-4 border-orange-500 animate-in slide-in-from-left-2 duration-200">
-                      <td colSpan="8" className="px-6 py-4">
+                      <td colSpan="9" className="px-6 py-4">
                         <div className="flex flex-col gap-4">
                           <div className="flex justify-between items-start">
                             {expandedThumbnail && (
@@ -1839,7 +1832,7 @@ const LeadTable = ({
               );
             })}
             {data.length === 0 && (
-              <tr><td colSpan="8" className="px-6 py-12 text-center text-slate-600 italic">No active leads found in this category.</td></tr>
+              <tr><td colSpan="9" className="px-6 py-12 text-center text-slate-600 italic">No active leads found in this category.</td></tr>
             )}
           </tbody>
         </table>
