@@ -1822,16 +1822,25 @@ def run_deep_scan(lead_id):
         logger.info(f"Deep scan: using model {preferred_model}")
 
     logger.info(f"Deep scan: running takeoff analysis on {os.path.basename(plan_path)}")
-    results = analyzer.analyze_pdf(
-        plan_path,
-        include_images=True,
-        spec_pdf_path=spec_path,
-        analysis_mode="advisory",
-    )
+    try:
+        results = analyzer.analyze_pdf(
+            plan_path,
+            include_images=True,
+            spec_pdf_path=spec_path,
+            analysis_mode="advisory",
+        )
+    except Exception as e:
+        logger.error(f"Deep scan exception: {e}", exc_info=True)
+        lead["knowledge_last_scanned"] = datetime.now().isoformat()
+        lead["knowledge_notes"] = f"Deep scan crashed: {e}"
+        direct_save_leads(leads)
+        return
 
     if not results.get("success", False):
+        err = results.get("error", "unknown error")
+        logger.warning(f"Deep scan returned success=False: {err}")
         lead["knowledge_last_scanned"] = datetime.now().isoformat()
-        lead["knowledge_notes"] = f"Deep scan failed: {results.get('error', 'unknown error')}"
+        lead["knowledge_notes"] = f"Deep scan failed: {err}"
         direct_save_leads(leads)
         return
 
