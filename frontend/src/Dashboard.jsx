@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, EyeOff, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen, Copy, Check } from 'lucide-react';
+import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, EyeOff, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen, ClipboardCopy, CheckCircle } from 'lucide-react';
 import TakeoffPanel from './TakeoffPanel';
 
 // Build HTML from takeoff data for rich-text clipboard copy (Notion paste)
@@ -1327,7 +1327,7 @@ export default function LeadDashboard() {
                         }}
                         className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
                       >
-                        {descriptionPopup._copied ? <><Check size={13} className="text-green-400" /> Copied!</> : <><Copy size={13} /> Copy for Notion</>}
+                        {descriptionPopup._copied ? <><CheckCircle size={13} className="text-green-400" /> Copied!</> : <><ClipboardCopy size={13} /> Copy for Notion</>}
                       </button>
                     </div>
                     {/* Project Snapshot */}
