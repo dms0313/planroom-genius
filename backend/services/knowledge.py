@@ -1274,8 +1274,8 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
                 "page_indices": pages,
             })
 
-            # Render selected pages and annotate with file/page metadata
-            images = _render_pages(pdf_path, pages)
+            # Render selected pages at lower DPI for AI (doesn't need full resolution)
+            images = _render_pages(pdf_path, pages, dpi=100)
             for img in images:
                 project_images.append({
                     "file": os.path.relpath(pdf_path, project_dir),
@@ -1296,6 +1296,15 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
 
     model_analysis = None
     if project_images:
+        # Cap images to avoid massive payloads that timeout on upload
+        MAX_IMAGES = 25
+        if len(project_images) > MAX_IMAGES:
+            logger.info(f"Capping images from {len(project_images)} to {MAX_IMAGES} for Gemini")
+            project_images = project_images[:MAX_IMAGES]
+
+        total_bytes = sum(len(img["png_bytes"]) for img in project_images)
+        logger.info(f"Sending {len(project_images)} pages to Gemini ({total_bytes / 1024 / 1024:.1f} MB)")
+
         # Single consolidated Gemini request for project-level decision.
         model_analysis = _call_gemini(project_images, json.dumps(project_context, separators=(",", ":")))
 
