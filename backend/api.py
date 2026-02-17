@@ -238,18 +238,6 @@ async def open_folder_endpoint(payload: dict):
         raise HTTPException(status_code=404, detail="Folder not found or could not be opened")
     return {"status": "success"}
 
-@app.post("/knowledge/scan/{lead_id}")
-async def manual_knowledge_scan(lead_id: str, background_tasks: BackgroundTasks):
-    """
-    Manually trigger AI knowledge scan for a specific lead.
-    Useful for debugging or re-scanning a project.
-    """
-    from backend.services.knowledge import scan_local_downloads
-    
-    # Run in background
-    background_tasks.add_task(scan_local_downloads, lead_id=lead_id, force_rescan=True)
-    return {"status": "accepted", "message": f"Scan triggered for lead {lead_id}"}
-
 
 @app.post("/clear-leads")
 async def clear_leads():
@@ -464,7 +452,7 @@ async def knowledge_scan_single(lead_id: str, background_tasks: BackgroundTasks)
     if status["running"]:
         return {"status": "already_running", "details": status}
 
-    background_tasks.add_task(scan_local_downloads, lead_id)
+    background_tasks.add_task(scan_local_downloads, lead_id, force_rescan=True)
     return {"status": "accepted", "message": f"Knowledge scan started for {lead_id}"}
 
 
