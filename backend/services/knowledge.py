@@ -1772,6 +1772,87 @@ def ask_project_question(lead_id, question):
     return None, "AI service unavailable. Please try again later."
 
 
+def run_deep_scan(lead_id):
+    """Run the rich Takeoff-style analysis (GeminiFireAlarmAnalyzer) for a single lead."""
+    leads = load_leads()
+    lead = next((l for l in leads if l.get("id") == lead_id), None)
+    if not lead:
+        logger.warning(f"run_deep_scan: lead {lead_id} not found")
+        return
+
+    folder = _find_download_folder_for_lead(lead)
+    if not folder:
+        lead["knowledge_last_scanned"] = datetime.now().isoformat()
+        lead["knowledge_notes"] = "No project files found. Link a local folder first."
+        direct_save_leads(leads)
+        return
+
+    # Classify PDFs and apply overrides
+    plan_files, spec_files, other_files = _classify_pdfs(folder)
+    cache = _load_cache()
+    folder_name = os.path.basename(folder)
+    overrides = cache.get(folder_name, {}).get("overrides", {})
+    if overrides:
+        plan_files, spec_files, other_files = _apply_overrides(
+            folder, plan_files, spec_files, other_files, overrides
+        )
+
+    # Pick first plan PDF (or first available)
+    plan_path = plan_files[0] if plan_files else (spec_files[0] if spec_files else (other_files[0] if other_files else None))
+    if not plan_path:
+        lead["knowledge_last_scanned"] = datetime.now().isoformat()
+        lead["knowledge_notes"] = "No PDF files found in project folder."
+        direct_save_leads(leads)
+        return
+
+    # Pick first spec PDF for the spec_pdf_path parameter
+    spec_path = spec_files[0] if spec_files else None
+
+    # Import and run the Takeoff analyzer
+    from backend.takeoff.gemini_analyzer import GeminiFireAlarmAnalyzer
+
+    api_key = os.getenv("GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY_PLANROOM_GENIUS", "")
+    analyzer = GeminiFireAlarmAnalyzer(api_key=api_key.strip() or None)
+
+    logger.info(f"Deep scan: running takeoff analysis on {os.path.basename(plan_path)}")
+    results = analyzer.analyze_pdf(
+        plan_path,
+        include_images=True,
+        spec_pdf_path=spec_path,
+        analysis_mode="advisory",
+    )
+
+    if not results.get("success", False):
+        lead["knowledge_last_scanned"] = datetime.now().isoformat()
+        lead["knowledge_notes"] = f"Deep scan failed: {results.get('error', 'unknown error')}"
+        direct_save_leads(leads)
+        return
+
+    # Store rich takeoff results on the lead (no limits on arrays)
+    lead["takeoff_snapshot"] = {
+        "scope_summary": results.get("scope_summary"),
+        "project_details": results.get("project_details", {}),
+    }
+    lead["takeoff_fa_briefing"] = {
+        "fire_alarm_details": results.get("fire_alarm_details", {}),
+        "specifications": results.get("specifications", {}),
+    }
+    lead["takeoff_mechanical"] = results.get("hvac_mechanical", {})
+    lead["takeoff_pitfalls"] = results.get("possible_pitfalls", [])
+    lead["takeoff_estimating_notes"] = results.get("estimating_notes", [])
+    lead["takeoff_competitive_advantages"] = results.get("competitive_advantages", [])
+    lead["takeoff_project_tags"] = results.get("project_tags", [])
+    lead["takeoff_fa_notes"] = results.get("fire_alarm_notes", [])
+    lead["takeoff_timestamp"] = datetime.now().isoformat()
+
+    # Also update basic knowledge fields for compatibility
+    lead["knowledge_last_scanned"] = datetime.now().isoformat()
+    lead["knowledge_notes"] = results.get("scope_summary") or "Deep scan complete"
+
+    direct_save_leads(leads)
+    logger.info(f"Deep scan complete for {lead.get('name', lead_id)}")
+
+
 def rank_all_projects():
     """
     After individual scans, make a high-level pass ranking all projects.
