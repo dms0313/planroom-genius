@@ -496,6 +496,13 @@ async def knowledge_file_override(lead_id: str, body: dict):
     return {"status": "success"}
 
 
+@app.get("/knowledge/thumbnail/{lead_id}")
+async def knowledge_thumbnail(lead_id: str):
+    """Return just the first-page thumbnail for a lead's first PDF."""
+    from backend.services.knowledge import get_title_thumbnail
+    return get_title_thumbnail(lead_id)
+
+
 @app.get("/knowledge/ranking")
 async def knowledge_ranking():
     """Get all scanned projects ranked by bid chance and scope score."""

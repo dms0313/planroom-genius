@@ -180,6 +180,25 @@ def save_leads(new_leads):
                         logger.info(f"Cross-source merge for: {lead.get('name')} ({lead.get('site')} -> {primary.get('site')})")
                         continue
 
+        # Check for partial name match + same bid date
+        if duplicate_index is None and lead.get('bid_date') and lead['bid_date'] not in ('N/A', 'TBD', ''):
+            lead_name_norm = re.sub(r"[^a-z0-9 ]", "", (lead.get("name") or "").lower().strip())
+            lead_name_norm = re.sub(r"\s+", " ", lead_name_norm).strip()
+            lead_words = set(lead_name_norm.split())
+            if len(lead_words) >= 2:
+                for idx, existing_lead in enumerate(existing):
+                    if existing_lead.get('bid_date') == lead.get('bid_date'):
+                        ex_name_norm = re.sub(r"[^a-z0-9 ]", "", (existing_lead.get("name") or "").lower().strip())
+                        ex_name_norm = re.sub(r"\s+", " ", ex_name_norm).strip()
+                        ex_words = set(ex_name_norm.split())
+                        if len(ex_words) >= 2:
+                            overlap = lead_words & ex_words
+                            shorter = min(len(lead_words), len(ex_words))
+                            if len(overlap) / shorter >= 0.7:
+                                duplicate_index = idx
+                                logger.info(f"Partial name match: '{lead.get('name')}' ~ '{existing_lead.get('name')}' (same bid date)")
+                                break
+
         if duplicate_index is not None:
             # Merge information into existing lead
             existing[duplicate_index] = merge_lead_info(existing[duplicate_index], lead)
@@ -358,6 +377,41 @@ def deduplicate_database():
     if indices_to_remove:
         deduplicated = [lead for i, lead in enumerate(deduplicated) if i not in indices_to_remove]
         logger.info(f"Cross-source dedup removed {len(indices_to_remove)} duplicates")
+
+    # === Pass 3: Partial name match + same bid date ===
+    partial_remove = set()
+    for i, lead in enumerate(deduplicated):
+        if i in partial_remove:
+            continue
+        bid_date = lead.get('bid_date')
+        if not bid_date or bid_date in ('N/A', 'TBD', ''):
+            continue
+        lead_name_norm = re.sub(r"[^a-z0-9 ]", "", (lead.get("name") or "").lower().strip())
+        lead_name_norm = re.sub(r"\s+", " ", lead_name_norm).strip()
+        lead_words = set(lead_name_norm.split())
+        if len(lead_words) < 2:
+            continue
+        for j in range(i + 1, len(deduplicated)):
+            if j in partial_remove:
+                continue
+            other = deduplicated[j]
+            if other.get('bid_date') != bid_date:
+                continue
+            ex_name_norm = re.sub(r"[^a-z0-9 ]", "", (other.get("name") or "").lower().strip())
+            ex_name_norm = re.sub(r"\s+", " ", ex_name_norm).strip()
+            ex_words = set(ex_name_norm.split())
+            if len(ex_words) < 2:
+                continue
+            overlap = lead_words & ex_words
+            shorter = min(len(lead_words), len(ex_words))
+            if len(overlap) / shorter >= 0.7:
+                deduplicated[i] = merge_lead_info(deduplicated[i], other)
+                partial_remove.add(j)
+                logger.info(f"Partial name dedup: '{other.get('name')}' merged into '{lead.get('name')}' (same bid date)")
+
+    if partial_remove:
+        deduplicated = [lead for i, lead in enumerate(deduplicated) if i not in partial_remove]
+        logger.info(f"Partial name dedup removed {len(partial_remove)} duplicates")
 
     # Save deduplicated leads
     try:
