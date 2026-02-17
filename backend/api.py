@@ -376,7 +376,8 @@ async def update_lead(lead_id: str, lead_data: dict):
             "description", "site", "sprinklered", "has_budget",
             "files_link", "download_link", "url",
             "highlight", "strikethrough",  # Row styling fields
-            "hidden", "comments", "short_comment", "tags"  # New management fields
+            "hidden", "comments", "short_comment", "tags",  # New management fields
+            "qa_history"  # Q&A history
         ]
 
         for field in updatable_fields:
@@ -419,6 +420,36 @@ async def delete_lead(lead_id: str):
         raise
     except Exception as e:
         logger.error(f"Failed to delete lead: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Project Q&A Endpoint ====================
+
+@app.post("/leads/{lead_id}/ask")
+async def ask_project_question(lead_id: str, body: dict):
+    """Ask an AI question about a project's files."""
+    from backend.services.knowledge import ask_project_question as _ask
+
+    question = (body.get("question") or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    try:
+        answer, error = _ask(lead_id, question)
+        if error:
+            raise HTTPException(status_code=400, detail=error)
+
+        # Return updated qa_history
+        from backend.services.storage import load_leads
+        leads = load_leads()
+        lead = next((l for l in leads if l.get("id") == lead_id), None)
+        qa_history = lead.get("qa_history", []) if lead else []
+
+        return {"answer": answer, "qa_history": qa_history}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Q&A failed for {lead_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -1586,6 +1586,123 @@ def _apply_overrides(project_dir, plan_files, spec_files, other_files, overrides
 # High-level ranking pass (all projects at once)
 # ---------------------------------------------------------------------------
 
+_QA_PROMPT = """You are a fire alarm preconstruction expert reviewing project documents.
+Answer the following question based ONLY on the provided document pages.
+If the answer cannot be determined from the documents, say so clearly.
+Be specific and cite page references when possible.
+Keep your answer concise (2-4 sentences).
+
+Question: {question}"""
+
+
+def ask_project_question(lead_id, question):
+    """Answer a user question about a project's files using Gemini."""
+    leads = load_leads()
+    lead = next((l for l in leads if l.get("id") == lead_id), None)
+    if not lead:
+        return None, "Lead not found"
+
+    folder = _find_download_folder_for_lead(lead)
+    if not folder:
+        return None, "No project files found. Link a local folder first."
+
+    # Classify and collect relevant pages
+    plan_files, spec_files, other_files = _classify_pdfs(folder)
+
+    # Apply overrides
+    cache = _load_cache()
+    folder_name = os.path.basename(folder)
+    overrides = cache.get(folder_name, {}).get("overrides", {})
+    if overrides:
+        plan_files, spec_files, other_files = _apply_overrides(
+            folder, plan_files, spec_files, other_files, overrides
+        )
+
+    candidates = plan_files + spec_files
+    if not candidates:
+        candidates = other_files
+    if not candidates:
+        return None, "No PDF files found in project folder."
+
+    # Collect relevant page images
+    project_images = []
+    for pdf_path in candidates:
+        if _should_skip_file(os.path.basename(pdf_path)):
+            continue
+        try:
+            texts = _extract_page_texts(pdf_path)
+            if not texts:
+                continue
+            pages = _select_relevant_pages(texts)
+            if not pages:
+                continue
+            images = _render_pages(pdf_path, pages, dpi=72, as_jpeg=True)
+            for img in images:
+                project_images.append(img)
+        except Exception as e:
+            logger.warning(f"Q&A page collection error for {pdf_path}: {e}")
+
+    if not project_images:
+        return None, "Could not extract any relevant pages from project files."
+
+    # Call Gemini with Q&A prompt
+    api_key = os.getenv("GEMINI_API_KEY_PLANROOM_GENIUS", "").strip()
+    if not api_key:
+        return None, "Gemini API key not configured."
+
+    import requests as req
+
+    prompt_text = _QA_PROMPT.format(question=question)
+    parts = [{"text": prompt_text}]
+    for img in project_images:
+        b64 = base64.b64encode(img["png_bytes"]).decode("utf-8")
+        mime = img.get("mime_type", "image/png")
+        parts.append({"inlineData": {"mimeType": mime, "data": b64}})
+
+    payload = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {"temperature": 0.1},
+    }
+
+    models = ["gemini-3-pro-preview", "gemini-2.5-flash"]
+    base_url = "https://generativelanguage.googleapis.com/v1beta/models"
+
+    for model in models:
+        url = f"{base_url}/{model}:generateContent"
+        try:
+            res = req.post(url, params={"key": api_key}, json=payload, timeout=120)
+            res.raise_for_status()
+            data = res.json()
+            if "candidates" in data and data["candidates"]:
+                answer = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                logger.info(f"Q&A answered using {model} for lead {lead_id}")
+
+                # Save to lead's qa_history
+                qa_entry = {
+                    "question": question,
+                    "answer": answer,
+                    "timestamp": datetime.now().isoformat(),
+                }
+                if "qa_history" not in lead or not isinstance(lead.get("qa_history"), list):
+                    lead["qa_history"] = []
+                lead["qa_history"].insert(0, qa_entry)
+                direct_save_leads(leads)
+
+                return answer, None
+        except req.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response is not None else 0
+            if status_code in (429, 404):
+                logger.warning(f"Q&A: {model} returned {status_code}, trying next model")
+                continue
+            logger.error(f"Q&A Gemini HTTP error: {e}")
+            return None, f"AI service error (HTTP {status_code})"
+        except Exception as e:
+            logger.error(f"Q&A Gemini call failed ({model}): {e}")
+            continue
+
+    return None, "AI service unavailable. Please try again later."
+
+
 def rank_all_projects():
     """
     After individual scans, make a high-level pass ranking all projects.

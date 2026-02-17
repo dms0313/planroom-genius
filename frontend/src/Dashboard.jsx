@@ -1511,6 +1511,8 @@ const LeadTable = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedLeadId, setExpandedLeadId] = useState(null);
   const [expandedThumbnail, setExpandedThumbnail] = useState(null);
+  const [qaQuestion, setQaQuestion] = useState('');
+  const [qaLoading, setQaLoading] = useState(false);
   const itemsPerPage = 50;
   const totalPages = Math.ceil(data.length / itemsPerPage);
 
@@ -1526,6 +1528,32 @@ const LeadTable = ({
       .then(d => setExpandedThumbnail(d.thumbnail))
       .catch(() => setExpandedThumbnail(null));
   }, [expandedLeadId]);
+
+  const askProjectQuestion = async (leadId) => {
+    const q = qaQuestion.trim();
+    if (!q) return;
+    setQaLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/leads/${leadId}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q }),
+      });
+      const resData = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(resData.detail || 'Failed to get answer');
+        return;
+      }
+      setQaQuestion('');
+      // Update lead with new qa_history via PUT to trigger parent refresh
+      toggleLeadStyle({ id: leadId }, 'qa_history', resData.qa_history);
+    } catch (e) {
+      console.error('Q&A failed:', e);
+      alert('Failed to ask question. Please try again.');
+    } finally {
+      setQaLoading(false);
+    }
+  };
 
   const handleSort = (key) => {
     let direction = 'asc';
@@ -1850,6 +1878,46 @@ const LeadTable = ({
                               placeholder="Add internal notes about this project (autosaves on blur)..."
                               className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 text-xs text-slate-300 placeholder-slate-600 focus:ring-1 focus:ring-blue-500 focus:outline-none resize-y min-h-[60px]"
                             />
+                          </div>
+
+                          {/* Ask AI About This Project */}
+                          <div className="mt-3">
+                            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Ask AI About This Project</h4>
+                            <div className="flex gap-2 mb-3">
+                              <input
+                                type="text"
+                                value={qaQuestion}
+                                onChange={(e) => setQaQuestion(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && !qaLoading) askProjectQuestion(lead.id); }}
+                                placeholder="What is the specified fire alarm panel?"
+                                disabled={qaLoading}
+                                className="flex-1 bg-slate-900/50 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:ring-1 focus:ring-cyan-500 focus:outline-none disabled:opacity-50"
+                              />
+                              <button
+                                onClick={() => askProjectQuestion(lead.id)}
+                                disabled={qaLoading || !qaQuestion.trim()}
+                                className="px-4 py-2 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                              >
+                                {qaLoading ? (
+                                  <><svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Thinking...</>
+                                ) : 'Ask'}
+                              </button>
+                            </div>
+                            {lead.qa_history && lead.qa_history.length > 0 && (
+                              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                                {lead.qa_history.map((qa, idx) => (
+                                  <div key={idx} className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-3">
+                                    <div className="text-xs font-semibold text-cyan-400 mb-1">Q: {qa.question}</div>
+                                    <div className="text-xs text-slate-300 whitespace-pre-wrap">A: {qa.answer}</div>
+                                    {qa.timestamp && (
+                                      <div className="text-[10px] text-slate-600 mt-1.5">
+                                        {new Date(qa.timestamp).toLocaleString()}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
