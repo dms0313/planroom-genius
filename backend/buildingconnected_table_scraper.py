@@ -149,21 +149,29 @@ class BCAPIClient:
             log_status(f"Could not save BC token file: {e}")
 
     async def _validate_token(self, token: str) -> bool:
-        """Check token validity by making a lightweight API call."""
+        """Check token validity by hitting the pipeline API."""
         try:
-            r = await self._client.get(
-                f"{self.API_BASE}/me",
+            # /api/me was removed by BC; use opportunity-links endpoint instead
+            r = await self._client.post(
+                f"{self.API_BASE}/opportunity-links:batch-get",
                 headers={
                     "accept": "application/json",
+                    "content-type": "application/json; charset=UTF-8",
                     "cookie": f"authorization={token}",
                     "x-requested-with": "XMLHttpRequest",
                 },
+                json=[],  # empty list — lightweight call just to check auth
             )
-            if r.status_code == 200:
+            if r.status_code in (200, 201):
                 log_status("BC auth token validated OK")
                 return True
-            log_status(f"BC token validation failed: HTTP {r.status_code}")
-            return False
+            if r.status_code == 401:
+                log_status("BC token expired (401)")
+                return False
+            # For other codes (403, 404, 5xx), assume token might still work
+            # since the endpoint itself may have issues
+            log_status(f"BC token validation got HTTP {r.status_code} — assuming token OK")
+            return True
         except Exception as e:
             log_status(f"BC token validation error: {e}")
             return False
@@ -190,10 +198,8 @@ class BCAPIClient:
             # Find Chrome
             chrome_path = self._find_chrome_executable()
 
-            playwright_profile = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "playwright_profile",
-            )
+            playwright_profile = ScraperConfig.CHROME_USER_DATA_DIR
+            os.makedirs(playwright_profile, exist_ok=True)
 
             # Clean up stale SingletonLock from previous crashes
             lock_file = os.path.join(playwright_profile, "SingletonLock")
@@ -336,30 +342,53 @@ class BCAPIClient:
             return None, None
 
     async def _attempt_browser_login(self, page):
-        """Attempt auto-login on the Autodesk login page."""
+        """Attempt auto-login on the Autodesk login page using .env credentials."""
+        login_email = os.getenv("SITE_LOGIN", "")
+        login_password = os.getenv("SITE_PW", "")
+
+        if not login_email or not login_password:
+            log_status("No SITE_LOGIN/SITE_PW in .env — cannot auto-login")
+            return False
+
         try:
-            # Check for email field
+            log_status(f"Login page URL: {page.url}")
+
+            # Step 1: Enter email
             email_input = await page.query_selector('input[id="userName"]')
             if email_input:
-                val = await email_input.get_attribute("value")
-                if val:
-                    log_status(f"Found pre-filled email: {val}")
-                    next_btn = await page.query_selector('button[id="verify_user_btn"]')
-                    if next_btn:
-                        await next_btn.click()
-                        await asyncio.sleep(5)
+                await email_input.fill("")
+                await email_input.fill(login_email)
+                log_status(f"Entered email: {login_email}")
 
-            sign_in_btn = await page.query_selector('button[id="btnSubmit"]')
-            if sign_in_btn:
-                log_status("Clicking Sign In...")
-                await sign_in_btn.click()
-                await asyncio.sleep(5)
+                next_btn = await page.query_selector('button[id="verify_user_btn"]')
+                if next_btn:
+                    await next_btn.click()
+                    log_status("Clicked Next (verify_user_btn)")
+                    await asyncio.sleep(5)
 
-            if "login" not in page.url and "signin" not in page.url:
+            # Step 2: Enter password
+            password_input = await page.query_selector('input[id="password"]')
+            if password_input:
+                await password_input.fill(login_password)
+                log_status("Entered password")
+
+                sign_in_btn = await page.query_selector('button[id="btnSubmit"]')
+                if sign_in_btn:
+                    await sign_in_btn.click()
+                    log_status("Clicked Sign In (btnSubmit)")
+                    await asyncio.sleep(8)
+
+            # Check result
+            final_url = page.url
+            log_status(f"Post-login URL: {final_url}")
+            if "login" not in final_url and "signin" not in final_url:
                 log_status("Auto-login successful")
                 return True
+            else:
+                log_status("Still on login page after auto-login attempt")
         except Exception as e:
             log_status(f"Auto-login failed: {e}")
+            traceback.print_exc()
         return False
 
     def _extract_pipeline_from_responses(self, responses):
