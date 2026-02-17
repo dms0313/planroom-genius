@@ -16,21 +16,67 @@ const badgeColor = (badge) => {
   if (badge === 'EXISTING') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
   if (badge === 'NEW SYSTEM') return 'bg-green-500/20 text-green-400 border-green-500/30';
   if (badge === 'MODIFICATION') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+  if (badge === 'VOICE') return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+  if (badge === 'MONITORING') return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
+  if (badge === 'ACCESS CTRL') return 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30';
+  if (badge === 'NON-SPRINKLED') return 'bg-amber-600/20 text-amber-400 border-amber-600/30';
   if (badge.includes('REQ')) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
   return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
 };
 
 const badgeHover = (badge, lead) => {
-  if (badge === 'NO FA') return 'No fire alarm scope found in documents';
-  if (badge === 'EXISTING') return 'Existing fire alarm system';
-  if (badge === 'NEW SYSTEM') return 'New fire alarm system installation';
-  if (badge === 'MODIFICATION') return 'Modification to existing system';
-  if (badge === 'REQ MFR') return lead?.knowledge_required_manufacturers?.length > 0 ? lead.knowledge_required_manufacturers.join(', ') : 'Required manufacturer specified';
-  if (badge === 'REQ VENDOR') return lead?.knowledge_required_vendors?.length > 0 ? lead.knowledge_required_vendors.join(', ') : 'Required vendor specified';
-  if (badge === 'COMPATIBLE MFR') return 'Specified manufacturer is compatible';
-  if (badge === 'INCOMPATIBLE MFR') return 'Specified manufacturer is NOT compatible';
-  if (badge === 'DEAL BREAKER') return lead?.knowledge_deal_breakers?.length > 0 ? lead.knowledge_deal_breakers.join(', ') : 'Deal breaker identified';
+  if (badge === 'NO FA') return 'No fire alarm scope found in project documents — likely not a FA job';
+  if (badge === 'EXISTING') {
+    const mfrs = lead?.knowledge_required_manufacturers;
+    return mfrs?.length > 0
+      ? `Existing system — panel: ${mfrs.join(', ')}`
+      : 'Existing fire alarm system — check plans for panel manufacturer';
+  }
+  if (badge === 'NEW SYSTEM') return 'New fire alarm system installation — full scope';
+  if (badge === 'MODIFICATION') return 'Modification/retrofit to existing fire alarm system';
+  if (badge === 'REQ MFR') {
+    const mfrs = lead?.knowledge_required_manufacturers;
+    return mfrs?.length > 0 ? `Required: ${mfrs.join(', ')}` : 'Manufacturer specified in specs';
+  }
+  if (badge === 'REQ VENDOR') {
+    const vendors = lead?.knowledge_required_vendors;
+    return vendors?.length > 0 ? `Required: ${vendors.join(', ')}` : 'Vendor specified in specs';
+  }
+  if (badge === 'COMPATIBLE MFR') {
+    const mfrs = lead?.knowledge_required_manufacturers;
+    return mfrs?.length > 0 ? `Compatible — ${mfrs.join(', ')}` : 'Specified manufacturer is compatible with our products';
+  }
+  if (badge === 'INCOMPATIBLE MFR') {
+    const mfrs = lead?.knowledge_required_manufacturers;
+    return mfrs?.length > 0 ? `NOT compatible — ${mfrs.join(', ')}` : 'Specified manufacturer is NOT compatible';
+  }
+  if (badge === 'DEAL BREAKER') {
+    const reasons = lead?.knowledge_deal_breakers;
+    return reasons?.length > 0 ? reasons.join(' · ') : 'Deal breaker identified — review details';
+  }
+  if (badge === 'VOICE') return 'Voice evacuation / mass notification system required';
+  if (badge === 'MONITORING') return 'Monitoring services included in scope';
+  if (badge === 'ACCESS CTRL') return 'Access control interface / integration required';
+  if (badge === 'NON-SPRINKLED') return 'Building is NOT sprinklered — may need more detection';
   return badge;
+};
+
+// Detect project type tags from name/description for at-a-glance info
+const detectProjectTags = (lead) => {
+  const tags = [];
+  const text = `${lead.name || ''} ${lead.description || ''} ${lead.knowledge_notes || ''}`.toLowerCase();
+  const name = (lead.name || '').toLowerCase();
+  // Building types that affect fire alarm scope/complexity
+  if (/\bapartment|\bmulti.?family|\bresidential\b|\bcondo/.test(text)) tags.push({ label: 'RESIDENTIAL', color: 'bg-pink-500/20 text-pink-400 border-pink-500/30', hover: 'Apartments / multi-family — typically needs individual unit detection' });
+  if (/\bhospital|\bmedical|\bhealthcare|\bclinic|\bsurgical/.test(text)) tags.push({ label: 'HEALTHCARE', color: 'bg-rose-500/20 text-rose-400 border-rose-500/30', hover: 'Healthcare facility — stringent code requirements' });
+  if (/\bschool|\buniversity|\bcollege|\beducation|\bcampus/.test(text)) tags.push({ label: 'EDUCATION', color: 'bg-sky-500/20 text-sky-400 border-sky-500/30', hover: 'Educational facility — mass notification may apply' });
+  if (/\bhigh.?rise|\b\d{2,}\s*stor(y|ies)/.test(text)) tags.push({ label: 'HIGH-RISE', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30', hover: 'High-rise building — complex zoning & voice evac likely' });
+  if (/\bwarehouse|\bstorage|\bdistribution/.test(text)) tags.push({ label: 'WAREHOUSE', color: 'bg-stone-500/20 text-stone-400 border-stone-500/30', hover: 'Warehouse / storage — large open areas, high ceilings' });
+  if (/\bhotel|\bhospitality|\bresort|\blodg/.test(text)) tags.push({ label: 'HOTEL', color: 'bg-violet-500/20 text-violet-400 border-violet-500/30', hover: 'Hotel / hospitality — individual room detection' });
+  if (/\bchurch|\bworship|\btemple|\bmosque/.test(text)) tags.push({ label: 'WORSHIP', color: 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/30', hover: 'Place of worship — large assembly space' });
+  if (/\bparking\s*(garage|structure|deck)/.test(text)) tags.push({ label: 'PARKING', color: 'bg-neutral-500/20 text-neutral-400 border-neutral-500/30', hover: 'Parking structure — CO detection may apply' });
+  if (/\bdata\s*center|\bserver/.test(name)) tags.push({ label: 'DATA CTR', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', hover: 'Data center — clean agent / early detection' });
+  return tags;
 };
 
 const classColor = (cls) => {
@@ -940,13 +986,36 @@ export default function LeadDashboard() {
                   </div>
                 )}
                 <div className="flex gap-2 flex-wrap">
-                  {descriptionPopup.sprinklered && <span className="text-[10px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30">Sprinklered</span>}
                   {descriptionPopup.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/30">Has Budget</span>}
                   {descriptionPopup.knowledge_badges && descriptionPopup.knowledge_badges.map((b, idx) => (
-                    <span key={idx} className={`relative group text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)} cursor-default`}>
+                    <span key={idx} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)} cursor-default`}>
                       {b}
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
                         {badgeHover(b, descriptionPopup)}
+                      </span>
+                    </span>
+                  ))}
+                  {descriptionPopup.knowledge_last_scanned && !descriptionPopup.sprinklered && (
+                    <span className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default ${badgeColor('NON-SPRINKLED')}`}>
+                      NON-SPRINKLED
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
+                        {badgeHover('NON-SPRINKLED', descriptionPopup)}
+                      </span>
+                    </span>
+                  )}
+                  {detectProjectTags(descriptionPopup).map((pt, idx) => (
+                    <span key={`pt-${idx}`} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default ${pt.color}`}>
+                      {pt.label}
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
+                        {pt.hover}
+                      </span>
+                    </span>
+                  ))}
+                  {descriptionPopup.knowledge_bid_risk_flags && descriptionPopup.knowledge_bid_risk_flags.map((flag, idx) => (
+                    <span key={`rf-${idx}`} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default bg-red-500/10 text-red-400 border-red-500/20`}>
+                      {flag}
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
+                        Bid risk: {flag}
                       </span>
                     </span>
                   ))}
@@ -1425,7 +1494,7 @@ const LeadTable = ({
                         <span className="text-[10px] text-slate-600">{lead.site}</span>
                         {/* Tags */}
                         {lead.tags && lead.tags.map((tag, idx) => (
-                          <span key={idx} className={`relative group text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tag.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                          <span key={idx} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tag.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
                             tag.color === 'red' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
                               tag.color === 'blue' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                                 tag.color === 'orange' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
@@ -1436,7 +1505,7 @@ const LeadTable = ({
                             }`}>
                             {tag.label}
                             {tag.hover && (
-                              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">
                                 {tag.hover}
                               </span>
                             )}
@@ -1444,10 +1513,37 @@ const LeadTable = ({
                         ))}
                         {/* Knowledge Badges */}
                         {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
-                          <span key={`kb-${idx}`} className={`relative group text-[10px] px-1.5 py-0.5 rounded border cursor-default ${badgeColor(b)}`}>
+                          <span key={`kb-${idx}`} className={`relative group/kb text-[10px] px-1.5 py-0.5 rounded border cursor-default ${badgeColor(b)}`}>
                             {b}
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
                               {badgeHover(b, lead)}
+                            </span>
+                          </span>
+                        ))}
+                        {/* Non-sprinkled badge (only when scanned and NOT sprinklered) */}
+                        {lead.knowledge_last_scanned && !lead.sprinklered && (
+                          <span className={`relative group/kb text-[10px] px-1.5 py-0.5 rounded border cursor-default ${badgeColor('NON-SPRINKLED')}`}>
+                            NON-SPRINKLED
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
+                              {badgeHover('NON-SPRINKLED', lead)}
+                            </span>
+                          </span>
+                        )}
+                        {/* Project type tags detected from name/description */}
+                        {detectProjectTags(lead).map((pt, idx) => (
+                          <span key={`pt-${idx}`} className={`relative group/kb text-[10px] px-1.5 py-0.5 rounded border cursor-default ${pt.color}`}>
+                            {pt.label}
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
+                              {pt.hover}
+                            </span>
+                          </span>
+                        ))}
+                        {/* Bid risk flags */}
+                        {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => (
+                          <span key={`rf-${idx}`} className={`relative group/kb text-[10px] px-1.5 py-0.5 rounded border cursor-default bg-red-500/10 text-red-400 border-red-500/20`}>
+                            {flag}
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
+                              Bid risk: {flag}
                             </span>
                           </span>
                         ))}
@@ -1536,14 +1632,37 @@ const LeadTable = ({
                               </p>
                               <div className="flex gap-2 mt-3 flex-wrap">
                                 {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
-                                  <span key={idx} className={`relative group text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)} cursor-default`}>
+                                  <span key={idx} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)} cursor-default`}>
                                     {b}
-                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
                                       {badgeHover(b, lead)}
                                     </span>
                                   </span>
                                 ))}
-                                {lead.sprinklered && <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full border border-red-500/20">Sprinklered</span>}
+                                {lead.knowledge_last_scanned && !lead.sprinklered && (
+                                  <span className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default ${badgeColor('NON-SPRINKLED')}`}>
+                                    NON-SPRINKLED
+                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
+                                      {badgeHover('NON-SPRINKLED', lead)}
+                                    </span>
+                                  </span>
+                                )}
+                                {detectProjectTags(lead).map((pt, idx) => (
+                                  <span key={`pt-${idx}`} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default ${pt.color}`}>
+                                    {pt.label}
+                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
+                                      {pt.hover}
+                                    </span>
+                                  </span>
+                                ))}
+                                {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => (
+                                  <span key={`rf-${idx}`} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default bg-red-500/10 text-red-400 border-red-500/20`}>
+                                    {flag}
+                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
+                                      Bid risk: {flag}
+                                    </span>
+                                  </span>
+                                ))}
                               </div>
                             </div>
 

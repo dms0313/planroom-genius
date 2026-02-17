@@ -924,6 +924,14 @@ def _compute_badges(analysis):
         badges.append("INCOMPATIBLE MFR")
     if analysis.get("deal_breakers"):
         badges.append("DEAL BREAKER")
+    # Scope signal badges
+    signals = analysis.get("scope_signals") or {}
+    if signals.get("voice_evac"):
+        badges.append("VOICE")
+    if signals.get("monitoring"):
+        badges.append("MONITORING")
+    if signals.get("access_control_interface"):
+        badges.append("ACCESS CTRL")
     return badges
 
 
@@ -1232,6 +1240,8 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
         lead["knowledge_notes"] = "\n".join(aggregate["notes"])[:2000]
         lead["knowledge_score"] = aggregate["scope_score"]
         lead["knowledge_badges"] = badges
+        lead["knowledge_scope_signals"] = aggregate.get("scope_signals") or {}
+        lead["knowledge_bid_risk_flags"] = list(aggregate.get("bid_risk_flags") or [])
 
         lead["knowledge_addendums"] = addendums[:10]  # Limit to 10 most recent
         lead["knowledge_file_count"] = len(plan_files) + len(spec_files) + len(other_files)
