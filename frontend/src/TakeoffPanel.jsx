@@ -362,7 +362,7 @@ export default function TakeoffPanel() {
     const link = document.createElement('link');
     link.id = 'takeoff-scoped-css';
     link.rel = 'stylesheet';
-    link.href = '/takeoff/static/css/style.css';
+    link.href = `http://${window.location.hostname}:8000/takeoff/static/css/style.css`;
     document.head.appendChild(link);
 
     // Inject main.js after HTML is in the DOM so getElementById calls work.
@@ -371,7 +371,7 @@ export default function TakeoffPanel() {
       if (mountId.current !== currentMount) return; // component unmounted
       const script = document.createElement('script');
       script.id = 'takeoff-main-js';
-      script.src = '/takeoff/static/js/main.js';
+      script.src = `http://${window.location.hostname}:8000/takeoff/static/js/main.js`;
       root.appendChild(script);
     }, 50);
 
