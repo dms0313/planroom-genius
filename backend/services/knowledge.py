@@ -1289,8 +1289,8 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
                 "page_indices": pages,
             })
 
-            # Render selected pages as JPEG for AI (doesn't need full resolution PNG)
-            images = _render_pages(pdf_path, pages, dpi=100, as_jpeg=True)
+            # Render selected pages as JPEG at low DPI for AI analysis
+            images = _render_pages(pdf_path, pages, dpi=72, as_jpeg=True)
             for img in images:
                 project_images.append({
                     "file": os.path.relpath(pdf_path, project_dir),
@@ -1311,11 +1311,24 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
 
     model_analysis = None
     if project_images:
-        # Cap images to avoid massive payloads that timeout on upload
-        MAX_IMAGES = 25
+        # Cap images by count and total payload size
+        MAX_IMAGES = 20
+        MAX_PAYLOAD_MB = 4
         if len(project_images) > MAX_IMAGES:
             logger.info(f"Capping images from {len(project_images)} to {MAX_IMAGES} for Gemini")
             project_images = project_images[:MAX_IMAGES]
+
+        # Drop largest images first if payload exceeds limit
+        total_bytes = sum(len(img["png_bytes"]) for img in project_images)
+        if total_bytes > MAX_PAYLOAD_MB * 1024 * 1024:
+            # Sort by size descending, drop biggest until under limit
+            project_images.sort(key=lambda x: len(x["png_bytes"]), reverse=True)
+            while project_images and total_bytes > MAX_PAYLOAD_MB * 1024 * 1024:
+                dropped = project_images.pop(0)
+                total_bytes -= len(dropped["png_bytes"])
+                logger.info(f"Dropped large page (file={dropped['file']}, page={dropped['page_index']}, {len(dropped['png_bytes'])/1024:.0f}KB) to fit payload limit")
+            # Re-sort by original order (file, page_index)
+            project_images.sort(key=lambda x: (x["file"], x["page_index"]))
 
         total_bytes = sum(len(img["png_bytes"]) for img in project_images)
         logger.info(f"Sending {len(project_images)} pages to Gemini ({total_bytes / 1024 / 1024:.1f} MB)")
