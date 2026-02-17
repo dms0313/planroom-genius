@@ -551,8 +551,9 @@ def _select_relevant_pages(page_texts):
 # Image rendering (PyMuPDF)
 # ---------------------------------------------------------------------------
 
-def _render_pages(pdf_path, page_indices, dpi=150):
-    """Render specific pages to PNG images. Returns list of {page_index, png_bytes}."""
+def _render_pages(pdf_path, page_indices, dpi=150, jpeg_quality=None):
+    """Render specific pages to images. Returns list of {page_index, png_bytes, mime_type}.
+    If jpeg_quality is set (e.g. 70), outputs JPEG instead of PNG for smaller payloads."""
     try:
         import fitz
     except ImportError:
@@ -566,7 +567,15 @@ def _render_pages(pdf_path, page_indices, dpi=150):
                 continue
             page = doc.load_page(idx)
             pix = page.get_pixmap(dpi=dpi)
-            images.append({"page_index": idx, "png_bytes": pix.tobytes("png")})
+            if jpeg_quality:
+                import io
+                from PIL import Image
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=jpeg_quality)
+                images.append({"page_index": idx, "png_bytes": buf.getvalue(), "mime_type": "image/jpeg"})
+            else:
+                images.append({"page_index": idx, "png_bytes": pix.tobytes("png"), "mime_type": "image/png"})
         doc.close()
     except Exception as e:
         logger.warning(f"Render failed for {pdf_path}: {e}")
@@ -794,8 +803,9 @@ def _call_gemini(images, context=""):
     parts = [{"text": _GEMINI_PROMPT + "\n\nProject context: " + context}]
     for img in images:
         b64 = base64.b64encode(img["png_bytes"]).decode("utf-8")
+        mime = img.get("mime_type", "image/png")
         parts.append({
-            "inlineData": {"mimeType": "image/png", "data": b64}
+            "inlineData": {"mimeType": mime, "data": b64}
         })
 
     payload = {
@@ -1274,8 +1284,8 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
                 "page_indices": pages,
             })
 
-            # Render selected pages at lower DPI for AI (doesn't need full resolution)
-            images = _render_pages(pdf_path, pages, dpi=100)
+            # Render selected pages as compressed JPEG for AI (doesn't need full resolution)
+            images = _render_pages(pdf_path, pages, dpi=100, jpeg_quality=65)
             for img in images:
                 project_images.append({
                     "file": os.path.relpath(pdf_path, project_dir),
