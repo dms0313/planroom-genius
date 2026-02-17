@@ -551,9 +551,9 @@ def _select_relevant_pages(page_texts):
 # Image rendering (PyMuPDF)
 # ---------------------------------------------------------------------------
 
-def _render_pages(pdf_path, page_indices, dpi=150, jpeg_quality=None):
+def _render_pages(pdf_path, page_indices, dpi=150, as_jpeg=False):
     """Render specific pages to images. Returns list of {page_index, png_bytes, mime_type}.
-    If jpeg_quality is set (e.g. 70), outputs JPEG instead of PNG for smaller payloads."""
+    If as_jpeg=True, converts to JPEG for smaller payloads (no PIL needed)."""
     try:
         import fitz
     except ImportError:
@@ -567,13 +567,10 @@ def _render_pages(pdf_path, page_indices, dpi=150, jpeg_quality=None):
                 continue
             page = doc.load_page(idx)
             pix = page.get_pixmap(dpi=dpi)
-            if jpeg_quality:
-                import io
-                from PIL import Image
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                buf = io.BytesIO()
-                img.save(buf, format="JPEG", quality=jpeg_quality)
-                images.append({"page_index": idx, "png_bytes": buf.getvalue(), "mime_type": "image/jpeg"})
+            if as_jpeg:
+                # Use fitz built-in JPEG output — no PIL dependency
+                img_bytes = pix.tobytes("jpeg")
+                images.append({"page_index": idx, "png_bytes": img_bytes, "mime_type": "image/jpeg"})
             else:
                 images.append({"page_index": idx, "png_bytes": pix.tobytes("png"), "mime_type": "image/png"})
         doc.close()
@@ -1284,8 +1281,8 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
                 "page_indices": pages,
             })
 
-            # Render selected pages as compressed JPEG for AI (doesn't need full resolution)
-            images = _render_pages(pdf_path, pages, dpi=100, jpeg_quality=65)
+            # Render selected pages as JPEG for AI (doesn't need full resolution PNG)
+            images = _render_pages(pdf_path, pages, dpi=100, as_jpeg=True)
             for img in images:
                 project_images.append({
                     "file": os.path.relpath(pdf_path, project_dir),
