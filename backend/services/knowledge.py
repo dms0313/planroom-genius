@@ -1814,6 +1814,13 @@ def run_deep_scan(lead_id):
     api_key = os.getenv("GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY_PLANROOM_GENIUS", "")
     analyzer = GeminiFireAlarmAnalyzer(api_key=api_key.strip() or None)
 
+    # Use the model from GEMINI_MODEL env var, or default to flash to avoid
+    # quota issues on pro free tier
+    preferred_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    if preferred_model != analyzer.current_model:
+        analyzer.update_model(preferred_model)
+        logger.info(f"Deep scan: using model {preferred_model}")
+
     logger.info(f"Deep scan: running takeoff analysis on {os.path.basename(plan_path)}")
     results = analyzer.analyze_pdf(
         plan_path,
