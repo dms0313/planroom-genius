@@ -640,7 +640,7 @@ export default function LeadDashboard() {
 
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-100 p-8 font-sans ${showConsole && !consoleMinimized ? 'pb-96' : ''}`}>
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-[95vw] mx-auto">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl p-3">
           <div className="flex items-center gap-4">
@@ -1378,17 +1378,17 @@ const LeadTable = ({
         )}
       </div>
       <div className="overflow-x-auto flex-grow">
-        <table className="w-full text-left text-xs text-slate-400">
+        <table className="w-full table-auto text-left text-xs text-slate-400">
           <thead className="bg-slate-950/50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
             <tr>
-              <th className="px-2 py-3 w-24"></th>
+              <th className="px-2 py-3 whitespace-nowrap"></th>
               <SortHeader label="Project" sortKey="name" />
               <SortHeader label="Company / GC" sortKey="company" />
               <SortHeader label="Contact" sortKey="contact_name" />
               <SortHeader label="Location" sortKey="location" />
-              <SortHeader label="Bid Date" sortKey="bid_date" className="w-24" />
-              <th className="px-4 py-3 text-center w-20">Files</th>
-              <th className="px-4 py-3 text-center w-24">Actions</th>
+              <SortHeader label="Bid Date" sortKey="bid_date" className="whitespace-nowrap" />
+              <th className="px-4 py-3 text-center whitespace-nowrap">Files</th>
+              <th className="px-4 py-3 text-center whitespace-nowrap">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/50">
@@ -1408,10 +1408,10 @@ const LeadTable = ({
                         <button onClick={() => toggleLeadStyle(lead, 'strikethrough', !lead.strikethrough)} className={`p-1 rounded ${lead.strikethrough ? 'bg-slate-500' : 'bg-slate-700 hover:bg-slate-500'}`} title="Mark reviewed"><Minus size={8} className="text-slate-300" /></button>
                       </div>
                     </td>
-                    <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors max-w-xs">
+                    <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors">
                       <button onClick={() => setExpandedLeadId(expandedLeadId === lead.id ? null : lead.id)} className="text-left hover:text-orange-400 transition-colors flex items-center gap-2" title="Click to expand">
                         {expandedLeadId === lead.id ? <ChevronUp size={14} className="text-orange-400" /> : <ChevronDown size={14} className="text-slate-500" />}
-                        <div className="truncate max-w-[200px]">{lead.name}</div>
+                        <div className="truncate max-w-[350px]">{lead.name}</div>
                       </button>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
@@ -1451,21 +1451,21 @@ const LeadTable = ({
                     </td>
                     <td className="px-4 py-2">
                       <button onClick={() => setCompanyPopup(lead)} className="flex flex-col text-left hover:bg-slate-800/50 p-1 rounded transition-colors w-full" title="Click for details">
-                        <span className="text-slate-300 truncate max-w-[150px] hover:text-orange-400 transition-colors">{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
-                        <span className="text-[10px] text-slate-500 truncate max-w-[150px]">{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
+                        <span className="text-slate-300 truncate max-w-[220px] hover:text-orange-400 transition-colors">{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
+                        <span className="text-[10px] text-slate-500 truncate max-w-[220px]">{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
                       </button>
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex flex-col gap-0.5">
-                        <span className="text-slate-300 truncate max-w-[150px]">{lead.contact_name !== "N/A" ? lead.contact_name : <span className="text-slate-600 italic">-</span>}</span>
+                        <span className="text-slate-300 truncate max-w-[200px]">{lead.contact_name !== "N/A" ? lead.contact_name : <span className="text-slate-600 italic">-</span>}</span>
                         {lead.contact_email && (
                           <a href={`mailto:${lead.contact_email}`} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-orange-400 transition-colors">
-                            <Mail size={10} /><span className="truncate max-w-[140px]">{lead.contact_email}</span>
+                            <Mail size={10} /><span className="truncate max-w-[200px]">{lead.contact_email}</span>
                           </a>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-2 text-slate-400 truncate max-w-[120px]" title={lead.location}>{lead.location || "N/A"}</td>
+                    <td className="px-4 py-2 text-slate-400 truncate max-w-[200px]" title={lead.location}>{lead.location || "N/A"}</td>
                     <td className={`px-4 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{formatDate(lead.bid_date)}</td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex justify-center gap-1">
