@@ -803,14 +803,14 @@ def _call_gemini(images, context=""):
         "generationConfig": {"temperature": 0.1},
     }
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent"
     
     max_retries = 5
     base_delay = 2.0
 
     for attempt in range(max_retries):
         try:
-            res = req.post(url, params={"key": api_key}, json=payload, timeout=120)
+            res = req.post(url, params={"key": api_key}, json=payload, timeout=180)
             res.raise_for_status()
             data = res.json()
             # If successful, parse and return
@@ -840,12 +840,17 @@ def _call_gemini(images, context=""):
             else:
                 logger.error(f"Gemini HTTP error: {e}")
                 return _normalize_analysis_result({}, fallback_notes=f"Gemini HTTP error: {e}")
+        except (req.exceptions.Timeout, req.exceptions.ConnectionError) as e:
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+            logger.warning(f"Gemini timeout/connection error. Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries}): {e}")
+            time.sleep(delay)
+            continue
         except Exception as e:
             logger.warning(f"Gemini call failed: {e}")
             return _normalize_analysis_result({}, fallback_notes=f"Gemini call failed: {e}")
-    
-    logger.error("Gemini failed after max retries due to rate limiting.")
-    return _normalize_analysis_result({}, fallback_notes="Gemini rate-limited after retries")
+
+    logger.error("Gemini failed after max retries.")
+    return _normalize_analysis_result({}, fallback_notes="Gemini failed after retries")
 
 
 def _heuristic_analysis(all_text):
