@@ -891,13 +891,8 @@ export default function LeadDashboard() {
                                 onClick={() => selectFileForViewing(pointToFileModal.lead_id, file.rel_path)}
                                 className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer mb-1 transition-all ${selectedFile === file.rel_path ? 'bg-blue-600/20 border border-blue-500/40 ring-1 ring-blue-500/30' : 'hover:bg-slate-700/50 border border-transparent'}`}
                               >
-                                {/* Mini thumbnail */}
-                                <div className="w-8 h-10 bg-slate-950 rounded flex-shrink-0 flex items-center justify-center overflow-hidden">
-                                  {file.thumbnail ? (
-                                    <img src={`data:image/png;base64,${file.thumbnail}`} alt="" className="w-full h-full object-contain" />
-                                  ) : (
-                                    <FileText size={14} className="text-slate-700" />
-                                  )}
+                                <div className="w-8 h-10 bg-slate-950 rounded flex-shrink-0 flex items-center justify-center">
+                                  <FileText size={14} className={`${file.classification === 'plan' ? 'text-blue-500' : file.classification === 'spec' ? 'text-green-500' : 'text-slate-600'}`} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="text-[11px] text-white font-medium truncate" title={file.filename}>{file.filename}</div>
@@ -1716,9 +1711,7 @@ const LeadTable = ({
                             <Brain size={12} />
                           )}
                         </button>
-                        {(lead.local_file_path || lead.files_link || lead.knowledge_file_count > 0) && (
-                          <button onClick={() => openPointToFile(lead.id)} className="p-1.5 bg-slate-700 hover:bg-orange-600 text-slate-400 hover:text-white rounded transition-colors" title="Browse Files"><FolderOpen size={12} /></button>
-                        )}
+                        <button onClick={() => openPointToFile(lead.id)} className="p-1.5 bg-slate-700 hover:bg-orange-600 text-slate-400 hover:text-white rounded transition-colors" title="Browse Files"><FolderOpen size={12} /></button>
                         <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
                         <button onClick={() => toggleLeadStyle(lead, 'hidden', !lead.hidden)} className={`p-1.5 rounded transition-colors ${lead.hidden ? 'bg-slate-600 text-slate-300 hover:bg-slate-500' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title={lead.hidden ? "Unhide" : "Hide"}>
                           {lead.hidden ? <Eye size={12} /> : <EyeOff size={12} />}
@@ -1789,11 +1782,9 @@ const LeadTable = ({
                               <button onClick={() => setDescriptionPopup(lead)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
                                 <Eye size={14} /> View Full Details
                               </button>
-                              {(lead.local_file_path || lead.files_link || lead.knowledge_file_count > 0) && (
-                                <button onClick={() => openPointToFile(lead.id)} className="px-4 py-2 bg-slate-700 hover:bg-orange-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
-                                  <FolderOpen size={14} /> Browse Files
-                                </button>
-                              )}
+                              <button onClick={() => openPointToFile(lead.id)} className="px-4 py-2 bg-slate-700 hover:bg-orange-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
+                                <FolderOpen size={14} /> Browse Files
+                              </button>
                             </div>
                           </div>
 

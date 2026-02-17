@@ -972,13 +972,11 @@ def list_project_files(lead_id):
         if rel in overrides:
             classification = overrides[rel]
 
-        thumb = render_first_page_thumbnail(path, dpi=48)
         results.append({
             "filename": os.path.basename(path),
             "rel_path": rel,
             "classification": classification,
             "size_kb": round(os.path.getsize(path) / 1024),
-            "thumbnail": thumb,
         })
 
     return {"files": results, "folder": folder}
