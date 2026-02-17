@@ -82,6 +82,7 @@ const detectProjectTags = (lead) => {
 const classColor = (cls) => {
   if (cls === 'plan') return 'bg-blue-500/20 text-blue-400 border-blue-500/40';
   if (cls === 'spec') return 'bg-green-500/20 text-green-400 border-green-500/40';
+  if (cls === 'ignore') return 'bg-red-500/20 text-red-400 border-red-500/40';
   return 'bg-slate-500/20 text-slate-400 border-slate-500/40';
 };
 
@@ -646,6 +647,23 @@ export default function LeadDashboard() {
     }
   };
 
+  const setBatchClassification = async (leadId, classification) => {
+    try {
+      const files = pointToFileModal?.files || [];
+      if (files.length === 0) return;
+      const overrides = {};
+      files.forEach(f => { overrides[f.rel_path] = classification; });
+      await fetch(`${API_BASE}/knowledge/files/${leadId}/override-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrides })
+      });
+      openPointToFile(leadId);
+    } catch (e) {
+      alert('Failed to batch classify');
+    }
+  };
+
   const triggerFolderPicker = async () => {
     try {
       const res = await fetch(`${API_BASE}/system/pick-folder`, { method: 'POST' });
@@ -877,35 +895,48 @@ export default function LeadDashboard() {
                     <div className="text-center py-12 text-slate-600 italic text-sm">No PDF files found. Make sure files have been downloaded.</div>
                   ) : (
                     <>
-                      {['plan', 'spec', 'other'].map(group => {
+                      {/* Batch action bar */}
+                      <div className="flex gap-1 mb-3 pb-2 border-b border-slate-700/50">
+                        <span className="text-[9px] text-slate-500 font-medium self-center mr-1">All:</span>
+                        {[['plan', 'Plans'], ['spec', 'Specs'], ['other', 'Other'], ['ignore', 'Ignore']].map(([cls, label]) => (
+                          <button
+                            key={cls}
+                            onClick={() => setBatchClassification(pointToFileModal.lead_id, cls)}
+                            className={`px-2 py-1 rounded text-[9px] font-semibold border transition ${classColor(cls)} hover:brightness-125`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {['plan', 'spec', 'other', 'ignore'].map(group => {
                         const groupFiles = pointToFileModal.files?.filter(f => f.classification === group) || [];
                         if (groupFiles.length === 0) return null;
                         return (
                           <div key={group} className="mb-4">
-                            <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 px-1 ${group === 'plan' ? 'text-blue-400' : group === 'spec' ? 'text-green-400' : 'text-slate-400'}`}>
-                              {group === 'plan' ? 'Plans' : group === 'spec' ? 'Specs' : 'Other'} ({groupFiles.length})
+                            <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 px-1 ${group === 'plan' ? 'text-blue-400' : group === 'spec' ? 'text-green-400' : group === 'ignore' ? 'text-red-400' : 'text-slate-400'}`}>
+                              {group === 'plan' ? 'Plans' : group === 'spec' ? 'Specs' : group === 'ignore' ? 'Ignored' : 'Other'} ({groupFiles.length})
                             </div>
                             {groupFiles.map((file, idx) => (
                               <div
                                 key={`${group}-${idx}`}
                                 onClick={() => selectFileForViewing(pointToFileModal.lead_id, file.rel_path)}
-                                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer mb-1 transition-all ${selectedFile === file.rel_path ? 'bg-blue-600/20 border border-blue-500/40 ring-1 ring-blue-500/30' : 'hover:bg-slate-700/50 border border-transparent'}`}
+                                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer mb-1 transition-all ${file.classification === 'ignore' ? 'opacity-50' : ''} ${selectedFile === file.rel_path ? 'bg-blue-600/20 border border-blue-500/40 ring-1 ring-blue-500/30' : 'hover:bg-slate-700/50 border border-transparent'}`}
                               >
                                 <div className="w-8 h-10 bg-slate-950 rounded flex-shrink-0 flex items-center justify-center">
-                                  <FileText size={14} className={`${file.classification === 'plan' ? 'text-blue-500' : file.classification === 'spec' ? 'text-green-500' : 'text-slate-600'}`} />
+                                  <FileText size={14} className={`${file.classification === 'plan' ? 'text-blue-500' : file.classification === 'spec' ? 'text-green-500' : file.classification === 'ignore' ? 'text-red-500' : 'text-slate-600'}`} />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-[11px] text-white font-medium truncate" title={file.filename}>{file.filename}</div>
+                                  <div className={`text-[11px] font-medium truncate ${file.classification === 'ignore' ? 'text-slate-500 line-through' : 'text-white'}`} title={file.filename}>{file.filename}</div>
                                   <div className="text-[10px] text-slate-500">{file.size_kb > 1024 ? `${(file.size_kb / 1024).toFixed(1)} MB` : `${file.size_kb} KB`}</div>
                                   {/* Classification buttons */}
                                   <div className="flex gap-1 mt-1">
-                                    {['plan', 'spec', 'other'].map(cls => (
+                                    {['plan', 'spec', 'other', 'ignore'].map(cls => (
                                       <button
                                         key={cls}
                                         onClick={(e) => { e.stopPropagation(); setFileClassification(pointToFileModal.lead_id, file.rel_path, cls); }}
                                         className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition ${file.classification === cls ? classColor(cls) + ' ring-1 ring-white/20' : 'bg-slate-700/50 text-slate-600 border-slate-600/50 hover:text-white hover:bg-slate-600'}`}
                                       >
-                                        {cls.charAt(0).toUpperCase() + cls.slice(1)}
+                                        {cls === 'ignore' ? 'Ign' : cls.charAt(0).toUpperCase() + cls.slice(1)}
                                       </button>
                                     ))}
                                   </div>
@@ -977,7 +1008,8 @@ export default function LeadDashboard() {
                     const plans = files.filter(f => f.classification === 'plan').length;
                     const specs = files.filter(f => f.classification === 'spec').length;
                     const other = files.filter(f => f.classification === 'other').length;
-                    return `${plans} Plan${plans !== 1 ? 's' : ''}, ${specs} Spec${specs !== 1 ? 's' : ''}, ${other} Other`;
+                    const ignored = files.filter(f => f.classification === 'ignore').length;
+                    return `${plans} Plan${plans !== 1 ? 's' : ''}, ${specs} Spec${specs !== 1 ? 's' : ''}, ${other} Other${ignored ? `, ${ignored} Ignored` : ''}`;
                   })()}
                 </div>
                 <div className="flex gap-3">
