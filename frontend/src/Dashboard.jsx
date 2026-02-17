@@ -20,6 +20,19 @@ const badgeColor = (badge) => {
   return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
 };
 
+const badgeHover = (badge, lead) => {
+  if (badge === 'NO FA') return 'No fire alarm scope found in documents';
+  if (badge === 'EXISTING') return 'Existing fire alarm system';
+  if (badge === 'NEW SYSTEM') return 'New fire alarm system installation';
+  if (badge === 'MODIFICATION') return 'Modification to existing system';
+  if (badge === 'REQ MFR') return lead?.knowledge_required_manufacturers?.length > 0 ? lead.knowledge_required_manufacturers.join(', ') : 'Required manufacturer specified';
+  if (badge === 'REQ VENDOR') return lead?.knowledge_required_vendors?.length > 0 ? lead.knowledge_required_vendors.join(', ') : 'Required vendor specified';
+  if (badge === 'COMPATIBLE MFR') return 'Specified manufacturer is compatible';
+  if (badge === 'INCOMPATIBLE MFR') return 'Specified manufacturer is NOT compatible';
+  if (badge === 'DEAL BREAKER') return lead?.knowledge_deal_breakers?.length > 0 ? lead.knowledge_deal_breakers.join(', ') : 'Deal breaker identified';
+  return badge;
+};
+
 const classColor = (cls) => {
   if (cls === 'plan') return 'bg-blue-500/20 text-blue-400 border-blue-500/40';
   if (cls === 'spec') return 'bg-green-500/20 text-green-400 border-green-500/40';
@@ -932,16 +945,9 @@ export default function LeadDashboard() {
                   {descriptionPopup.knowledge_badges && descriptionPopup.knowledge_badges.map((b, idx) => (
                     <span key={idx} className={`relative group text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)} cursor-default`}>
                       {b}
-                      {b === 'REQ MFR' && descriptionPopup.knowledge_required_manufacturers?.length > 0 && (
-                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-amber-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
-                          {descriptionPopup.knowledge_required_manufacturers.join(', ')}
-                        </span>
-                      )}
-                      {b === 'REQ VENDOR' && descriptionPopup.knowledge_required_vendors?.length > 0 && (
-                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-orange-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
-                          {descriptionPopup.knowledge_required_vendors.join(', ')}
-                        </span>
-                      )}
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                        {badgeHover(b, descriptionPopup)}
+                      </span>
                     </span>
                   ))}
                 </div>
@@ -1436,6 +1442,15 @@ const LeadTable = ({
                             )}
                           </span>
                         ))}
+                        {/* Knowledge Badges */}
+                        {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
+                          <span key={`kb-${idx}`} className={`relative group text-[10px] px-1.5 py-0.5 rounded border cursor-default ${badgeColor(b)}`}>
+                            {b}
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                              {badgeHover(b, lead)}
+                            </span>
+                          </span>
+                        ))}
                       </div>
                       {/* Short In-line Comment */}
                       <div className="mt-1">
@@ -1523,16 +1538,9 @@ const LeadTable = ({
                                 {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
                                   <span key={idx} className={`relative group text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)} cursor-default`}>
                                     {b}
-                                    {b === 'REQ MFR' && lead.knowledge_required_manufacturers?.length > 0 && (
-                                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-amber-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
-                                        {lead.knowledge_required_manufacturers.join(', ')}
-                                      </span>
-                                    )}
-                                    {b === 'REQ VENDOR' && lead.knowledge_required_vendors?.length > 0 && (
-                                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-orange-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
-                                        {lead.knowledge_required_vendors.join(', ')}
-                                      </span>
-                                    )}
+                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                                      {badgeHover(b, lead)}
+                                    </span>
                                   </span>
                                 ))}
                                 {lead.sprinklered && <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full border border-red-500/20">Sprinklered</span>}
