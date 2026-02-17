@@ -11,11 +11,11 @@ const isExpired = (bidDate) => {
 const badgeColor = (badge) => {
   if (badge === 'NO FA') return 'bg-red-500/20 text-red-400 border-red-500/30';
   if (badge === 'DEAL BREAKER') return 'bg-red-600/20 text-red-300 border-red-600/30';
-  if (badge === 'COMPATIBLE MFR') return 'bg-green-500/20 text-green-400 border-green-500/30';
-  if (badge === 'INCOMPATIBLE MFR') return 'bg-red-500/20 text-red-400 border-red-500/30';
+  if (badge === 'COMPATIBLE MFR' || badge === 'COMPAT MFR') return 'bg-green-500/20 text-green-400 border-green-500/30';
+  if (badge === 'INCOMPATIBLE MFR' || badge === 'INCOMPAT MFR') return 'bg-red-500/20 text-red-400 border-red-500/30';
   if (badge === 'EXISTING') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
   if (badge === 'NEW SYSTEM') return 'bg-green-500/20 text-green-400 border-green-500/30';
-  if (badge === 'MODIFICATION') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+  if (badge === 'MODIFICATION' || badge === 'MOD') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
   if (badge === 'VOICE') return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
   if (badge === 'MONITORING') return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
   if (badge === 'ACCESS CTRL') return 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30';
@@ -33,7 +33,7 @@ const badgeHover = (badge, lead) => {
       : 'Existing fire alarm system — check plans for panel manufacturer';
   }
   if (badge === 'NEW SYSTEM') return 'New fire alarm system installation — full scope';
-  if (badge === 'MODIFICATION') return 'Modification/retrofit to existing fire alarm system';
+  if (badge === 'MODIFICATION' || badge === 'MOD') return 'Modification/retrofit to existing fire alarm system';
   if (badge === 'REQ MFR') {
     const mfrs = lead?.knowledge_required_manufacturers;
     return mfrs?.length > 0 ? `Required: ${mfrs.join(', ')}` : 'Manufacturer specified in specs';
@@ -42,11 +42,11 @@ const badgeHover = (badge, lead) => {
     const vendors = lead?.knowledge_required_vendors;
     return vendors?.length > 0 ? `Required: ${vendors.join(', ')}` : 'Vendor specified in specs';
   }
-  if (badge === 'COMPATIBLE MFR') {
+  if (badge === 'COMPATIBLE MFR' || badge === 'COMPAT MFR') {
     const mfrs = lead?.knowledge_required_manufacturers;
     return mfrs?.length > 0 ? `Compatible — ${mfrs.join(', ')}` : 'Specified manufacturer is compatible with our products';
   }
-  if (badge === 'INCOMPATIBLE MFR') {
+  if (badge === 'INCOMPATIBLE MFR' || badge === 'INCOMPAT MFR') {
     const mfrs = lead?.knowledge_required_manufacturers;
     return mfrs?.length > 0 ? `NOT compatible — ${mfrs.join(', ')}` : 'Specified manufacturer is NOT compatible';
   }
@@ -1701,8 +1701,8 @@ const LeadTable = ({
                         {/* Bid risk flags */}
                         {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => (
                           <span key={`rf-${idx}`} className="relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default bg-red-500/10 text-red-400 border-red-500/20">
-                            {flag.length > 15 ? flag.slice(0, 13) + '...' : flag}
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">Bid risk: {flag}</span>
+                            {flag.split(/[\s\-\/]+/).slice(0, 2).join(' ').toUpperCase()}
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{flag}</span>
                           </span>
                         ))}
                       </div>

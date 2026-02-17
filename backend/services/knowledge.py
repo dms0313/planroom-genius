@@ -918,15 +918,15 @@ def _compute_badges(analysis):
     elif st == "new":
         badges.append("NEW SYSTEM")
     elif st == "modification":
-        badges.append("MODIFICATION")
+        badges.append("MOD")
     if analysis.get("required_vendors"):
         badges.append("REQ VENDOR")
     if analysis.get("required_manufacturers"):
         badges.append("REQ MFR")
     if analysis.get("manufacturer_compatible"):
-        badges.append("COMPATIBLE MFR")
+        badges.append("COMPAT MFR")
     if analysis.get("manufacturer_incompatible"):
-        badges.append("INCOMPATIBLE MFR")
+        badges.append("INCOMPAT MFR")
     if analysis.get("deal_breakers"):
         badges.append("DEAL BREAKER")
     # Scope signal badges
