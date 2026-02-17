@@ -818,60 +818,76 @@ def _call_gemini(images, context=""):
         "generationConfig": {"temperature": 0.1},
     }
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-    
-    max_retries = 5
+    # Try preferred model first, fall back to secondary if quota/availability issues
+    models = [
+        "gemini-3-pro-preview",
+        "gemini-2.5-flash",
+    ]
+    base_url = "https://generativelanguage.googleapis.com/v1beta/models"
+
+    max_retries = 3
     base_delay = 2.0
 
-    for attempt in range(max_retries):
-        try:
-            res = req.post(url, params={"key": api_key}, json=payload, timeout=180)
-            res.raise_for_status()
-            data = res.json()
-            # If successful, parse and return
-            if "candidates" in data and data["candidates"]:
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                # Strip markdown fences if Gemini wraps them
-                text = text.strip()
-                if text.startswith("```"):
-                    text = re.sub(r"^```(?:json)?\s*", "", text)
-                    text = re.sub(r"\s*```$", "", text)
-                try:
-                    parsed = json.loads(text)
-                    return _normalize_analysis_result(parsed)
-                except json.JSONDecodeError:
-                    logger.warning("Gemini returned non-JSON, using deterministic fallback structure")
-                    return _normalize_analysis_result({}, fallback_notes=text)
-            else:
-                 logger.warning(f"Gemini response structure unexpected: {data}")
-                 return _normalize_analysis_result({}, fallback_notes="Gemini response structure unexpected")
+    for model_idx, model in enumerate(models):
+        url = f"{base_url}/{model}:generateContent"
 
-        except req.exceptions.HTTPError as e:
-            status_code = e.response.status_code if e.response is not None else 0
-            response_text = ""
+        for attempt in range(max_retries):
             try:
-                response_text = e.response.text[:500] if e.response is not None else ""
-            except Exception:
-                pass
-            if status_code == 429:
+                res = req.post(url, params={"key": api_key}, json=payload, timeout=180)
+                res.raise_for_status()
+                data = res.json()
+                # If successful, parse and return
+                if "candidates" in data and data["candidates"]:
+                    text = data["candidates"][0]["content"]["parts"][0]["text"]
+                    # Strip markdown fences if Gemini wraps them
+                    text = text.strip()
+                    if text.startswith("```"):
+                        text = re.sub(r"^```(?:json)?\s*", "", text)
+                        text = re.sub(r"\s*```$", "", text)
+                    try:
+                        parsed = json.loads(text)
+                        logger.info(f"Gemini analysis complete using {model}")
+                        return _normalize_analysis_result(parsed)
+                    except json.JSONDecodeError:
+                        logger.warning("Gemini returned non-JSON, using deterministic fallback structure")
+                        return _normalize_analysis_result({}, fallback_notes=text)
+                else:
+                     logger.warning(f"Gemini response structure unexpected: {data}")
+                     return _normalize_analysis_result({}, fallback_notes="Gemini response structure unexpected")
+
+            except req.exceptions.HTTPError as e:
+                status_code = e.response.status_code if e.response is not None else 0
+                response_text = ""
+                try:
+                    response_text = e.response.text[:500] if e.response is not None else ""
+                except Exception:
+                    pass
+                if status_code == 429:
+                    # If quota exhausted, try fallback model immediately
+                    if "free_tier" in response_text or "quota" in response_text.lower():
+                        logger.warning(f"{model} quota issue, falling back to next model: {response_text[:200]}")
+                        break  # break retry loop, try next model
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"Gemini 429 ({model}): retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
+                elif status_code == 404:
+                    logger.warning(f"{model} not available (404), trying next model")
+                    break  # try next model
+                else:
+                    logger.error(f"Gemini HTTP {status_code}: {response_text}")
+                    return _normalize_analysis_result({}, fallback_notes=f"Gemini HTTP error {status_code}")
+            except (req.exceptions.Timeout, req.exceptions.ConnectionError) as e:
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
-                logger.warning(f"Gemini 429: {response_text}. Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
+                logger.warning(f"Gemini timeout ({model}). Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries}): {e}")
                 time.sleep(delay)
                 continue
-            else:
-                logger.error(f"Gemini HTTP {status_code}: {response_text}")
-                return _normalize_analysis_result({}, fallback_notes=f"Gemini HTTP error {status_code}")
-        except (req.exceptions.Timeout, req.exceptions.ConnectionError) as e:
-            delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
-            logger.warning(f"Gemini timeout/connection error. Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries}): {e}")
-            time.sleep(delay)
-            continue
-        except Exception as e:
-            logger.warning(f"Gemini call failed: {e}")
-            return _normalize_analysis_result({}, fallback_notes=f"Gemini call failed: {e}")
+            except Exception as e:
+                logger.warning(f"Gemini call failed ({model}): {e}")
+                return _normalize_analysis_result({}, fallback_notes=f"Gemini call failed: {e}")
 
-    logger.error("Gemini failed after max retries.")
-    return _normalize_analysis_result({}, fallback_notes="Gemini failed after retries")
+    logger.error("Gemini failed on all models.")
+    return _normalize_analysis_result({}, fallback_notes="Gemini failed on all models")
 
 
 def _heuristic_analysis(all_text):
