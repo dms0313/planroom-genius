@@ -33,16 +33,17 @@ def is_port_in_use(port):
 
 def get_python_executable():
     """Get the path to the Python executable in venv"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     current_platform = get_platform()
     if current_platform == "windows":
-        return os.path.join("backend", "venv", "Scripts", "python.exe")
+        return os.path.join(base_dir, "backend", "venv", "Scripts", "python.exe")
     else:
         # On some Linux distros (Raspberry Pi OS Bookworm), venv only creates python3
         for name in ["python", "python3"]:
-            path = os.path.join("backend", "venv", "bin", name)
+            path = os.path.join(base_dir, "backend", "venv", "bin", name)
             if os.path.exists(path):
                 return path
-        return os.path.join("backend", "venv", "bin", "python3")
+        return os.path.join(base_dir, "backend", "venv", "bin", "python3")
 
 def get_npm_executable():
     """Get the npm command"""
@@ -72,9 +73,10 @@ def start_backend():
 
         # Start backend process - show output for debugging
         # Don't pipe stdout/stderr so we can see scraper output
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         backend_process = subprocess.Popen(
             [python_exe, "api.py"],
-            cwd="backend",
+            cwd=os.path.join(base_dir, "backend"),
             # Show backend output in console for debugging scrapers
             stdout=None,  # Inherit from parent (show in console)
             stderr=None,  # Inherit from parent (show in console)
@@ -108,9 +110,10 @@ def start_frontend():
             return False
 
         # Start frontend process
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         frontend_process = subprocess.Popen(
             [npm_cmd, "run", "dev", "--", "--host", "0.0.0.0"],
-            cwd="frontend",
+            cwd=os.path.join(base_dir, "frontend"),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True
