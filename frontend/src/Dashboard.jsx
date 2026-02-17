@@ -372,12 +372,17 @@ export default function LeadDashboard() {
     }
   };
 
-  const triggerSingleScan = async (leadId) => {
+  const triggerSingleScan = async (leadId, thinking = false) => {
     setScanningIds(prev => new Set(prev).add(leadId));
     try {
-      await fetch(`${API_BASE}/knowledge/scan/${leadId}`, { method: 'POST' });
-      // Poll briefly
-      setTimeout(() => fetchLeads(), 5000);
+      const url = thinking
+        ? `${API_BASE}/knowledge/scan/${leadId}?thinking=true`
+        : `${API_BASE}/knowledge/scan/${leadId}`;
+      await fetch(url, { method: 'POST' });
+      // Poll — thinking scans take longer
+      const pollDelay = thinking ? 15000 : 5000;
+      const doneDelay = thinking ? 45000 : 12000;
+      setTimeout(() => fetchLeads(), pollDelay);
       setTimeout(() => {
         fetchLeads();
         setScanningIds(prev => {
@@ -385,7 +390,7 @@ export default function LeadDashboard() {
           next.delete(leadId);
           return next;
         });
-      }, 12000);
+      }, doneDelay);
     } catch (e) {
       console.error("Failed to trigger single scan", e);
       setScanningIds(prev => {
@@ -1820,6 +1825,18 @@ const LeadTable = ({
                               </button>
                               <button onClick={() => openPointToFile(lead.id)} className="px-4 py-2 bg-slate-700 hover:bg-orange-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
                                 <FolderOpen size={14} /> Browse Files
+                              </button>
+                              <button
+                                onClick={() => triggerSingleScan(lead.id, true)}
+                                disabled={scanningIds.has(lead.id)}
+                                className="px-4 py-2 bg-purple-700 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Deep analysis with extended thinking"
+                              >
+                                {scanningIds.has(lead.id) ? (
+                                  <><svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Scanning...</>
+                                ) : (
+                                  <><Brain size={14} /> Deep Scan</>
+                                )}
                               </button>
                             </div>
                           </div>
