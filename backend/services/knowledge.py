@@ -1108,7 +1108,7 @@ def get_page_count(lead_id, rel_path):
 
 
 def get_title_thumbnail(lead_id):
-    """Get first page thumbnail of the first PDF found for this lead."""
+    """Get first page thumbnail of the first plan PDF (or first PDF as fallback)."""
     leads = load_leads()
     lead = next((l for l in leads if l.get("id") == lead_id), None)
     if not lead:
@@ -1116,10 +1116,28 @@ def get_title_thumbnail(lead_id):
     folder = _find_download_folder_for_lead(lead)
     if not folder:
         return {"thumbnail": None}
-    pdfs = sorted(glob.glob(os.path.join(folder, "**/*.pdf"), recursive=True))
-    if not pdfs:
+
+    # Prefer the first file classified as "plan"
+    plan_files, spec_files, other_files = _classify_pdfs(folder)
+
+    # Apply manual overrides
+    cache = _load_cache()
+    folder_name = os.path.basename(folder)
+    overrides = cache.get(folder_name, {}).get("overrides", {})
+    if overrides:
+        plan_files, spec_files, other_files = _apply_overrides(
+            folder, plan_files, spec_files, other_files, overrides
+        )
+
+    target = plan_files[0] if plan_files else None
+    if not target:
+        # Fallback to first PDF found
+        all_pdfs = sorted(glob.glob(os.path.join(folder, "**/*.pdf"), recursive=True))
+        target = all_pdfs[0] if all_pdfs else None
+
+    if not target:
         return {"thumbnail": None}
-    thumb = render_first_page_thumbnail(pdfs[0], dpi=72)
+    thumb = render_first_page_thumbnail(target, dpi=72)
     return {"thumbnail": thumb}
 
 
