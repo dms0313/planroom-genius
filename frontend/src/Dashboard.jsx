@@ -2,135 +2,128 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, EyeOff, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen, Copy, Check } from 'lucide-react';
 import TakeoffPanel from './TakeoffPanel';
 
-// Build markdown from takeoff data for Notion clipboard paste
-const buildTakeoffMarkdown = (lead) => {
-  const lines = [];
-  lines.push(`# ${lead.name || 'Project'} — FA Takeoff`);
-  lines.push('');
+// Build HTML from takeoff data for rich-text clipboard copy (Notion paste)
+const buildTakeoffHtml = (lead) => {
+  const h = [];
+  const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const li = (label, val) => `<li><strong>${esc(label)}:</strong> ${esc(val)}</li>`;
+  const bullet = (text) => `<li>${esc(text)}</li>`;
+
+  h.push(`<h1>${esc(lead.name || 'Project')} — FA Takeoff</h1>`);
 
   // Project Snapshot
   const snap = lead.takeoff_snapshot;
   if (snap) {
-    lines.push('## Project Snapshot');
-    if (snap.scope_summary) lines.push(snap.scope_summary);
-    lines.push('');
+    h.push('<h2>Project Snapshot</h2>');
+    if (snap.scope_summary) h.push(`<p>${esc(snap.scope_summary)}</p>`);
     const pd = snap.project_details || {};
     const fields = [
-      ['Project', pd.project_name],
-      ['Address', pd.project_address || pd.project_location],
-      ['Type', pd.project_type],
-      ['Building', pd.building_type || pd.occupancy_type],
+      ['Project', pd.project_name], ['Address', pd.project_address || pd.project_location],
+      ['Type', pd.project_type], ['Building', pd.building_type || pd.occupancy_type],
       ['Codes', Array.isArray(pd.applicable_codes) ? pd.applicable_codes.join(', ') : pd.applicable_codes],
       ['Occupancy', pd.occupancy_classification],
     ].filter(([, v]) => v);
-    if (fields.length) {
-      fields.forEach(([k, v]) => lines.push(`- **${k}:** ${v}`));
-      lines.push('');
-    }
+    if (fields.length) h.push('<ul>' + fields.map(([k, v]) => li(k, v)).join('') + '</ul>');
   }
 
   // FA Briefing
   const fab = lead.takeoff_fa_briefing;
   if (fab) {
-    lines.push('## Fire Alarm Briefing');
+    h.push('<h2>Fire Alarm Briefing</h2>');
     const fa = fab.fire_alarm_details || {};
     const items = [
-      ['Panel Status', fa.panel_status || fa.existing_system],
-      ['Sprinkler', fa.sprinkler_status],
-      ['Voice Evac', fa.voice_evac || fa.voice_required],
-      ['CO Detection', fa.co_detection],
+      ['Panel Status', fa.panel_status || fa.existing_system], ['Sprinkler', fa.sprinkler_status],
+      ['Voice Evac', fa.voice_evac || fa.voice_required], ['CO Detection', fa.co_detection],
     ].filter(([, v]) => v);
-    if (items.length) {
-      items.forEach(([k, v]) => lines.push(`- **${k}:** ${v}`));
-      lines.push('');
-    }
+    if (items.length) h.push('<ul>' + items.map(([k, v]) => li(k, v)).join('') + '</ul>');
     const sp = fab.specifications || {};
     const specItems = [
-      ['Control Panel', sp.CONTROL_PANEL],
-      ['System Type', sp.SYSTEM_TYPE],
-      ['Wiring', sp.WIRING_CLASS],
-      ['Monitoring', sp.MONITORING],
+      ['Control Panel', sp.CONTROL_PANEL], ['System Type', sp.SYSTEM_TYPE],
+      ['Wiring', sp.WIRING_CLASS], ['Monitoring', sp.MONITORING],
       ['Audio', sp.AUDIO_SYSTEM],
       ['Approved Mfrs', Array.isArray(sp.APPROVED_MANUFACTURERS) ? sp.APPROVED_MANUFACTURERS.join(', ') : sp.APPROVED_MANUFACTURERS],
     ].filter(([, v]) => v && v !== 'unknown');
     if (specItems.length) {
-      lines.push('**Key Specs**');
-      specItems.forEach(([k, v]) => lines.push(`- **${k}:** ${v}`));
-      lines.push('');
+      h.push('<p><strong>Key Specs</strong></p>');
+      h.push('<ul>' + specItems.map(([k, v]) => li(k, v)).join('') + '</ul>');
     }
   }
 
   // Mechanical Coordination
   const mech = lead.takeoff_mechanical;
   if (mech && Object.keys(mech).length) {
-    lines.push('## Mechanical Coordination');
+    h.push('<h2>Mechanical Coordination</h2>');
     const items = [
       ['Duct Detectors/RTU', mech.duct_detectors_per_rtu || mech.duct_detectors],
       ['Dampers', mech.dampers || mech.fire_smoke_dampers],
       ['Access Doors', mech.access_control_doors || mech.access_doors],
     ].filter(([, v]) => v);
-    if (items.length) items.forEach(([k, v]) => lines.push(`- **${k}:** ${v}`));
-    if (Array.isArray(mech.equipment) && mech.equipment.length) {
-      mech.equipment.forEach(eq => {
-        const name = eq.name || eq.type || 'Unit';
-        lines.push(`- ${name}${eq.cfm ? ` (${eq.cfm} CFM)` : ''}`);
-      });
+    const eqItems = Array.isArray(mech.equipment) ? mech.equipment.map(eq => {
+      const name = eq.name || eq.type || 'Unit';
+      return `${name}${eq.cfm ? ` (${eq.cfm} CFM)` : ''}`;
+    }) : [];
+    if (items.length || eqItems.length) {
+      h.push('<ul>' + items.map(([k, v]) => li(k, v)).join('') + eqItems.map(t => bullet(t)).join('') + '</ul>');
     }
-    lines.push('');
   }
 
   // Fire Alarm Notes
   const notes = lead.takeoff_fa_notes;
   if (notes && notes.length) {
-    lines.push('## Fire Alarm Notes');
+    h.push('<h2>Fire Alarm Notes</h2><ul>');
     notes.forEach(n => {
       const page = n.page ? `[p${n.page}] ` : '';
       const content = n.content || (typeof n === 'string' ? n : JSON.stringify(n));
-      lines.push(`- ${page}${content}`);
+      h.push(bullet(page + content));
     });
-    lines.push('');
+    h.push('</ul>');
   }
 
-  // Pitfalls
+  // Pitfalls + Estimating Notes
   const pitfalls = lead.takeoff_pitfalls;
   const estNotes = lead.takeoff_estimating_notes;
   if ((pitfalls && pitfalls.length) || (estNotes && estNotes.length)) {
-    lines.push('## Conflicts, Pitfalls & Advice');
-    if (pitfalls && pitfalls.length) {
-      pitfalls.forEach(p => {
-        const text = typeof p === 'string' ? p : p.content || JSON.stringify(p);
-        lines.push(`- ${text}`);
-      });
-    }
-    if (estNotes && estNotes.length) {
-      estNotes.forEach(n => {
-        const text = typeof n === 'string' ? n : n.content || JSON.stringify(n);
-        lines.push(`- ${text}`);
-      });
-    }
-    lines.push('');
+    h.push('<h2>Conflicts, Pitfalls &amp; Advice</h2><ul>');
+    (pitfalls || []).forEach(p => h.push(bullet(typeof p === 'string' ? p : p.content || JSON.stringify(p))));
+    (estNotes || []).forEach(n => h.push(bullet(typeof n === 'string' ? n : n.content || JSON.stringify(n))));
+    h.push('</ul>');
   }
 
   // Competitive Advantages
   const adv = lead.takeoff_competitive_advantages;
   if (adv && adv.length) {
-    lines.push('## Competitive Advantages');
-    adv.forEach(a => {
-      const text = typeof a === 'string' ? a : a.content || JSON.stringify(a);
-      lines.push(`- ${text}`);
-    });
-    lines.push('');
+    h.push('<h2>Competitive Advantages</h2><ul>');
+    adv.forEach(a => h.push(bullet(typeof a === 'string' ? a : a.content || JSON.stringify(a))));
+    h.push('</ul>');
   }
 
   // Project Tags
   const tags = lead.takeoff_project_tags;
   if (tags && tags.length) {
-    lines.push('**Tags:** ' + tags.map(t => t.label).join(', '));
-    lines.push('');
+    h.push(`<p><strong>Tags:</strong> ${esc(tags.map(t => t.label).join(', '))}</p>`);
   }
 
-  lines.push(`*Deep Scan: ${new Date(lead.takeoff_timestamp).toLocaleDateString()}*`);
-  return lines.join('\n');
+  h.push(`<p><em>Deep Scan: ${new Date(lead.takeoff_timestamp).toLocaleDateString()}</em></p>`);
+  return h.join('');
+};
+
+// Copy rich HTML to clipboard via hidden element + selection (works on all browsers)
+const copyRichHtml = (html) => {
+  const el = document.createElement('div');
+  el.innerHTML = html;
+  el.style.position = 'fixed';
+  el.style.left = '-9999px';
+  el.style.top = '0';
+  el.style.opacity = '0';
+  document.body.appendChild(el);
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  document.execCommand('copy');
+  sel.removeAllRanges();
+  document.body.removeChild(el);
 };
 
 // Utility functions moved outside to prevent re-creation
@@ -1327,27 +1320,8 @@ export default function LeadDashboard() {
                         <span className="text-sm font-semibold text-purple-300">Deep Scan Results</span>
                       </div>
                       <button
-                        onClick={async () => {
-                          const md = buildTakeoffMarkdown(descriptionPopup);
-                          try {
-                            await navigator.clipboard.write([
-                              new ClipboardItem({
-                                'text/plain': new Blob([md], { type: 'text/plain' }),
-                                'text/html': new Blob([
-                                  md.replace(/^# (.+)$/gm, '<h1>$1</h1>')
-                                    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-                                    .replace(/^\*\*(.+?)\*\*$/gm, '<p><strong>$1</strong></p>')
-                                    .replace(/^- \*\*(.+?):\*\* (.+)$/gm, '<li><strong>$1:</strong> $2</li>')
-                                    .replace(/^- (.+)$/gm, '<li>$1</li>')
-                                    .replace(/(<li>.*<\/li>\n?)+/gs, m => '<ul>' + m + '</ul>')
-                                    .replace(/^\*(.+)\*$/gm, '<p><em>$1</em></p>')
-                                    .replace(/^(?!<[hpul])([\w].+)$/gm, '<p>$1</p>')
-                                ], { type: 'text/html' }),
-                              }),
-                            ]);
-                          } catch {
-                            await navigator.clipboard.writeText(md);
-                          }
+                        onClick={() => {
+                          copyRichHtml(buildTakeoffHtml(descriptionPopup));
                           setDescriptionPopup(prev => ({ ...prev, _copied: true }));
                           setTimeout(() => setDescriptionPopup(prev => prev ? ({ ...prev, _copied: false }) : prev), 2000);
                         }}
