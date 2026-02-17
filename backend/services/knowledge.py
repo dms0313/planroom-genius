@@ -847,14 +847,20 @@ def _call_gemini(images, context=""):
                  return _normalize_analysis_result({}, fallback_notes="Gemini response structure unexpected")
 
         except req.exceptions.HTTPError as e:
-            if e.response.status_code == 429:
+            status_code = e.response.status_code if e.response is not None else 0
+            response_text = ""
+            try:
+                response_text = e.response.text[:500] if e.response is not None else ""
+            except Exception:
+                pass
+            if status_code == 429:
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
-                logger.warning(f"Gemini rate limit hit (429). Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
+                logger.warning(f"Gemini 429: {response_text}. Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries})")
                 time.sleep(delay)
                 continue
             else:
-                logger.error(f"Gemini HTTP error: {e}")
-                return _normalize_analysis_result({}, fallback_notes=f"Gemini HTTP error: {e}")
+                logger.error(f"Gemini HTTP {status_code}: {response_text}")
+                return _normalize_analysis_result({}, fallback_notes=f"Gemini HTTP error {status_code}")
         except (req.exceptions.Timeout, req.exceptions.ConnectionError) as e:
             delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
             logger.warning(f"Gemini timeout/connection error. Retrying in {delay:.2f}s... (Attempt {attempt+1}/{max_retries}): {e}")
