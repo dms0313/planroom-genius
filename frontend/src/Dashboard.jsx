@@ -1847,7 +1847,7 @@ const LeadTable = ({
                               </div>
                             </div>
 
-                            <div className="flex flex-col gap-2">
+                            <div className="flex flex-row gap-2">
                               <button onClick={() => setDescriptionPopup(lead)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
                                 <Eye size={14} /> View Full Details
                               </button>

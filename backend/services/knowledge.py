@@ -23,6 +23,43 @@ BACKEND_DIR = os.path.dirname(os.path.dirname(__file__))
 CACHE_FILE = os.path.join(BACKEND_DIR, "knowledge_cache.json")
 DOWNLOAD_DIR = ScraperConfig.DOWNLOAD_DIR
 
+# ---------------------------------------------------------------------------
+# Disk-based thumbnail / page-view cache
+# ---------------------------------------------------------------------------
+THUMB_CACHE_DIR = os.path.join(BACKEND_DIR, "thumbnail_cache")
+os.makedirs(THUMB_CACHE_DIR, exist_ok=True)
+
+
+def _thumb_cache_key(pdf_path, page, dpi, fmt="png"):
+    """Return a filename-safe hash incorporating pdf path, page, dpi, format, and mtime."""
+    try:
+        mtime = os.path.getmtime(pdf_path)
+    except OSError:
+        mtime = 0
+    raw = f"{os.path.abspath(pdf_path)}|{page}|{dpi}|{fmt}|{mtime}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest() + f".{fmt}"
+
+
+def _get_cached_thumb(key):
+    """Return cached image bytes or None."""
+    path = os.path.join(THUMB_CACHE_DIR, key)
+    if os.path.isfile(path):
+        try:
+            with open(path, "rb") as f:
+                return f.read()
+        except OSError:
+            return None
+    return None
+
+
+def _put_cached_thumb(key, data):
+    """Write image bytes to the cache directory."""
+    try:
+        with open(os.path.join(THUMB_CACHE_DIR, key), "wb") as f:
+            f.write(data)
+    except OSError as e:
+        logger.debug(f"Failed to write thumbnail cache: {e}")
+
 _status = {
     "running": False,
     "last_run": None,
@@ -589,9 +626,16 @@ def _render_pages(pdf_path, page_indices, dpi=150, as_jpeg=False):
 
 def render_first_page_thumbnail(pdf_path, dpi=72):
     """Render page 0 as a low-res thumbnail. Returns base64 PNG string or None."""
+    cache_key = _thumb_cache_key(pdf_path, 0, dpi, "png")
+    cached = _get_cached_thumb(cache_key)
+    if cached is not None:
+        return base64.b64encode(cached).decode("utf-8")
+
     imgs = _render_pages(pdf_path, [0], dpi=dpi)
     if imgs:
-        return base64.b64encode(imgs[0]["png_bytes"]).decode("utf-8")
+        png_bytes = imgs[0]["png_bytes"]
+        _put_cached_thumb(cache_key, png_bytes)
+        return base64.b64encode(png_bytes).decode("utf-8")
     return None
 
 
@@ -1064,6 +1108,12 @@ def render_page_for_viewing(lead_id, rel_path, page=0, dpi=150):
     if not os.path.isfile(pdf_path):
         return None
 
+    # Check disk cache
+    cache_key = _thumb_cache_key(pdf_path, page, dpi, "png")
+    cached = _get_cached_thumb(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         doc = fitz.open(pdf_path)
         if page < 0 or page >= len(doc):
@@ -1072,6 +1122,7 @@ def render_page_for_viewing(lead_id, rel_path, page=0, dpi=150):
         pix = doc.load_page(page).get_pixmap(dpi=dpi)
         png_bytes = pix.tobytes("png")
         doc.close()
+        _put_cached_thumb(cache_key, png_bytes)
         return png_bytes
     except Exception as e:
         logger.warning(f"Failed to render page {page} of {rel_path}: {e}")
