@@ -984,6 +984,70 @@ def list_project_files(lead_id):
     return {"files": results, "folder": folder}
 
 
+def render_page_for_viewing(lead_id, rel_path, page=0, dpi=150):
+    """Render a single page of a PDF at viewable resolution. Returns PNG bytes or None."""
+    try:
+        import fitz
+    except ImportError:
+        logger.error("PyMuPDF (fitz) not installed")
+        return None
+
+    leads = load_leads()
+    lead = next((l for l in leads if l.get("id") == lead_id), None)
+    if not lead:
+        return None
+
+    folder = _find_download_folder_for_lead(lead)
+    if not folder:
+        return None
+
+    pdf_path = os.path.join(folder, rel_path)
+    if not os.path.isfile(pdf_path):
+        return None
+
+    try:
+        doc = fitz.open(pdf_path)
+        if page < 0 or page >= len(doc):
+            doc.close()
+            return None
+        pix = doc.load_page(page).get_pixmap(dpi=dpi)
+        png_bytes = pix.tobytes("png")
+        doc.close()
+        return png_bytes
+    except Exception as e:
+        logger.warning(f"Failed to render page {page} of {rel_path}: {e}")
+        return None
+
+
+def get_page_count(lead_id, rel_path):
+    """Return total page count for a PDF."""
+    try:
+        import fitz
+    except ImportError:
+        return 0
+
+    leads = load_leads()
+    lead = next((l for l in leads if l.get("id") == lead_id), None)
+    if not lead:
+        return 0
+
+    folder = _find_download_folder_for_lead(lead)
+    if not folder:
+        return 0
+
+    pdf_path = os.path.join(folder, rel_path)
+    if not os.path.isfile(pdf_path):
+        return 0
+
+    try:
+        doc = fitz.open(pdf_path)
+        count = len(doc)
+        doc.close()
+        return count
+    except Exception:
+        return 0
+
+
 def get_title_thumbnail(lead_id):
     """Get first page thumbnail of the first PDF found for this lead."""
     leads = load_leads()
