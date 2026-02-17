@@ -567,12 +567,20 @@ def _render_pages(pdf_path, page_indices, dpi=150, as_jpeg=False):
                 continue
             page = doc.load_page(idx)
             pix = page.get_pixmap(dpi=dpi)
+            png_bytes = pix.tobytes("png")
             if as_jpeg:
-                # Use fitz built-in JPEG output — no PIL dependency
-                img_bytes = pix.tobytes("jpeg")
-                images.append({"page_index": idx, "png_bytes": img_bytes, "mime_type": "image/jpeg"})
+                try:
+                    from PIL import Image
+                    import io
+                    img = Image.open(io.BytesIO(png_bytes))
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=60, optimize=True)
+                    images.append({"page_index": idx, "png_bytes": buf.getvalue(), "mime_type": "image/jpeg"})
+                except ImportError:
+                    logger.warning("Pillow not installed, sending PNG to Gemini (install Pillow for smaller payloads)")
+                    images.append({"page_index": idx, "png_bytes": png_bytes, "mime_type": "image/png"})
             else:
-                images.append({"page_index": idx, "png_bytes": pix.tobytes("png"), "mime_type": "image/png"})
+                images.append({"page_index": idx, "png_bytes": png_bytes, "mime_type": "image/png"})
         doc.close()
     except Exception as e:
         logger.warning(f"Render failed for {pdf_path}: {e}")
