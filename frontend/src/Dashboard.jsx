@@ -163,6 +163,11 @@ export default function LeadDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [pointToFileModal, setPointToFileModal] = useState(null); // {lead_id, files}
   const [pointToFileLoading, setPointToFileLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null); // rel_path of selected file
+  const [viewerPage, setViewerPage] = useState(0);
+  const [viewerPageCount, setViewerPageCount] = useState(0);
+  const [viewerImageUrl, setViewerImageUrl] = useState(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
   const [scanningIds, setScanningIds] = useState(new Set());
   const [folderBrowserModal, setFolderBrowserModal] = useState(false);
   const [folderBrowserPath, setFolderBrowserPath] = useState('');
@@ -590,9 +595,13 @@ export default function LeadDashboard() {
     try { await fetch(`${API_BASE}/console-logs`, { method: 'DELETE' }); setConsoleLogs([]); } catch (e) { }
   };
 
-  // Point-to-File
+  // Point-to-File / File Browser
   const openPointToFile = async (leadId) => {
     setPointToFileLoading(true);
+    setSelectedFile(null);
+    setViewerPage(0);
+    setViewerPageCount(0);
+    setViewerImageUrl(null);
     try {
       const res = await fetch(`${API_BASE}/knowledge/files/${leadId}`);
       const data = await res.json();
@@ -601,6 +610,26 @@ export default function LeadDashboard() {
       setPointToFileModal({ lead_id: leadId, files: [], error: 'Failed to load files' });
     }
     setPointToFileLoading(false);
+  };
+
+  const selectFileForViewing = async (leadId, relPath) => {
+    setSelectedFile(relPath);
+    setViewerPage(0);
+    setViewerLoading(true);
+    setViewerImageUrl(null);
+    try {
+      const pcRes = await fetch(`${API_BASE}/knowledge/files/${leadId}/pagecount/${encodeURIComponent(relPath)}`);
+      const pcData = await pcRes.json();
+      setViewerPageCount(pcData.pages || 0);
+    } catch { setViewerPageCount(0); }
+    setViewerImageUrl(`${API_BASE}/knowledge/files/${leadId}/view/${encodeURIComponent(relPath)}?page=0&dpi=150`);
+    setViewerLoading(false);
+  };
+
+  const navigateViewerPage = (leadId, relPath, newPage) => {
+    if (newPage < 0 || newPage >= viewerPageCount) return;
+    setViewerPage(newPage);
+    setViewerImageUrl(`${API_BASE}/knowledge/files/${leadId}/view/${encodeURIComponent(relPath)}?page=${newPage}&dpi=150`);
   };
 
   const setFileClassification = async (leadId, relPath, classification) => {
@@ -824,55 +853,141 @@ export default function LeadDashboard() {
           {activeTab === 'takeoff' && <TakeoffPanel />}
         </div>
 
-        {/* =================== POINT TO FILE MODAL =================== */}
+        {/* =================== FILE BROWSER MODAL =================== */}
         {pointToFileModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setPointToFileModal(null)}>
-            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-6 max-w-4xl w-full mx-4 shadow-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-              <div className="flex justify-between items-start mb-6">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => { setPointToFileModal(null); setSelectedFile(null); }}>
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-6 max-w-7xl w-full mx-4 shadow-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex justify-between items-start mb-4">
                 <div>
-                  <h3 className="text-xl font-bold text-white flex items-center gap-2"><Eye className="text-blue-400" size={20} />Point to File</h3>
-                  <p className="text-xs text-slate-500 mt-1">Click a classification badge to change how a file is identified</p>
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2"><FolderOpen className="text-blue-400" size={20} />File Browser</h3>
+                  <p className="text-xs text-slate-500 mt-1">Click a file to preview. Use classification buttons to tag files.</p>
                 </div>
-                <button onClick={() => setPointToFileModal(null)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
+                <button onClick={() => { setPointToFileModal(null); setSelectedFile(null); }} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
               </div>
 
-              {pointToFileModal.error && <div className="text-red-400 text-sm mb-4">{pointToFileModal.error}</div>}
+              {pointToFileModal.error && <div className="text-red-400 text-sm mb-3">{pointToFileModal.error}</div>}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {pointToFileModal.files?.map((file, idx) => (
-                  <div key={idx} className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden hover:border-slate-600 transition">
-                    {/* Thumbnail */}
-                    <div className="h-40 bg-slate-950 flex items-center justify-center overflow-hidden">
-                      {file.thumbnail ? (
-                        <img src={`data:image/png;base64,${file.thumbnail}`} alt={file.filename} className="max-h-full max-w-full object-contain" />
-                      ) : (
-                        <FileText size={48} className="text-slate-700" />
-                      )}
-                    </div>
-                    {/* Info */}
-                    <div className="p-3">
-                      <div className="text-xs text-white font-medium truncate mb-1" title={file.filename}>{file.filename}</div>
-                      <div className="text-[10px] text-slate-500 mb-2">{file.size_kb} KB</div>
-                      {/* Classification buttons */}
-                      <div className="flex gap-1.5">
-                        {['plan', 'spec', 'other'].map(cls => (
-                          <button key={cls} onClick={() => setFileClassification(pointToFileModal.lead_id, file.rel_path, cls)} className={`px-2 py-1 rounded text-[10px] font-semibold border transition ${file.classification === cls ? classColor(cls) + ' ring-1 ring-white/20' : 'bg-slate-700 text-slate-500 border-slate-600 hover:text-white'}`}>
-                            {cls.charAt(0).toUpperCase() + cls.slice(1)}
-                          </button>
-                        ))}
+              {/* Two-panel layout */}
+              <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
+                {/* Left panel - File list */}
+                <div className="w-80 flex-shrink-0 overflow-y-auto border border-slate-700 rounded-xl bg-slate-800/50 p-3">
+                  {pointToFileModal.files?.length === 0 ? (
+                    <div className="text-center py-12 text-slate-600 italic text-sm">No PDF files found. Make sure files have been downloaded.</div>
+                  ) : (
+                    <>
+                      {['plan', 'spec', 'other'].map(group => {
+                        const groupFiles = pointToFileModal.files?.filter(f => f.classification === group) || [];
+                        if (groupFiles.length === 0) return null;
+                        return (
+                          <div key={group} className="mb-4">
+                            <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 px-1 ${group === 'plan' ? 'text-blue-400' : group === 'spec' ? 'text-green-400' : 'text-slate-400'}`}>
+                              {group === 'plan' ? 'Plans' : group === 'spec' ? 'Specs' : 'Other'} ({groupFiles.length})
+                            </div>
+                            {groupFiles.map((file, idx) => (
+                              <div
+                                key={`${group}-${idx}`}
+                                onClick={() => selectFileForViewing(pointToFileModal.lead_id, file.rel_path)}
+                                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer mb-1 transition-all ${selectedFile === file.rel_path ? 'bg-blue-600/20 border border-blue-500/40 ring-1 ring-blue-500/30' : 'hover:bg-slate-700/50 border border-transparent'}`}
+                              >
+                                {/* Mini thumbnail */}
+                                <div className="w-8 h-10 bg-slate-950 rounded flex-shrink-0 flex items-center justify-center overflow-hidden">
+                                  {file.thumbnail ? (
+                                    <img src={`data:image/png;base64,${file.thumbnail}`} alt="" className="w-full h-full object-contain" />
+                                  ) : (
+                                    <FileText size={14} className="text-slate-700" />
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[11px] text-white font-medium truncate" title={file.filename}>{file.filename}</div>
+                                  <div className="text-[10px] text-slate-500">{file.size_kb > 1024 ? `${(file.size_kb / 1024).toFixed(1)} MB` : `${file.size_kb} KB`}</div>
+                                  {/* Classification buttons */}
+                                  <div className="flex gap-1 mt-1">
+                                    {['plan', 'spec', 'other'].map(cls => (
+                                      <button
+                                        key={cls}
+                                        onClick={(e) => { e.stopPropagation(); setFileClassification(pointToFileModal.lead_id, file.rel_path, cls); }}
+                                        className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition ${file.classification === cls ? classColor(cls) + ' ring-1 ring-white/20' : 'bg-slate-700/50 text-slate-600 border-slate-600/50 hover:text-white hover:bg-slate-600'}`}
+                                      >
+                                        {cls.charAt(0).toUpperCase() + cls.slice(1)}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+
+                {/* Right panel - Page viewer */}
+                <div className="flex-1 min-w-0 flex flex-col border border-slate-700 rounded-xl bg-slate-950/50 overflow-hidden">
+                  {selectedFile ? (
+                    <>
+                      {/* Page navigation */}
+                      <div className="flex items-center justify-between px-4 py-2 bg-slate-800/80 border-b border-slate-700">
+                        <button
+                          onClick={() => navigateViewerPage(pointToFileModal.lead_id, selectedFile, viewerPage - 1)}
+                          disabled={viewerPage <= 0}
+                          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded text-xs font-medium transition-colors flex items-center gap-1"
+                        >
+                          <ChevronLeft size={14} /> Prev
+                        </button>
+                        <span className="text-xs text-slate-300 font-medium">
+                          Page {viewerPage + 1} of {viewerPageCount || '?'}
+                        </span>
+                        <button
+                          onClick={() => navigateViewerPage(pointToFileModal.lead_id, selectedFile, viewerPage + 1)}
+                          disabled={viewerPage >= viewerPageCount - 1}
+                          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded text-xs font-medium transition-colors flex items-center gap-1"
+                        >
+                          Next <ChevronRight size={14} />
+                        </button>
+                      </div>
+                      {/* Page image */}
+                      <div className="flex-1 overflow-auto flex items-start justify-center p-2">
+                        {viewerImageUrl ? (
+                          <img
+                            src={viewerImageUrl}
+                            alt={`Page ${viewerPage + 1}`}
+                            className="max-w-full h-auto"
+                            onLoad={() => setViewerLoading(false)}
+                            onError={() => setViewerLoading(false)}
+                          />
+                        ) : (
+                          <div className="text-slate-600 text-sm mt-20">Loading...</div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-slate-600">
+                      <div className="text-center">
+                        <FileText size={48} className="mx-auto mb-3 opacity-30" />
+                        <p className="text-sm">Select a file to preview</p>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
 
-              {pointToFileModal.files?.length === 0 && (
-                <div className="text-center py-12 text-slate-600 italic">No PDF files found for this project. Make sure files have been downloaded.</div>
-              )}
-
-              <div className="flex gap-3 mt-6">
-                <button onClick={() => setPointToFileModal(null)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors">Close</button>
-                <button onClick={() => { triggerSingleScan(pointToFileModal.lead_id); setPointToFileModal(null); }} className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"><RefreshCw size={16} />Rescan with Changes</button>
+              {/* Bottom bar */}
+              <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-700/50">
+                <div className="text-[11px] text-slate-500">
+                  {(() => {
+                    const files = pointToFileModal.files || [];
+                    const plans = files.filter(f => f.classification === 'plan').length;
+                    const specs = files.filter(f => f.classification === 'spec').length;
+                    const other = files.filter(f => f.classification === 'other').length;
+                    return `${plans} Plan${plans !== 1 ? 's' : ''}, ${specs} Spec${specs !== 1 ? 's' : ''}, ${other} Other`;
+                  })()}
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => { setPointToFileModal(null); setSelectedFile(null); }} className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg transition-colors text-sm">Close</button>
+                  <button onClick={() => { triggerSingleScan(pointToFileModal.lead_id); setPointToFileModal(null); setSelectedFile(null); }} className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg transition-colors flex items-center gap-2 text-sm"><RefreshCw size={14} />Rescan with Changes</button>
+                </div>
               </div>
             </div>
           </div>
@@ -1600,6 +1715,9 @@ const LeadTable = ({
                             <Brain size={12} />
                           )}
                         </button>
+                        {(lead.local_file_path || lead.files_link || lead.knowledge_file_count > 0) && (
+                          <button onClick={() => openPointToFile(lead.id)} className="p-1.5 bg-slate-700 hover:bg-orange-600 text-slate-400 hover:text-white rounded transition-colors" title="Browse Files"><FolderOpen size={12} /></button>
+                        )}
                         <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
                         <button onClick={() => toggleLeadStyle(lead, 'hidden', !lead.hidden)} className={`p-1.5 rounded transition-colors ${lead.hidden ? 'bg-slate-600 text-slate-300 hover:bg-slate-500' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title={lead.hidden ? "Unhide" : "Hide"}>
                           {lead.hidden ? <Eye size={12} /> : <EyeOff size={12} />}
@@ -1666,10 +1784,15 @@ const LeadTable = ({
                               </div>
                             </div>
 
-                            <div>
+                            <div className="flex flex-col gap-2">
                               <button onClick={() => setDescriptionPopup(lead)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
                                 <Eye size={14} /> View Full Details
                               </button>
+                              {(lead.local_file_path || lead.files_link || lead.knowledge_file_count > 0) && (
+                                <button onClick={() => openPointToFile(lead.id)} className="px-4 py-2 bg-slate-700 hover:bg-orange-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
+                                  <FolderOpen size={14} /> Browse Files
+                                </button>
+                              )}
                             </div>
                           </div>
 

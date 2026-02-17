@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import sys
@@ -494,6 +495,28 @@ async def knowledge_file_override(lead_id: str, body: dict):
     if not ok:
         raise HTTPException(status_code=404, detail="Lead or folder not found")
     return {"status": "success"}
+
+
+@app.get("/knowledge/files/{lead_id}/view/{rel_path:path}")
+async def knowledge_file_view(lead_id: str, rel_path: str, page: int = 0, dpi: int = 150):
+    """Render a single PDF page as a PNG image for viewing."""
+    from backend.services.knowledge import render_page_for_viewing
+
+    # Cap DPI to prevent abuse
+    dpi = min(dpi, 300)
+    png_bytes = render_page_for_viewing(lead_id, rel_path, page=page, dpi=dpi)
+    if not png_bytes:
+        raise HTTPException(status_code=404, detail="Page not found or render failed")
+    return Response(content=png_bytes, media_type="image/png")
+
+
+@app.get("/knowledge/files/{lead_id}/pagecount/{rel_path:path}")
+async def knowledge_file_pagecount(lead_id: str, rel_path: str):
+    """Return page count for a PDF."""
+    from backend.services.knowledge import get_page_count
+
+    count = get_page_count(lead_id, rel_path)
+    return {"pages": count}
 
 
 @app.get("/knowledge/thumbnail/{lead_id}")
