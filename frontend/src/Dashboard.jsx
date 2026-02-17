@@ -1,6 +1,137 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, EyeOff, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen } from 'lucide-react';
+import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, EyeOff, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen, Copy, Check } from 'lucide-react';
 import TakeoffPanel from './TakeoffPanel';
+
+// Build markdown from takeoff data for Notion clipboard paste
+const buildTakeoffMarkdown = (lead) => {
+  const lines = [];
+  lines.push(`# ${lead.name || 'Project'} — FA Takeoff`);
+  lines.push('');
+
+  // Project Snapshot
+  const snap = lead.takeoff_snapshot;
+  if (snap) {
+    lines.push('## Project Snapshot');
+    if (snap.scope_summary) lines.push(snap.scope_summary);
+    lines.push('');
+    const pd = snap.project_details || {};
+    const fields = [
+      ['Project', pd.project_name],
+      ['Address', pd.project_address || pd.project_location],
+      ['Type', pd.project_type],
+      ['Building', pd.building_type || pd.occupancy_type],
+      ['Codes', Array.isArray(pd.applicable_codes) ? pd.applicable_codes.join(', ') : pd.applicable_codes],
+      ['Occupancy', pd.occupancy_classification],
+    ].filter(([, v]) => v);
+    if (fields.length) {
+      fields.forEach(([k, v]) => lines.push(`- **${k}:** ${v}`));
+      lines.push('');
+    }
+  }
+
+  // FA Briefing
+  const fab = lead.takeoff_fa_briefing;
+  if (fab) {
+    lines.push('## Fire Alarm Briefing');
+    const fa = fab.fire_alarm_details || {};
+    const items = [
+      ['Panel Status', fa.panel_status || fa.existing_system],
+      ['Sprinkler', fa.sprinkler_status],
+      ['Voice Evac', fa.voice_evac || fa.voice_required],
+      ['CO Detection', fa.co_detection],
+    ].filter(([, v]) => v);
+    if (items.length) {
+      items.forEach(([k, v]) => lines.push(`- **${k}:** ${v}`));
+      lines.push('');
+    }
+    const sp = fab.specifications || {};
+    const specItems = [
+      ['Control Panel', sp.CONTROL_PANEL],
+      ['System Type', sp.SYSTEM_TYPE],
+      ['Wiring', sp.WIRING_CLASS],
+      ['Monitoring', sp.MONITORING],
+      ['Audio', sp.AUDIO_SYSTEM],
+      ['Approved Mfrs', Array.isArray(sp.APPROVED_MANUFACTURERS) ? sp.APPROVED_MANUFACTURERS.join(', ') : sp.APPROVED_MANUFACTURERS],
+    ].filter(([, v]) => v && v !== 'unknown');
+    if (specItems.length) {
+      lines.push('**Key Specs**');
+      specItems.forEach(([k, v]) => lines.push(`- **${k}:** ${v}`));
+      lines.push('');
+    }
+  }
+
+  // Mechanical Coordination
+  const mech = lead.takeoff_mechanical;
+  if (mech && Object.keys(mech).length) {
+    lines.push('## Mechanical Coordination');
+    const items = [
+      ['Duct Detectors/RTU', mech.duct_detectors_per_rtu || mech.duct_detectors],
+      ['Dampers', mech.dampers || mech.fire_smoke_dampers],
+      ['Access Doors', mech.access_control_doors || mech.access_doors],
+    ].filter(([, v]) => v);
+    if (items.length) items.forEach(([k, v]) => lines.push(`- **${k}:** ${v}`));
+    if (Array.isArray(mech.equipment) && mech.equipment.length) {
+      mech.equipment.forEach(eq => {
+        const name = eq.name || eq.type || 'Unit';
+        lines.push(`- ${name}${eq.cfm ? ` (${eq.cfm} CFM)` : ''}`);
+      });
+    }
+    lines.push('');
+  }
+
+  // Fire Alarm Notes
+  const notes = lead.takeoff_fa_notes;
+  if (notes && notes.length) {
+    lines.push('## Fire Alarm Notes');
+    notes.forEach(n => {
+      const page = n.page ? `[p${n.page}] ` : '';
+      const content = n.content || (typeof n === 'string' ? n : JSON.stringify(n));
+      lines.push(`- ${page}${content}`);
+    });
+    lines.push('');
+  }
+
+  // Pitfalls
+  const pitfalls = lead.takeoff_pitfalls;
+  const estNotes = lead.takeoff_estimating_notes;
+  if ((pitfalls && pitfalls.length) || (estNotes && estNotes.length)) {
+    lines.push('## Conflicts, Pitfalls & Advice');
+    if (pitfalls && pitfalls.length) {
+      pitfalls.forEach(p => {
+        const text = typeof p === 'string' ? p : p.content || JSON.stringify(p);
+        lines.push(`- ${text}`);
+      });
+    }
+    if (estNotes && estNotes.length) {
+      estNotes.forEach(n => {
+        const text = typeof n === 'string' ? n : n.content || JSON.stringify(n);
+        lines.push(`- ${text}`);
+      });
+    }
+    lines.push('');
+  }
+
+  // Competitive Advantages
+  const adv = lead.takeoff_competitive_advantages;
+  if (adv && adv.length) {
+    lines.push('## Competitive Advantages');
+    adv.forEach(a => {
+      const text = typeof a === 'string' ? a : a.content || JSON.stringify(a);
+      lines.push(`- ${text}`);
+    });
+    lines.push('');
+  }
+
+  // Project Tags
+  const tags = lead.takeoff_project_tags;
+  if (tags && tags.length) {
+    lines.push('**Tags:** ' + tags.map(t => t.label).join(', '));
+    lines.push('');
+  }
+
+  lines.push(`*Deep Scan: ${new Date(lead.takeoff_timestamp).toLocaleDateString()}*`);
+  return lines.join('\n');
+};
 
 // Utility functions moved outside to prevent re-creation
 const isExpired = (bidDate) => {
@@ -1190,6 +1321,41 @@ export default function LeadDashboard() {
                 {/* AI Analysis Section — Rich Takeoff cards when available, fallback to basic */}
                 {descriptionPopup.takeoff_timestamp ? (
                   <div className="space-y-3 mt-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Brain className="text-purple-400" size={18} />
+                        <span className="text-sm font-semibold text-purple-300">Deep Scan Results</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          const md = buildTakeoffMarkdown(descriptionPopup);
+                          try {
+                            await navigator.clipboard.write([
+                              new ClipboardItem({
+                                'text/plain': new Blob([md], { type: 'text/plain' }),
+                                'text/html': new Blob([
+                                  md.replace(/^# (.+)$/gm, '<h1>$1</h1>')
+                                    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                                    .replace(/^\*\*(.+?)\*\*$/gm, '<p><strong>$1</strong></p>')
+                                    .replace(/^- \*\*(.+?):\*\* (.+)$/gm, '<li><strong>$1:</strong> $2</li>')
+                                    .replace(/^- (.+)$/gm, '<li>$1</li>')
+                                    .replace(/(<li>.*<\/li>\n?)+/gs, m => '<ul>' + m + '</ul>')
+                                    .replace(/^\*(.+)\*$/gm, '<p><em>$1</em></p>')
+                                    .replace(/^(?!<[hpul])([\w].+)$/gm, '<p>$1</p>')
+                                ], { type: 'text/html' }),
+                              }),
+                            ]);
+                          } catch {
+                            await navigator.clipboard.writeText(md);
+                          }
+                          setDescriptionPopup(prev => ({ ...prev, _copied: true }));
+                          setTimeout(() => setDescriptionPopup(prev => prev ? ({ ...prev, _copied: false }) : prev), 2000);
+                        }}
+                        className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        {descriptionPopup._copied ? <><Check size={13} className="text-green-400" /> Copied!</> : <><Copy size={13} /> Copy for Notion</>}
+                      </button>
+                    </div>
                     {/* Project Snapshot */}
                     {descriptionPopup.takeoff_snapshot && (
                       <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
