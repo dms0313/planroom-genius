@@ -541,13 +541,22 @@ async def knowledge_file_override_batch(lead_id: str, body: dict):
 async def knowledge_file_view(lead_id: str, rel_path: str, page: int = 0, dpi: int = 150):
     """Render a single PDF page as a PNG image for viewing."""
     from backend.services.knowledge import render_page_for_viewing
+    import hashlib as _hl
 
     # Cap DPI to prevent abuse
     dpi = min(dpi, 300)
     png_bytes = render_page_for_viewing(lead_id, rel_path, page=page, dpi=dpi)
     if not png_bytes:
         raise HTTPException(status_code=404, detail="Page not found or render failed")
-    return Response(content=png_bytes, media_type="image/png")
+    etag = _hl.md5(png_bytes).hexdigest()
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "ETag": f'"{etag}"',
+        },
+    )
 
 
 @app.get("/knowledge/files/{lead_id}/pagecount/{rel_path:path}")

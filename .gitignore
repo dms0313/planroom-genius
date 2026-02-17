@@ -117,6 +117,7 @@ backend/downloads/
 backend/data/
 backend/scraper_status.txt
 backend/knowledge_cache.json
+backend/thumbnail_cache/
 
 # ⚠️ IMPORTANT: do NOT ignore ALL backend JSON
 # (this was dangerous before)
