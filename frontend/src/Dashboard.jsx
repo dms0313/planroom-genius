@@ -1596,12 +1596,23 @@ const LeadTable = ({
         )}
       </div>
       <div className="overflow-x-auto flex-grow">
-        <table className="w-full table-auto text-left text-xs text-slate-400">
+        <table className="w-full table-fixed text-left text-xs text-slate-400">
+          <colgroup>
+            <col className="w-[70px]" />
+            <col className="w-[22%]" />
+            <col className="w-[200px]" />
+            <col className="w-[14%]" />
+            <col className="w-[13%]" />
+            <col className="w-[12%]" />
+            <col className="w-[90px]" />
+            <col className="w-[70px]" />
+            <col className="w-[140px]" />
+          </colgroup>
           <thead className="bg-slate-950/50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
             <tr>
               <th className="px-2 py-3 whitespace-nowrap"></th>
               <SortHeader label="Project" sortKey="name" />
-              <th className="px-3 py-3 whitespace-nowrap">Tags</th>
+              <th className="px-2 py-3 whitespace-nowrap">Tags</th>
               <SortHeader label="Company / GC" sortKey="company" />
               <SortHeader label="Contact" sortKey="contact_name" />
               <SortHeader label="Location" sortKey="location" />
@@ -1630,7 +1641,7 @@ const LeadTable = ({
                     <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors">
                       <button onClick={() => setExpandedLeadId(expandedLeadId === lead.id ? null : lead.id)} className="text-left hover:text-orange-400 transition-colors flex items-center gap-2" title="Click to expand">
                         {expandedLeadId === lead.id ? <ChevronUp size={14} className="text-orange-400" /> : <ChevronDown size={14} className="text-slate-500" />}
-                        <div className="truncate max-w-[350px]">{lead.name}</div>
+                        <div className="truncate text-sm">{lead.name}</div>
                       </button>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
@@ -1649,8 +1660,8 @@ const LeadTable = ({
                       </div>
                     </td>
                     {/* Tags column */}
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1 max-w-[220px]">
+                    <td className="px-2 py-2">
+                      <div className="flex flex-wrap gap-1">
                         {lead.has_budget && <span className="relative group/tag text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30 cursor-default">BUDGET<span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">Project has budget info</span></span>}
                         {/* User tags */}
                         {lead.tags && lead.tags.map((tag, idx) => (
