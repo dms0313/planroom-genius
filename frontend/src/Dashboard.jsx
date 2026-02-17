@@ -1871,7 +1871,7 @@ const LeadTable = ({
 
                           {/* Internal Comments */}
                           <div className="mt-2">
-                            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Internal Comments</h4>
+                            <h4 className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-1">Internal Comments</h4>
                             <textarea
                               defaultValue={lead.comments || ''}
                               onBlur={(e) => toggleLeadStyle(lead, 'comments', e.target.value)}
@@ -1882,7 +1882,7 @@ const LeadTable = ({
 
                           {/* Ask AI About This Project */}
                           <div className="mt-3">
-                            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Ask AI About This Project</h4>
+                            <h4 className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-2">Ask AI About This Project</h4>
                             <div className="flex gap-2 mb-3">
                               <input
                                 type="text"
