@@ -1,3 +1,7 @@
+// API base URL — connect directly to backend (port 8000) so we don't
+// depend on vite's dev-server proxy which can silently fail.
+const TAKEOFF_API = `http://${window.location.hostname}:8000/takeoff`;
+
 // DOM references
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
@@ -326,7 +330,7 @@ function setupUploadInteractions() {
             if (!currentGeminiJobId) {
                 return;
             }
-            window.location.href = `/takeoff/api/gemini_report/${currentGeminiJobId}`;
+            window.location.href = `${TAKEOFF_API}/api/gemini_report/${currentGeminiJobId}`;
         });
     }
 
@@ -417,7 +421,7 @@ function setupGeminiInstructions() {
     const saveInstructions = (instructions) => {
         syncButtons(true);
         setStatus('Saving instructions...');
-        fetch('/takeoff/api/set_gemini_instructions', {
+        fetch(`${TAKEOFF_API}/api/set_gemini_instructions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ instructions }),
@@ -594,7 +598,7 @@ function loadPagePreview(page) {
         return cached.promise;
     }
 
-    const previewPromise = fetch(`/takeoff/api/preview_pages/${page.previewToken}/${page.page_number}`)
+    const previewPromise = fetch(`${TAKEOFF_API}/api/preview_pages/${page.previewToken}/${page.page_number}`)
         .then((response) => response.json())
         .then((data) => {
             if (!data.success || !data.preview) {
@@ -921,7 +925,7 @@ async function askFollowUpQuestion() {
     }
 
     try {
-        const resp = await fetch('/takeoff/api/gemini_follow_up', {
+        const resp = await fetch(`${TAKEOFF_API}/api/gemini_follow_up`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ job_id: currentGeminiJobId, question }),
@@ -1071,7 +1075,7 @@ async function sendProjectToNotion() {
     }
 
     try {
-        const response = await fetch('/takeoff/api/notion/export', {
+        const response = await fetch(`${TAKEOFF_API}/api/notion/export`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ job_id: latestGeminiResults.job_id }),
@@ -1270,7 +1274,7 @@ function stopGeminiProgress(message) {
 }
 
 function checkStatus() {
-    fetch('/takeoff/api/check_status')
+    fetch(`${TAKEOFF_API}/api/check_status`)
         .then((response) => response.json())
         .then((data) => {
             const detectorDot = document.getElementById('local-model-status');
@@ -1387,7 +1391,7 @@ function handleGeminiModelChange(event) {
         statusEl.textContent = `Switching Gemini model to ${value}...`;
     }
 
-    fetch('/takeoff/api/set_gemini_model', {
+    fetch(`${TAKEOFF_API}/api/set_gemini_model`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: value }),
@@ -1426,7 +1430,7 @@ function generatePagePreviews(file) {
     }
     hidePageHoverPreview();
 
-    fetch('/takeoff/api/preview_pages', {
+    fetch(`${TAKEOFF_API}/api/preview_pages`, {
         method: 'POST',
         body: formData,
     })
@@ -1546,7 +1550,7 @@ function startAnalysis(type) {
             analyzeBtn.disabled = true;
         }
 
-        endpoint = '/takeoff/api/analyze';
+        endpoint = `${TAKEOFF_API}/api/analyze`;
     } else {
         if (startGeminiBtn) {
             startGeminiBtn.disabled = true;
@@ -1564,7 +1568,7 @@ function startAnalysis(type) {
         currentGeminiJobId = null;
         updateGeminiReportButtonState();
         setGeminiActionsVisible(false);
-        endpoint = '/takeoff/api/analyze_gemini';
+        endpoint = `${TAKEOFF_API}/api/analyze_gemini`;
         const sendGeminiImages = sendGeminiImagesCheckbox ? sendGeminiImagesCheckbox.checked : false;
         formData.append('send_images', sendGeminiImages);
         const specFile = selectedSpecFile || (specFileInput ? specFileInput.files[0] : null);
@@ -1705,7 +1709,7 @@ function displayDetectionResults(data, options = {}) {
 
     if (exportBtn && data.job_id) {
         exportBtn.onclick = () => {
-            window.location.href = `/takeoff/api/export/${data.job_id}`;
+            window.location.href = `${TAKEOFF_API}/api/export/${data.job_id}`;
         };
     }
 
@@ -3916,7 +3920,7 @@ async function copyTextToClipboard(button, text) {
 // Preview modal helpers
 async function viewPage(jobId, pageNum) {
     try {
-        const response = await fetch(`/takeoff/api/visualize/${jobId}/${pageNum}`);
+        const response = await fetch(`${TAKEOFF_API}/api/visualize/${jobId}/${pageNum}`);
         if (!response.ok) throw new Error(`Failed to fetch page ${pageNum}`);
         const blob = await response.blob();
 
@@ -3950,7 +3954,7 @@ async function refreshHistoryList() {
     historyList.innerHTML = '';
 
     try {
-        const response = await fetch('/takeoff/api/history');
+        const response = await fetch(`${TAKEOFF_API}/api/history`);
         const payload = await response.json();
         if (!payload.success) {
             throw new Error(payload.error || 'Failed to load history');
@@ -4036,7 +4040,7 @@ function handleEditProjectTitle(entry) {
 
 async function updateHistoryTitle(jobId, projectName) {
     try {
-        const response = await fetch(`/takeoff/api/history/${jobId}/title`, {
+        const response = await fetch(`${TAKEOFF_API}/api/history/${jobId}/title`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ project_name: projectName }),
@@ -4066,7 +4070,7 @@ function handleDeleteHistory(jobId) {
 async function deleteHistoryEntry(jobId) {
     setHistoryStatus('Removing project...');
     try {
-        const response = await fetch(`/takeoff/api/history/${jobId}`, { method: 'DELETE' });
+        const response = await fetch(`${TAKEOFF_API}/api/history/${jobId}`, { method: 'DELETE' });
         const payload = await response.json();
 
         if (!payload.success) {
@@ -4114,7 +4118,7 @@ function buildHistoryCard(entry) {
     preview.className = 'history-preview';
     const previewImg = document.createElement('img');
     previewImg.loading = 'lazy';
-    previewImg.src = `/takeoff/api/history/${entry.job_id}/preview`;
+    previewImg.src = `${TAKEOFF_API}/api/history/${entry.job_id}/preview`;
     previewImg.alt = `Preview image for ${entry.project_name || entry.original_filename || 'project'}`;
     previewImg.onerror = () => {
         previewImg.remove();
@@ -4190,7 +4194,7 @@ async function runGeminiFromHistory(jobId, button) {
     setHistoryStatus('Running Gemini analysis on saved file...');
 
     try {
-        const response = await fetch(`/takeoff/api/run_gemini_from_history/${jobId}`, {
+        const response = await fetch(`${TAKEOFF_API}/api/run_gemini_from_history/${jobId}`, {
             method: 'POST'
         });
         const payload = await response.json();
@@ -4233,7 +4237,7 @@ async function loadHistoryEntry(jobId, analysisType) {
 
     setHistoryStatus('Loading saved results...');
     try {
-        const response = await fetch(`/takeoff/api/history/${jobId}`);
+        const response = await fetch(`${TAKEOFF_API}/api/history/${jobId}`);
         const payload = await response.json();
         if (!payload.success) {
             throw new Error(payload.error || 'Unable to load saved results');
@@ -4291,7 +4295,7 @@ async function downloadPage(jobId, pageNum, trigger) {
     const button = trigger instanceof HTMLElement ? trigger : null;
     setButtonLoadingState(button, true);
     try {
-        const response = await fetch(`/takeoff/api/download_annotated_pdf/${jobId}/${pageNum}`);
+        const response = await fetch(`${TAKEOFF_API}/api/download_annotated_pdf/${jobId}/${pageNum}`);
         const contentType = response.headers.get('content-type') || '';
 
         if (!response.ok) {
