@@ -1333,25 +1333,6 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
 
     model_analysis = None
     if project_images:
-        # Cap images by count and total payload size
-        MAX_IMAGES = 20
-        MAX_PAYLOAD_MB = 4
-        if len(project_images) > MAX_IMAGES:
-            logger.info(f"Capping images from {len(project_images)} to {MAX_IMAGES} for Gemini")
-            project_images = project_images[:MAX_IMAGES]
-
-        # Drop largest images first if payload exceeds limit
-        total_bytes = sum(len(img["png_bytes"]) for img in project_images)
-        if total_bytes > MAX_PAYLOAD_MB * 1024 * 1024:
-            # Sort by size descending, drop biggest until under limit
-            project_images.sort(key=lambda x: len(x["png_bytes"]), reverse=True)
-            while project_images and total_bytes > MAX_PAYLOAD_MB * 1024 * 1024:
-                dropped = project_images.pop(0)
-                total_bytes -= len(dropped["png_bytes"])
-                logger.info(f"Dropped large page (file={dropped['file']}, page={dropped['page_index']}, {len(dropped['png_bytes'])/1024:.0f}KB) to fit payload limit")
-            # Re-sort by original order (file, page_index)
-            project_images.sort(key=lambda x: (x["file"], x["page_index"]))
-
         total_bytes = sum(len(img["png_bytes"]) for img in project_images)
         logger.info(f"Sending {len(project_images)} pages to Gemini ({total_bytes / 1024 / 1024:.1f} MB)")
 
