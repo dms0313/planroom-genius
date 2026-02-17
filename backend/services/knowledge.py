@@ -797,7 +797,7 @@ def _validate_analysis_claim_evidence(analysis):
     return analysis
 
 
-def _call_gemini(images, context=""):
+def _call_gemini(images, context="", thinking=False):
     api_key = os.getenv("GEMINI_API_KEY_PLANROOM_GENIUS", "").strip()
     if not api_key:
         logger.warning("GEMINI_API_KEY_PLANROOM_GENIUS not set, falling back to heuristic analysis")
@@ -813,9 +813,14 @@ def _call_gemini(images, context=""):
             "inlineData": {"mimeType": mime, "data": b64}
         })
 
+    gen_config = {"temperature": 0.1}
+    if thinking:
+        gen_config["thinkingConfig"] = {"thinkingBudget": 8192}
+        logger.info("Deep thinking mode enabled (budget: 8192 tokens)")
+
     payload = {
         "contents": [{"parts": parts}],
-        "generationConfig": {"temperature": 0.1},
+        "generationConfig": gen_config,
     }
 
     # Try preferred model first, fall back to secondary if quota/availability issues
@@ -1214,7 +1219,7 @@ def set_file_overrides_batch(lead_id, overrides_dict):
 # Main scan
 # ---------------------------------------------------------------------------
 
-def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead=None, force_rescan=False):
+def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead=None, force_rescan=False, thinking=False):
     """
     Core scanning logic for a single project folder.
     Returns True if scanned, False if skipped.
@@ -1337,7 +1342,7 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
         logger.info(f"Sending {len(project_images)} pages to Gemini ({total_bytes / 1024 / 1024:.1f} MB)")
 
         # Single consolidated Gemini request for project-level decision.
-        model_analysis = _call_gemini(project_images, json.dumps(project_context, separators=(",", ":")))
+        model_analysis = _call_gemini(project_images, json.dumps(project_context, separators=(",", ":")), thinking=thinking)
 
     heuristic_analysis = _heuristic_analysis("\n".join(project_text_chunks))
     aggregate = model_analysis or heuristic_analysis
@@ -1413,7 +1418,7 @@ def stop_scan():
         return True
     return False
 
-def scan_local_downloads(lead_id=None, force_rescan=False):
+def scan_local_downloads(lead_id=None, force_rescan=False, thinking=False):
     """
     Scan downloaded project files and analyze them with AI.
     
@@ -1524,12 +1529,13 @@ def scan_local_downloads(lead_id=None, force_rescan=False):
                 break
             
             _scan_project_folder(
-                project_dir=path, 
-                cache=cache, 
-                leads=leads, 
-                folder_name=name, 
-                known_lead=known_lead, 
-                force_rescan=force_rescan
+                project_dir=path,
+                cache=cache,
+                leads=leads,
+                folder_name=name,
+                known_lead=known_lead,
+                force_rescan=force_rescan,
+                thinking=thinking
             )
 
         # Save everything

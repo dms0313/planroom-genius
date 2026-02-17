@@ -444,16 +444,17 @@ async def knowledge_scan(background_tasks: BackgroundTasks, force: bool = False)
 
 
 @app.post("/knowledge/scan/{lead_id}")
-async def knowledge_scan_single(lead_id: str, background_tasks: BackgroundTasks):
-    """Rescan a single project (bypasses cache)."""
+async def knowledge_scan_single(lead_id: str, background_tasks: BackgroundTasks, thinking: bool = False):
+    """Rescan a single project (bypasses cache). Use ?thinking=true for deep analysis."""
     from backend.services.knowledge import scan_local_downloads, get_status
 
     status = get_status()
     if status["running"]:
         return {"status": "already_running", "details": status}
 
-    background_tasks.add_task(scan_local_downloads, lead_id, force_rescan=True)
-    return {"status": "accepted", "message": f"Knowledge scan started for {lead_id}"}
+    background_tasks.add_task(scan_local_downloads, lead_id, force_rescan=True, thinking=thinking)
+    msg = f"Deep thinking scan started for {lead_id}" if thinking else f"Knowledge scan started for {lead_id}"
+    return {"status": "accepted", "message": msg}
 
 
 @app.get("/knowledge/status")
