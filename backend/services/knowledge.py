@@ -803,7 +803,7 @@ def _call_gemini(images, context=""):
         "generationConfig": {"temperature": 0.1},
     }
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro:generateContent"
     
     max_retries = 5
     base_delay = 2.0
