@@ -8,18 +8,6 @@ const isExpired = (bidDate) => {
   try { const d = new Date(bidDate); const t = new Date(); t.setHours(0, 0, 0, 0); return d < t; } catch { return false; }
 };
 
-const scoreColor = (score) => {
-  if (score >= 70) return 'text-green-400';
-  if (score >= 30) return 'text-yellow-400';
-  return 'text-red-400';
-};
-
-const scoreBg = (score) => {
-  if (score >= 70) return 'bg-green-500';
-  if (score >= 30) return 'bg-yellow-500';
-  return 'bg-red-500';
-};
-
 const badgeColor = (badge) => {
   if (badge === 'NO FA') return 'bg-red-500/20 text-red-400 border-red-500/30';
   if (badge === 'DEAL BREAKER') return 'bg-red-600/20 text-red-300 border-red-600/30';
@@ -43,6 +31,13 @@ const getHighlightBg = (highlight) => {
   if (highlight === 'yellow') return 'bg-yellow-500/10 border-l-2 border-yellow-500';
   if (highlight === 'red') return 'bg-red-500/10 border-l-2 border-red-500';
   return '';
+};
+
+const getCommentColor = (highlight) => {
+  if (highlight === 'green') return 'text-green-400 focus:text-green-400';
+  if (highlight === 'yellow') return 'text-yellow-400 focus:text-yellow-400';
+  if (highlight === 'red') return 'text-red-400 focus:text-red-400';
+  return 'text-purple-400 focus:text-purple-400';
 };
 
 const formatDate = (dateStr) => {
@@ -147,8 +142,8 @@ export default function LeadDashboard() {
     let result = leads;
 
     // Knowledge filter
-    if (knowledgeFilter === 'scanned') result = result.filter(l => l.knowledge_score != null);
-    else if (knowledgeFilter === 'unscanned') result = result.filter(l => l.knowledge_score == null);
+    if (knowledgeFilter === 'scanned') result = result.filter(l => l.knowledge_last_scanned != null);
+    else if (knowledgeFilter === 'unscanned') result = result.filter(l => l.knowledge_last_scanned == null);
 
     // Site filter
     if (siteFilter !== 'all') result = result.filter(l => l.site === siteFilter);
@@ -856,6 +851,21 @@ export default function LeadDashboard() {
                   </div>
                 </div>
               </div>
+              {companyPopup.also_listed_by && companyPopup.also_listed_by.length > 0 && (
+                <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mt-4">
+                  <div className="text-xs text-blue-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+                    <Building2 size={12} />Also Listed By
+                  </div>
+                  <ul className="space-y-1">
+                    {companyPopup.also_listed_by.map((entry, idx) => (
+                      <li key={idx} className="text-sm text-slate-300 flex items-center gap-2">
+                        <Building2 size={12} className="text-slate-500" />
+                        {entry.gc || 'Unknown'} <span className="text-slate-500 text-xs">(via {entry.site})</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <button onClick={() => setCompanyPopup(null)} className="mt-6 w-full bg-[#ed2028] hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors">Close</button>
             </div>
           </div>
@@ -942,11 +952,6 @@ export default function LeadDashboard() {
                     <div className="flex items-center gap-2 mb-3">
                       <Brain className="text-purple-400" size={18} />
                       <span className="text-sm font-semibold text-purple-300">AI Fire Alarm Analysis</span>
-                      {descriptionPopup.knowledge_score != null && (
-                        <span className={`ml-auto text-lg font-bold ${scoreColor(descriptionPopup.knowledge_score)}`}>
-                          Score: {descriptionPopup.knowledge_score}/100
-                        </span>
-                      )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 text-xs mb-3">
@@ -1282,8 +1287,22 @@ const LeadTable = ({
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedLeadId, setExpandedLeadId] = useState(null);
+  const [expandedThumbnail, setExpandedThumbnail] = useState(null);
   const itemsPerPage = 50;
   const totalPages = Math.ceil(data.length / itemsPerPage);
+
+  useEffect(() => {
+    if (!expandedLeadId) { setExpandedThumbnail(null); return; }
+    const lead = data.find(l => l.id === expandedLeadId);
+    if (!lead || (!lead.local_file_path && !lead.files_link && !lead.gdrive_link)) {
+      setExpandedThumbnail(null);
+      return;
+    }
+    fetch(`${API_BASE}/knowledge/thumbnail/${expandedLeadId}`)
+      .then(r => r.json())
+      .then(d => setExpandedThumbnail(d.thumbnail))
+      .catch(() => setExpandedThumbnail(null));
+  }, [expandedLeadId]);
 
   const handleSort = (key) => {
     let direction = 'asc';
@@ -1397,13 +1416,10 @@ const LeadTable = ({
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
                         {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
-                        {lead.knowledge_score != null && lead.knowledge_score > 0 && (
-                          <span className={`text-[10px] font-mono font-bold ${scoreColor(lead.knowledge_score)}`}>{lead.knowledge_score}</span>
-                        )}
                         <span className="text-[10px] text-slate-600">{lead.site}</span>
                         {/* Tags */}
                         {lead.tags && lead.tags.map((tag, idx) => (
-                          <span key={idx} title={tag.hover} className={`text-[10px] px-1.5 py-0.5 rounded border ${tag.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                          <span key={idx} className={`relative group text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tag.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
                             tag.color === 'red' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
                               tag.color === 'blue' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                                 tag.color === 'orange' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
@@ -1413,6 +1429,11 @@ const LeadTable = ({
                                         'bg-slate-700 text-slate-300 border-slate-600'
                             }`}>
                             {tag.label}
+                            {tag.hover && (
+                              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                                {tag.hover}
+                              </span>
+                            )}
                           </span>
                         ))}
                       </div>
@@ -1424,7 +1445,7 @@ const LeadTable = ({
                           onBlur={(e) => toggleLeadStyle(lead, 'short_comment', e.target.value)}
                           onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                           placeholder="Add comment..."
-                          className="bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] text-[#ed2028] focus:text-[#ed2028] placeholder-slate-700 w-full focus:outline-none transition-colors"
+                          className={`bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] ${getCommentColor(lead.highlight)} placeholder-slate-700 w-full focus:outline-none transition-colors`}
                         />
                       </div>
                     </td>
@@ -1481,6 +1502,11 @@ const LeadTable = ({
                       <td colSpan="8" className="px-6 py-4">
                         <div className="flex flex-col gap-4">
                           <div className="flex justify-between items-start">
+                            {expandedThumbnail && (
+                              <div className="w-32 h-40 bg-slate-950 rounded-lg overflow-hidden flex-shrink-0 mr-4 border border-slate-700">
+                                <img src={`data:image/png;base64,${expandedThumbnail}`} alt="Title page" className="w-full h-full object-contain" />
+                              </div>
+                            )}
                             <div className="flex-1">
                               <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
                                 {lead.name}

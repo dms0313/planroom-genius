@@ -5,6 +5,7 @@ Identifies plans/specs, extracts relevant pages, sends to Gemini for analysis.
 import os
 import json
 import base64
+import glob
 import hashlib
 import zipfile
 import logging
@@ -973,6 +974,22 @@ def list_project_files(lead_id):
         })
 
     return {"files": results, "folder": folder}
+
+
+def get_title_thumbnail(lead_id):
+    """Get first page thumbnail of the first PDF found for this lead."""
+    leads = load_leads()
+    lead = next((l for l in leads if l.get("id") == lead_id), None)
+    if not lead:
+        return {"thumbnail": None}
+    folder = _find_download_folder_for_lead(lead)
+    if not folder:
+        return {"thumbnail": None}
+    pdfs = sorted(glob.glob(os.path.join(folder, "**/*.pdf"), recursive=True))
+    if not pdfs:
+        return {"thumbnail": None}
+    thumb = render_first_page_thumbnail(pdfs[0], dpi=72)
+    return {"thumbnail": thumb}
 
 
 def _find_download_folder_for_lead(lead):
