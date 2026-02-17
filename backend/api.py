@@ -703,15 +703,16 @@ async def browse_directory(body: dict):
 @app.on_event("startup")
 def startup_event():
     """Start the scheduler on startup and deduplicate log handlers."""
-    # Deduplicate root logger StreamHandlers (uvicorn, double-imports, etc.)
+    # Force exactly ONE StreamHandler on root logger.
+    # Multiple sources (run.py basicConfig, uvicorn, double-imports) each add
+    # handlers, causing every log line to print N times.
     root = logging.getLogger()
-    seen = set()
-    for h in list(root.handlers):
-        key = (type(h), getattr(h, 'stream', None))
-        if key in seen:
+    stream_handlers = [h for h in root.handlers if isinstance(h, logging.StreamHandler)]
+    if len(stream_handlers) > 1:
+        keeper = stream_handlers[0]
+        for h in stream_handlers[1:]:
             root.removeHandler(h)
-        else:
-            seen.add(key)
+        logger.info(f"Removed {len(stream_handlers) - 1} duplicate log handlers")
 
     # Prevent uvicorn loggers from duplicating through propagation
     for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
