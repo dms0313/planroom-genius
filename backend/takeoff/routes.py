@@ -141,29 +141,36 @@ async def index():
 @router.get("/api/check_status")
 async def check_status():
     """Check API status and configuration."""
-    analyzer = get_analyzer()
-    
-    local_model_path = getattr(config, 'LOCAL_MODEL_PATH', '') or ''
-    model_filename = os.path.basename(local_model_path) if local_model_path else ''
-    model_name = os.path.splitext(model_filename)[0] if model_filename else ''
+    try:
+        analyzer = get_analyzer()
 
-    response = {
-        'local_model_configured': analyzer.local_detector is not None,
-        'gemini_configured': analyzer.gemini_analyzer.is_available(),
-        'local_model_name': model_name,
-        'local_model_filename': model_filename,
-        'local_detector_error': analyzer.local_detector_error,
-        'gemini_error': getattr(analyzer.gemini_analyzer, 'initialization_error', None),
-        'gemini_model': getattr(analyzer.gemini_analyzer, 'current_model', getattr(config, 'GEMINI_MODEL', None)),
-        'available_gemini_models': getattr(config, 'GEMINI_MODEL_CHOICES', []),
-        'gemini_system_instructions': getattr(analyzer.gemini_analyzer, 'system_instructions', ''),
-        'gemini_default_system_instructions': getattr(analyzer.gemini_analyzer, 'default_system_instructions', ''),
-        'gemini_analysis_mode': getattr(analyzer.gemini_analyzer, 'analysis_mode', None),
-        'gemini_allowed_analysis_modes': list(ANALYSIS_MODES),
-        'notion_configured': notion_client.is_configured(),
-    }
+        local_model_path = getattr(config, 'LOCAL_MODEL_PATH', '') or ''
+        model_filename = os.path.basename(local_model_path) if local_model_path else ''
+        model_name = os.path.splitext(model_filename)[0] if model_filename else ''
 
-    return JSONResponse(content=response)
+        response = {
+            'local_model_configured': analyzer.local_detector is not None,
+            'gemini_configured': analyzer.gemini_analyzer.is_available(),
+            'local_model_name': model_name,
+            'local_model_filename': model_filename,
+            'local_detector_error': analyzer.local_detector_error,
+            'gemini_error': getattr(analyzer.gemini_analyzer, 'initialization_error', None),
+            'gemini_model': getattr(analyzer.gemini_analyzer, 'current_model', getattr(config, 'GEMINI_MODEL', None)),
+            'available_gemini_models': getattr(config, 'GEMINI_MODEL_CHOICES', []),
+            'gemini_system_instructions': getattr(analyzer.gemini_analyzer, 'system_instructions', ''),
+            'gemini_default_system_instructions': getattr(analyzer.gemini_analyzer, 'default_system_instructions', ''),
+            'gemini_analysis_mode': getattr(analyzer.gemini_analyzer, 'analysis_mode', None),
+            'gemini_allowed_analysis_modes': list(ANALYSIS_MODES),
+            'notion_configured': notion_client.is_configured(),
+        }
+
+        return JSONResponse(content=response)
+    except Exception as e:
+        logger.error("check_status failed: %s", e, exc_info=True)
+        return JSONResponse(
+            content={'error': str(e), 'local_model_configured': False, 'gemini_configured': False},
+            status_code=500,
+        )
 
 
 # =============================================================================
