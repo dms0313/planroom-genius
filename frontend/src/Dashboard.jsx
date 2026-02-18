@@ -874,18 +874,18 @@ export default function LeadDashboard() {
 
 
   return (
-    <div className={`min-h-screen bg-slate-950 text-slate-100 p-8 font-sans ${showConsole && !consoleMinimized ? 'pb-96' : ''}`}>
+    <div className={`min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-4 md:p-8 font-sans ${showConsole && !consoleMinimized ? 'pb-96' : ''}`}>
       <div className="max-w-[95vw] mx-auto">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl p-3">
-          <div className="flex items-center gap-4">
-            <img src="/logo.png" alt="Marmic Fire & Safety" className="h-14 w-auto" />
+        <div className="mb-4 md:mb-6 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between bg-slate-900 border border-slate-800 rounded-2xl p-3">
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="Marmic Fire & Safety" className="h-10 sm:h-14 w-auto" />
             <h1 className="text-sm font-bold tracking-widest text-slate-500 uppercase">
               Planroom<span className="text-[#ed2028]">Genius</span> v2.0
             </h1>
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex gap-2 items-center">
+          <div className="flex flex-col sm:items-end gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
               <button onClick={openAddModal} className="px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-500 transition flex items-center gap-1.5"><Plus size={16} />Add Lead</button>
               <button onClick={() => { triggerScan(); setShowConsole(true); clearConsoleLogs(); }} disabled={syncing} className={`bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-5 rounded-lg transition-all shadow-lg shadow-blue-900/20 flex items-center gap-2 text-sm ${syncing ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 {syncing ? (<><svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Scanning...</>) : "Scan"}
@@ -1017,9 +1017,9 @@ export default function LeadDashboard() {
               {pointToFileModal.error && <div className="text-red-400 text-sm mb-3">{pointToFileModal.error}</div>}
 
               {/* Two-panel layout */}
-              <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
+              <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0 overflow-hidden">
                 {/* Left panel - File list */}
-                <div className="w-80 flex-shrink-0 overflow-y-auto border border-slate-700 rounded-xl bg-slate-800/50 p-3">
+                <div className="w-full md:w-80 flex-shrink-0 overflow-y-auto border border-slate-700 rounded-xl bg-slate-800/50 p-3 max-h-52 md:max-h-none">
                   {pointToFileModal.files?.length === 0 ? (
                     <div className="text-center py-12 text-slate-600 italic text-sm">No PDF files found. Make sure files have been downloaded.</div>
                   ) : (
@@ -1080,7 +1080,7 @@ export default function LeadDashboard() {
                 </div>
 
                 {/* Right panel - Page viewer */}
-                <div className="flex-1 min-w-0 flex flex-col border border-slate-700 rounded-xl bg-slate-950/50 overflow-hidden">
+                <div className="flex-1 min-h-48 md:min-h-0 min-w-0 flex flex-col border border-slate-700 rounded-xl bg-slate-950/50 overflow-hidden">
                   {selectedFile ? (
                     <>
                       {/* Page navigation */}
@@ -1130,7 +1130,7 @@ export default function LeadDashboard() {
               </div>
 
               {/* Bottom bar */}
-              <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-700/50">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4 pt-3 border-t border-slate-700/50">
                 <div className="text-[11px] text-slate-500">
                   {(() => {
                     const files = pointToFileModal.files || [];
@@ -1205,10 +1205,10 @@ export default function LeadDashboard() {
         {/* =================== DESCRIPTION POPUP =================== */}
         {descriptionPopup && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setDescriptionPopup(null)}>
-            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-4 max-w-3xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-3 sm:p-4 max-w-3xl w-full mx-2 sm:mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
               <div className="flex justify-between items-start mb-4">
                 <h3 className="text-xl font-bold text-white flex items-center gap-2"><Description className="text-orange-500" size={20} />Project Details</h3>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap justify-end">
                   {descriptionPopup.url && (
                     <a href={descriptionPopup.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-slate-600 text-blue-300 px-3 py-1 rounded-full transition-colors">
                       <ExternalLink size={12} /> Open Project
@@ -1247,7 +1247,7 @@ export default function LeadDashboard() {
                     );
                   })()}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <div className="bg-slate-800/50 rounded-lg p-3 flex-1">
                     <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1"><MapPin size={10} />Location</div>
                     <div className="text-sm text-slate-300">{descriptionPopup.location || 'N/A'}</div>
@@ -1348,7 +1348,7 @@ export default function LeadDashboard() {
                             ['Occupancy', pd.occupancy_classification],
                           ].filter(([, v]) => v);
                           return fields.length > 0 ? (
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs">
                               {fields.map(([label, val]) => (
                                 <div key={label}><span className="text-slate-500">{label}:</span> <span className="text-white">{val}</span></div>
                               ))}
@@ -1371,7 +1371,7 @@ export default function LeadDashboard() {
                             ['CO Detection', fa.co_detection],
                           ].filter(([, v]) => v);
                           return items.length > 0 ? (
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
                               {items.map(([label, val]) => (
                                 <div key={label}><span className="text-slate-500">{label}:</span> <span className="text-white">{String(val)}</span></div>
                               ))}
@@ -1391,7 +1391,7 @@ export default function LeadDashboard() {
                           return specItems.length > 0 ? (
                             <div className="mt-2 pt-2 border-t border-red-500/15">
                               <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Key Specs</div>
-                              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs">
                                 {specItems.map(([label, val]) => (
                                   <div key={label}><span className="text-slate-500">{label}:</span> <span className="text-amber-200">{String(val)}</span></div>
                                 ))}
@@ -1524,7 +1524,7 @@ export default function LeadDashboard() {
                       <span className="text-sm font-semibold text-purple-300">AI Fire Alarm Analysis</span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mb-3">
                       <div className="bg-slate-800/50 rounded p-2">
                         <span className="text-slate-500">System Type:</span>
                         <span className="ml-1 text-white capitalize">{descriptionPopup.knowledge_system_type || 'Unknown'}</span>
@@ -1760,15 +1760,15 @@ export default function LeadDashboard() {
         {/* =================== ADD/EDIT MODAL =================== */}
         {(addModal || editModal) && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }}>
-            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-6 max-w-2xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-between items-start mb-6">
+            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-4 sm:p-6 max-w-2xl w-full mx-2 sm:mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-start mb-4 sm:mb-6">
                 <h3 className="text-xl font-bold text-white flex items-center gap-2">
                   {editModal ? (<><Pencil className="text-blue-500" size={20} />Edit Lead</>) : (<><Plus className="text-green-500" size={20} />Add New Lead</>)}
                 </h3>
                 <button onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2"><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Project Name *</label><input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="Enter project name" /></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2"><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Project Name *</label><input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="Enter project name" /></div>
                 <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Company</label><input type="text" value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="Company name" /></div>
                 <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">General Contractor</label><input type="text" value={formData.gc} onChange={(e) => setFormData({ ...formData, gc: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="GC name" /></div>
                 <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Contact Name</label><input type="text" value={formData.contact_name} onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="Contact person" /></div>
@@ -1777,7 +1777,7 @@ export default function LeadDashboard() {
                 <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Bid Date</label><input type="text" value={formData.bid_date} onChange={(e) => setFormData({ ...formData, bid_date: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="MM/DD/YYYY or TBD" /></div>
                 <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Location</label><input type="text" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="City, State" /></div>
                 <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Full Address</label><input type="text" value={formData.full_address} onChange={(e) => setFormData({ ...formData, full_address: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="123 Main St, City, State ZIP" /></div>
-                <div className="col-span-2"><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Description</label><textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none h-20 resize-none" placeholder="Project description..." /></div>
+                <div className="sm:col-span-2"><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Description</label><textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none h-20 resize-none" placeholder="Project description..." /></div>
                 <div>
                   <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Files Link</label>
                   <div className="flex gap-2">
@@ -1791,7 +1791,7 @@ export default function LeadDashboard() {
                   </div>
                 </div>
                 <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Download Link</label><input type="url" value={formData.download_link} onChange={(e) => setFormData({ ...formData, download_link: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="https://..." /></div>
-                <div className="col-span-2 flex gap-6">
+                <div className="sm:col-span-2 flex gap-6">
                   <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.sprinklered} onChange={(e) => setFormData({ ...formData, sprinklered: e.target.checked })} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500" /><span className="text-sm text-slate-300">Sprinklered</span></label>
                   <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.has_budget} onChange={(e) => setFormData({ ...formData, has_budget: e.target.checked })} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500" /><span className="text-sm text-slate-300">Has Budget</span></label>
                 </div>
@@ -1930,21 +1930,21 @@ const LeadTable = ({
 
   return (
     <div className="mb-8 bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col">
-      <div className="p-4 border-b border-slate-800 flex flex-col gap-3 bg-slate-900/50 backdrop-blur">
-        <div className="flex justify-between items-center">
+      <div className="p-3 md:p-4 border-b border-slate-800 flex flex-col gap-2 md:gap-3 bg-slate-900/50 backdrop-blur">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
           <h2 className="text-lg font-bold text-white flex items-center gap-3">
             {title}
             <span className="bg-slate-800 text-slate-400 text-xs px-2 py-1 rounded-full">{data.length}</span>
           </h2>
-          <div className="flex items-center gap-3">
-            <div className="relative">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 sm:flex-none">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500" size={14} />
               <input
                 type="text"
                 placeholder="Search leads..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-slate-800 text-slate-200 pl-9 pr-4 py-1.5 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-slate-600 w-52"
+                className="bg-slate-800 text-slate-200 pl-9 pr-4 py-1.5 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-slate-600 w-full sm:w-52"
               />
             </div>
             <button onClick={() => setShowHidden(!showHidden)} className={`p-1.5 rounded-lg transition ${showHidden ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`} title={showHidden ? 'Hide Hidden' : 'Show Hidden'}>
@@ -1975,7 +1975,7 @@ const LeadTable = ({
           </div>
         )}
       </div>
-      <div className="overflow-x-auto flex-grow">
+      <div className="hidden md:block overflow-x-auto flex-grow">
         <table className="w-full table-fixed text-left text-xs text-slate-400">
           <colgroup>
             <col className="w-[70px]" />
@@ -2140,7 +2140,7 @@ const LeadTable = ({
                     <tr key={`expanded-${lead.id}`} className="bg-slate-800/40 border-l-4 border-orange-500 animate-in slide-in-from-left-2 duration-200">
                       <td colSpan="9" className="px-6 py-4">
                         <div className="flex flex-col gap-4">
-                          <div className="flex justify-between items-start">
+                          <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-3">
                             {expandedThumbnail && (
                               <div className="w-32 h-40 bg-slate-950 rounded-lg overflow-hidden flex-shrink-0 mr-4 border border-slate-700">
                                 <img src={`data:image/png;base64,${expandedThumbnail}`} alt="Title page" className="w-full h-full object-contain" />
@@ -2194,7 +2194,7 @@ const LeadTable = ({
                               </div>
                             </div>
 
-                            <div className="flex flex-row gap-2">
+                            <div className="flex flex-row flex-wrap gap-2">
                               <button onClick={() => setDescriptionPopup(lead)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
                                 <Eye size={14} /> View Full Details
                               </button>
@@ -2280,6 +2280,92 @@ const LeadTable = ({
           </tbody>
         </table>
       </div>
+
+      {/* Mobile card list — visible only below md breakpoint */}
+      <div className="md:hidden divide-y divide-slate-800/50">
+        {paginatedData.map((lead, i) => {
+          const expired = isExpired(lead.bid_date);
+          const highlightClass = getHighlightBg(lead.highlight);
+          const strikeClass = lead.strikethrough ? 'opacity-50' : '';
+          const hiddenClass = lead.hidden ? 'opacity-30 grayscale' : '';
+          const isCardExpanded = expandedLeadId === lead.id;
+          return (
+            <div key={lead.id || i} className={`p-3 transition ${expired ? 'opacity-40' : ''} ${hiddenClass} ${highlightClass} ${strikeClass}`}>
+              {/* Header row: status dots + project name */}
+              <div className="flex items-start gap-2">
+                <div className="flex gap-0.5 pt-1 flex-shrink-0">
+                  <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700'}`} title="Green"><Circle size={8} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
+                  <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'yellow' ? null : 'yellow')} className={`p-1 rounded ${lead.highlight === 'yellow' ? 'bg-yellow-600' : 'bg-slate-700'}`} title="Yellow"><Circle size={8} className="text-yellow-400" fill={lead.highlight === 'yellow' ? 'currentColor' : 'none'} /></button>
+                  <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'red' ? null : 'red')} className={`p-1 rounded ${lead.highlight === 'red' ? 'bg-red-600' : 'bg-slate-700'}`} title="Red"><Circle size={8} className="text-red-400" fill={lead.highlight === 'red' ? 'currentColor' : 'none'} /></button>
+                  <button onClick={() => toggleLeadStyle(lead, 'strikethrough', !lead.strikethrough)} className={`p-1 rounded ${lead.strikethrough ? 'bg-slate-500' : 'bg-slate-700'}`} title="Mark reviewed"><Minus size={8} className="text-slate-300" /></button>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <button onClick={() => setExpandedLeadId(isCardExpanded ? null : lead.id)} className="flex items-start gap-1.5 text-left w-full">
+                    {isCardExpanded ? <ChevronUp size={14} className="text-orange-400 mt-0.5 flex-shrink-0" /> : <ChevronDown size={14} className="text-slate-500 mt-0.5 flex-shrink-0" />}
+                    <div className="min-w-0">
+                      <div className={`text-sm font-medium leading-tight ${isCardExpanded ? 'text-orange-400' : 'text-slate-200'}`}>{lead.name}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
+                        <span className="text-[10px] text-slate-600">{lead.site}</span>
+                      </div>
+                    </div>
+                  </button>
+                  <input type="text" defaultValue={lead.short_comment || ''} onBlur={(e) => toggleLeadStyle(lead, 'short_comment', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} placeholder="Add comment..." className={`bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] ${getCommentColor(lead.highlight)} placeholder-slate-700 w-full focus:outline-none transition-colors mt-1`} />
+                </div>
+              </div>
+              {/* Tags */}
+              {(lead.has_budget || (lead.tags && lead.tags.length > 0) || (lead.knowledge_badges && lead.knowledge_badges.length > 0) || (lead.knowledge_last_scanned && !lead.sprinklered) || detectProjectTags(lead).length > 0 || (lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.length > 0)) && (
+                <div className="flex flex-wrap gap-1 mt-2 pl-9">
+                  {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
+                  {lead.tags && lead.tags.map((tag, idx) => <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${tag.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' : tag.color === 'red' ? 'bg-red-500/10 text-red-400 border-red-500/20' : tag.color === 'blue' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : tag.color === 'orange' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : tag.color === 'purple' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : tag.color === 'yellow' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : tag.color === 'teal' ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' : 'bg-slate-700 text-slate-300 border-slate-600'}`}>{tag.label}</span>)}
+                  {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => <span key={`kb-${idx}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor(b)}`}>{b}</span>)}
+                  {lead.knowledge_last_scanned && !lead.sprinklered && <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor('NON-SPRINKLED')}`}>NO SPRINK</span>}
+                  {detectProjectTags(lead).map((pt, idx) => <span key={`pt-${idx}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${pt.color}`}>{pt.label}</span>)}
+                  {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => <span key={`rf-${idx}`} className="text-[10px] px-1.5 py-0.5 rounded border bg-red-500/10 text-red-400 border-red-500/20">{flag.split(/[\s\-\/]+/).slice(0, 2).join(' ').toUpperCase()}</span>)}
+                </div>
+              )}
+              {/* Key info */}
+              <div className="mt-2 pl-9 text-xs space-y-0.5">
+                {lead.company && lead.company !== 'N/A' && <div><span className="text-slate-500">Co: </span><button onClick={() => setCompanyPopup(lead)} className="text-slate-300 hover:text-orange-400 transition-colors">{lead.company}</button></div>}
+                {lead.contact_name && lead.contact_name !== 'N/A' && <div><span className="text-slate-500">Contact: </span><span className="text-slate-300">{lead.contact_name}</span></div>}
+                <div className="flex gap-4 flex-wrap">
+                  <div><span className="text-slate-500">Bid: </span><span className={`font-mono ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{formatDate(lead.bid_date)}</span></div>
+                  {lead.location && lead.location !== 'N/A' && <div><span className="text-slate-500">Loc: </span><span className="text-slate-300">{lead.location}</span></div>}
+                </div>
+              </div>
+              {/* Action buttons */}
+              <div className="flex gap-1 mt-2 pl-9 flex-wrap items-center">
+                {lead.gdrive_link ? <a href={lead.gdrive_link} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-blue-500 hover:bg-blue-400 text-white rounded transition-colors" title="Google Drive"><Cloud size={12} /></a> : lead.files_link ? <button onClick={() => fetch(`${API_BASE}/open-folder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: lead.files_link }) })} className="p-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors" title="Open Folder"><ExternalLink size={12} /></button> : lead.local_file_path ? <a href={`${API_BASE}${lead.local_file_path}`} download className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors" title="Download"><Download size={12} /></a> : null}
+                <button onClick={() => triggerSingleScan(lead.id)} disabled={scanningIds.has(lead.id)} className="p-1.5 bg-slate-700 hover:bg-violet-600 text-slate-400 hover:text-white rounded transition-colors disabled:opacity-70" title="AI Scan">{scanningIds.has(lead.id) ? <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <Brain size={12} />}</button>
+                <button onClick={() => openPointToFile(lead.id)} className="p-1.5 bg-slate-700 hover:bg-orange-600 text-slate-400 hover:text-white rounded transition-colors" title="Browse Files"><FolderOpen size={12} /></button>
+                <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
+                <button onClick={() => toggleLeadStyle(lead, 'hidden', !lead.hidden)} className={`p-1.5 rounded transition-colors ${lead.hidden ? 'bg-slate-600 text-slate-300' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title={lead.hidden ? 'Unhide' : 'Hide'}>{lead.hidden ? <Eye size={12} /> : <EyeOff size={12} />}</button>
+                <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
+                <button onClick={() => setDescriptionPopup(lead)} className="flex items-center gap-1 px-2 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors text-[10px] font-medium"><Eye size={10} /> Details</button>
+              </div>
+              {/* Expanded content */}
+              {isCardExpanded && (
+                <div className="mt-3 pl-9 border-t border-slate-700/50 pt-3 space-y-3">
+                  <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{lead.knowledge_notes ? lead.knowledge_notes : lead.description ? stripHtml(lead.description) : <span className="text-slate-500 italic">No summary available. Run AI scan for details.</span>}</p>
+                  <div>
+                    <h4 className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-1">Internal Comments</h4>
+                    <textarea defaultValue={lead.comments || ''} onBlur={(e) => toggleLeadStyle(lead, 'comments', e.target.value)} placeholder="Add internal notes about this project (autosaves on blur)..." className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 text-xs text-slate-300 placeholder-slate-600 focus:ring-1 focus:ring-blue-500 focus:outline-none resize-y min-h-[60px]" />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setDescriptionPopup(lead)} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2"><Eye size={14} /> View Full Details</button>
+                    <button onClick={() => openPointToFile(lead.id)} className="px-3 py-2 bg-slate-700 hover:bg-orange-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2"><FolderOpen size={14} /> Browse Files</button>
+                    <button onClick={() => triggerSingleScan(lead.id, true)} disabled={scanningIds.has(lead.id)} className="px-3 py-2 bg-purple-700 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{scanningIds.has(lead.id) ? <><svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Scanning...</> : <><Brain size={14} /> Deep Scan</>}</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {data.length === 0 && (
+          <div className="px-6 py-12 text-center text-slate-600 italic">No active leads found in this category.</div>
+        )}
+      </div>
+
       {
         totalPages > 1 && (
           <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center text-xs text-slate-400">
