@@ -101,7 +101,13 @@ MODEL_TO_MANUFACTURER: dict[str, str] = {
     # Silent Knight (compatible)
     "sk-6808": "silent knight",
     "sk6808": "silent knight",
-    "evs": "silent knight",          # e.g. "5820XL EVS", "SK-9EVS"
+    "sk-6820": "silent knight",
+    "sk6820": "silent knight",
+    "6820evs": "silent knight",
+    "sk-6820evs": "silent knight",
+    "6808evs": "silent knight",
+    "sk-6808evs": "silent knight",
+    "evs": "silent knight",          # catches any model ending in or containing EVS
     # Gamewell-FCI (compatible) — "gamewell + 7100" from the notes file
     "7100": "gamewell-fci",
     # FireLite (compatible) — es-50*, es-100*, es-1000*

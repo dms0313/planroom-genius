@@ -696,7 +696,9 @@ class GeminiFireAlarmAnalyzer:
             "tamper switch",
             "supervisory device",
             # FACP model numbers — pages listing existing panels
-            "sk-6808", "sk6808",          # Silent Knight
+            "sk-6808", "sk6808",           # Silent Knight
+            "sk-6820", "sk6820",           # Silent Knight 6820
+            "6820evs", "6808evs",          # Silent Knight EVS variants
             "4100es",                      # Simplex
             "cerberus", "desigo", "fc2005",# Siemens
             "fsp502", "fsp1004", "est3",   # EST/Edwards
@@ -1605,7 +1607,7 @@ NEW STANDARDIZED FIELDS (for improved organization):
    - fire_alarm_required: "yes" or "no"
    - sprinkler_status: "yes" or "no"
    - panel_status: "new", "existing to remain", "retrofit", etc.
-   - existing_panel_manufacturer: Manufacturer name (and model if shown) for any existing fire alarm panel referenced in the drawings, schedules, or notes. Include model number when visible. Recognize these model numbers even when the brand is not written — Silent Knight: SK-6808, SK6808, any model ending in EVS; Gamewell-FCI: 7100 series; FireLite: ES-50x, ES-100x, ES-1000x; Siemens: Cerberus, FC2005, Desigo; EST/Edwards: FSP502, FSP1004, FireShield, EST3; Notifier: NFW-xxx, NFS-xxx; Simplex: 4100ES, 4010; Honeywell; Bosch; Mircom; Johnson Controls / JCI. Return null if no existing panel is mentioned.
+   - existing_panel_manufacturer: Manufacturer name (and model if shown) for any existing fire alarm panel referenced in the drawings, schedules, or notes. Include model number when visible. Recognize these model numbers even when the brand is not written — Silent Knight: SK-6808, SK6808, SK-6820, SK6820, 6820EVS, 6808EVS, any model ending in EVS; Gamewell-FCI: 7100 series; FireLite: ES-50x, ES-100x, ES-1000x; Siemens: Cerberus, FC2005, Desigo; EST/Edwards: FSP502, FSP1004, FireShield, EST3; Notifier: NFW-xxx, NFS-xxx; Simplex: 4100ES, 4010; Honeywell; Bosch; Mircom; Johnson Controls / JCI. Return null if no existing panel is mentioned.
    - layout_page_provided: "Yes" or "No". If yes, include page number.
    - voice_required: "yes" or "no"
    - co_required: "YES", "NO", or "UNCLEAR" based on occupancy (e.g., residential vs business) and gas/fuel sources.
