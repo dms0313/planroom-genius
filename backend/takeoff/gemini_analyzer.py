@@ -1508,35 +1508,69 @@ class GeminiFireAlarmAnalyzer:
     def _compile_page_context(
         self,
         pages_text: List[Dict[str, Any]],
-        max_chars: int = 24000,
+        max_chars: int = 80000,
+        fa_pages: Optional[List[int]] = None,
     ) -> str:
-        """Flatten prioritized pages into a single context block with page labels."""
+        """Flatten prioritized pages into a single context block with page labels.
 
-        blocks: List[str] = []
-        total = 0
+        FA-identified pages are always included first so they are never squeezed
+        out by text-heavy cover/TOC pages.  Remaining budget is filled by other pages
+        in their original order.
+        """
+
+        fa_page_set: set = set(fa_pages or [])
+
+        fa_blocks: List[str] = []
+        other_blocks: List[str] = []
 
         for page in pages_text:
             page_number = page.get('page_number')
             text = (page.get('text') or '').strip()
             if not text:
                 continue
-
             block = f"PAGE {page_number}:\n{text}"
-            block_len = len(block)
-            if total + block_len > max_chars:
-                remaining = max_chars - total
-                if remaining <= 0:
-                    break
-                block = block[:remaining]
-                block_len = len(block)
+            if page_number in fa_page_set:
+                fa_blocks.append(block)
+            else:
+                other_blocks.append(block)
 
-            blocks.append(block)
-            total += block_len
+        result_blocks: List[str] = []
+        used = 0
 
-            if total >= max_chars:
+        # Pass 1 — guarantee all FA pages are included (up to 60 % of budget)
+        fa_budget = int(max_chars * 0.60)
+        for block in fa_blocks:
+            if used + len(block) > fa_budget:
+                # Truncate the last block rather than drop it entirely
+                remaining = fa_budget - used
+                if remaining > 300:
+                    result_blocks.append(block[:remaining])
+                    used += remaining
                 break
+            result_blocks.append(block)
+            used += len(block)
 
-        return "\n\n".join(blocks)
+        # Pass 2 — fill remaining budget with non-FA pages
+        for block in other_blocks:
+            remaining = max_chars - used
+            if remaining <= 0:
+                break
+            if len(block) > remaining:
+                if remaining > 300:
+                    result_blocks.append(block[:remaining])
+                break
+            result_blocks.append(block)
+            used += len(block)
+
+        logger.info(
+            "Page context: %s FA blocks + %s other blocks = %s chars (limit %s)",
+            len(fa_blocks),
+            len(other_blocks),
+            used,
+            max_chars,
+        )
+
+        return "\n\n".join(result_blocks)
 
     def _run_consolidated_extraction(
         self,
@@ -1548,7 +1582,7 @@ class GeminiFireAlarmAnalyzer:
     ) -> Dict[str, Any]:
         """Combine project info, codes, notes, mechanical, and specs into one Gemini call."""
 
-        context_text = self._compile_page_context(pages_text)
+        context_text = self._compile_page_context(pages_text, fa_pages=fa_pages)
         spec_excerpt = self._compile_spec_excerpt(spec_sections)
         image_note = self._image_guidance_text(image_payload, image_pages)
 
