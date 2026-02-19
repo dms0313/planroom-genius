@@ -1980,13 +1980,13 @@ const LeadTable = ({
           <colgroup>
             <col className="w-[70px]" />
             <col className="w-[22%]" />
-            <col className="w-[200px]" />
-            <col className="w-[14%]" />
-            <col className="w-[13%]" />
-            <col className="w-[12%]" />
-            <col className="w-[90px]" />
-            <col className="w-[70px]" />
-            <col className="w-[140px]" />
+            <col className="w-[280px]" />
+            <col className="w-[11%]" />
+            <col className="w-[10%]" />
+            <col className="w-[9%]" />
+            <col className="w-[75px]" />
+            <col className="w-[60px]" />
+            <col className="w-[120px]" />
           </colgroup>
           <thead className="bg-slate-950/50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
             <tr>
@@ -2009,7 +2009,13 @@ const LeadTable = ({
               const hiddenClass = lead.hidden ? 'opacity-30 grayscale' : '';
               return (
                 <React.Fragment key={lead.id || i}>
-                  <tr className={`hover:bg-slate-800/30 transition group ${expired ? 'opacity-40' : ''} ${hiddenClass} ${highlightClass} ${strikeClass}`}>
+                  <tr
+                    className={`hover:bg-slate-800/30 transition group cursor-pointer ${expired ? 'opacity-40' : ''} ${hiddenClass} ${highlightClass} ${strikeClass}`}
+                    onClick={(e) => {
+                      if (e.target.closest('button, input, a, select, textarea')) return;
+                      setExpandedLeadId(expandedLeadId === lead.id ? null : lead.id);
+                    }}
+                  >
                     <td className="px-2 py-2">
                       <div className="flex gap-0.5">
                         <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700 hover:bg-green-600'}`} title="Green"><Circle size={8} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
@@ -2087,24 +2093,24 @@ const LeadTable = ({
                         ))}
                       </div>
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 py-2">
                       <button onClick={() => setCompanyPopup(lead)} className="flex flex-col text-left hover:bg-slate-800/50 p-1 rounded transition-colors w-full" title="Click for details">
-                        <span className="text-slate-300 truncate max-w-[220px] hover:text-orange-400 transition-colors">{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
-                        <span className="text-[10px] text-slate-500 truncate max-w-[220px]">{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
+                        <span className="text-slate-300 truncate max-w-[180px] hover:text-orange-400 transition-colors">{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
+                        <span className="text-[10px] text-slate-500 truncate max-w-[180px]">{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
                       </button>
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 py-2">
                       <div className="flex flex-col gap-0.5">
-                        <span className="text-slate-300 truncate max-w-[200px]">{lead.contact_name !== "N/A" ? lead.contact_name : <span className="text-slate-600 italic">-</span>}</span>
+                        <span className="text-slate-300 truncate max-w-[160px]">{lead.contact_name !== "N/A" ? lead.contact_name : <span className="text-slate-600 italic">-</span>}</span>
                         {lead.contact_email && (
                           <a href={`mailto:${lead.contact_email}`} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-orange-400 transition-colors">
-                            <Mail size={10} /><span className="truncate max-w-[200px]">{lead.contact_email}</span>
+                            <Mail size={10} /><span className="truncate max-w-[160px]">{lead.contact_email}</span>
                           </a>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-2 text-slate-400 truncate max-w-[200px]" title={lead.location}>{lead.location || "N/A"}</td>
-                    <td className={`px-4 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{formatDate(lead.bid_date)}</td>
+                    <td className="px-2 py-2 text-slate-400 truncate max-w-[160px]" title={lead.location}>{lead.location || "N/A"}</td>
+                    <td className={`px-2 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{formatDate(lead.bid_date)}</td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex justify-center gap-1">
                         {lead.gdrive_link ? (
