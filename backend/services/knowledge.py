@@ -101,12 +101,16 @@ MODEL_TO_MANUFACTURER: dict[str, str] = {
     # Silent Knight (compatible)
     "sk-6808": "silent knight",
     "sk6808": "silent knight",
+    "sk 6808": "silent knight",      # space variant
     "sk-6820": "silent knight",
     "sk6820": "silent knight",
+    "sk 6820": "silent knight",      # space variant
     "6820evs": "silent knight",
     "sk-6820evs": "silent knight",
+    "sk 6820evs": "silent knight",
     "6808evs": "silent knight",
     "sk-6808evs": "silent knight",
+    "sk 6808evs": "silent knight",
     "evs": "silent knight",          # catches any model ending in or containing EVS
     # Gamewell-FCI (compatible) — "gamewell + 7100" from the notes file
     "7100": "gamewell-fci",
@@ -743,7 +747,7 @@ Guidelines:
     * "bid" when scope is clear and winnable.
     * "review" when viable but uncertain/risky and needs human estimator review.
     * "skip" when poor fit, no FA scope, or hard constraints.
-- required_manufacturers: Extract EXACT manufacturer names from plans/specs. Include the existing panel manufacturer if visible on plans. Recognize these common model numbers and map them to manufacturers — Silent Knight: SK-6808, SK6808, *EVS; Gamewell-FCI: 7100 (when paired with "Gamewell"); FireLite: ES-50x, ES-100x, ES-1000x; Siemens: Cerberus, FC2005, Desigo; EST/Edwards: FSP502, FSP1004, FireShield, EST3; Notifier: NFW-xxx, NFS-xxx; Simplex: 4100ES, 4010. If a model number is found without the brand name, infer and include the brand (e.g., "SK-6808" → "Silent Knight SK-6808").
+- required_manufacturers: Extract EXACT manufacturer names from plans/specs. Include the existing panel manufacturer if visible on plans. Recognize these common model numbers and map them to manufacturers — Silent Knight: SK-6808, SK6808, SK 6808, SK-6820, SK6820, SK 6820, 6820EVS, 6808EVS, *EVS; Gamewell-FCI: 7100 (when paired with "Gamewell"); FireLite: ES-50x, ES-100x, ES-1000x; Siemens: Cerberus, FC2005, Desigo; EST/Edwards: FSP502, FSP1004, FireShield, EST3; Notifier: NFW-xxx, NFS-xxx; Simplex: 4100ES, 4010. If a model number is found without the brand name, infer and include the brand (e.g., "SK-6808" → "Silent Knight SK-6808").
 - required_vendors/required_manufacturers/deal_breakers should remain concise factual lists.
 - scope_score remains a 0-100 attractiveness score.
 
