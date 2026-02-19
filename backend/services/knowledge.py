@@ -81,7 +81,8 @@ def get_status():
 
 # Our compatible manufacturers (we can bid these)
 COMPATIBLE_MANUFACTURERS = {
-    "gamewell", "fci", "gamewell-fci", "firelite", "fire-lite", "fire lite",
+    "gamewell", "fci", "gamewell-fci", "gamewell fci",
+    "firelite", "fire-lite", "fire lite",
     "silent knight", "silentknight",
 }
 
@@ -89,8 +90,56 @@ COMPATIBLE_MANUFACTURERS = {
 INCOMPATIBLE_MANUFACTURERS = {
     "est", "edwards", "siemens", "simplex", "ge", "potter", "kidde",
     "notifier", "honeywell", "bosch", "hochiki", "mircom", "vigilant",
-    "farenhyt", "autocall",
+    "farenhyt", "autocall", "johnson controls", "jci", "tyco",
 }
+
+# Model-number → canonical manufacturer name.
+# Used so that plans referencing only a model number (e.g. "SK-6808") still
+# resolve to the correct manufacturer for compatibility scoring.
+# Entries are lowercase; prefix matches (ending in "-") use startswith logic.
+MODEL_TO_MANUFACTURER: dict[str, str] = {
+    # Silent Knight (compatible)
+    "sk-6808": "silent knight",
+    "sk6808": "silent knight",
+    "evs": "silent knight",          # e.g. "5820XL EVS", "SK-9EVS"
+    # Gamewell-FCI (compatible) — "gamewell + 7100" from the notes file
+    "7100": "gamewell-fci",
+    # FireLite (compatible) — es-50*, es-100*, es-1000*
+    "es-50": "firelite",
+    "es-100": "firelite",
+    "es-1000": "firelite",
+    # Siemens (incompatible)
+    "cerberus": "siemens",
+    "fc2005": "siemens",
+    "desigo": "siemens",
+    # EST / Edwards (incompatible)
+    "fsp502": "est",
+    "fsp1004": "est",
+    "fireshield": "est",
+    "est3": "est",
+    # Notifier (incompatible) — nfw-*, nfs-*  (prefix match)
+    "nfw-": "notifier",
+    "nfs-": "notifier",
+    # Simplex (incompatible) — "simplex + 4010" and standalone 4100es
+    "4100es": "simplex",
+    "4010": "simplex",
+}
+
+
+def _resolve_manufacturer(token: str) -> str:
+    """
+    Given a lowercased token from AI output, return the canonical manufacturer
+    name if a model-number match is found, otherwise return the token unchanged.
+    """
+    for model_key, mfr in MODEL_TO_MANUFACTURER.items():
+        if model_key.endswith("-"):
+            # prefix match (e.g. "nfw-" matches "nfw-100", "nfw-2")
+            if token.startswith(model_key):
+                return mfr
+        else:
+            if model_key in token:
+                return mfr
+    return token
 
 
 def _adjust_score_for_manufacturers(analysis):
@@ -99,7 +148,8 @@ def _adjust_score_for_manufacturers(analysis):
     if not raw_mfrs:
         return
 
-    normalized = [m.lower().strip() for m in raw_mfrs]
+    # Resolve model numbers to canonical manufacturer names before matching
+    normalized = [_resolve_manufacturer(m.lower().strip()) for m in raw_mfrs]
 
     has_compatible = any(
         any(cm in n for cm in COMPATIBLE_MANUFACTURERS) for n in normalized
@@ -687,7 +737,7 @@ Guidelines:
     * "bid" when scope is clear and winnable.
     * "review" when viable but uncertain/risky and needs human estimator review.
     * "skip" when poor fit, no FA scope, or hard constraints.
-- required_manufacturers: Extract EXACT manufacturer names from plans/specs (e.g., "Gamewell-FCI", "EST", "Simplex", "Siemens"). Include the existing panel manufacturer if visible on plans.
+- required_manufacturers: Extract EXACT manufacturer names from plans/specs. Include the existing panel manufacturer if visible on plans. Recognize these common model numbers and map them to manufacturers — Silent Knight: SK-6808, SK6808, *EVS; Gamewell-FCI: 7100 (when paired with "Gamewell"); FireLite: ES-50x, ES-100x, ES-1000x; Siemens: Cerberus, FC2005, Desigo; EST/Edwards: FSP502, FSP1004, FireShield, EST3; Notifier: NFW-xxx, NFS-xxx; Simplex: 4100ES, 4010. If a model number is found without the brand name, infer and include the brand (e.g., "SK-6808" → "Silent Knight SK-6808").
 - required_vendors/required_manufacturers/deal_breakers should remain concise factual lists.
 - scope_score remains a 0-100 attractiveness score.
 
