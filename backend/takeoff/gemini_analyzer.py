@@ -678,25 +678,21 @@ class GeminiFireAlarmAnalyzer:
             "fire alarm system",
             "fire alarm riser",
             "fa1.",
-            # Common page titles that host FA devices even without "fire alarm" label
-            "special systems",
+            # Sheet label patterns for FA drawing numbering schemes
+            "-fa-",
+            "1-fa-",
+            # FA-specific page titles (not generic low-voltage/tech/comms titles)
             "fire protection plan",
             "life safety plan",
-            "low voltage plan",
-            "technology plan",
-            "communications plan",
-            # FA device types that appear in legends/schedules
+            # FA device types specific enough to signal FA content
             "addressable module",
             "monitor module",
-            "control module",
             "initiating device",
             "notification appliance",
-            "audio/visual",
             "audible/visual",
             "combination detector",
             "beam detector",
             "linear heat",
-            "waterflow",
             "tamper switch",
             "supervisory device",
         ]
