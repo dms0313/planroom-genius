@@ -650,6 +650,8 @@ class GeminiFireAlarmAnalyzer:
             "fire-alarm",
             "fa ",
             "fa-",
+            "-fa-",
+            "1-fa-",
             "facp",
             "notification device",
             "horn strobe",
@@ -675,7 +677,28 @@ class GeminiFireAlarmAnalyzer:
             "fire marshal",
             "fire alarm system",
             "fire alarm riser",
-            "fa1."
+            "fa1.",
+            # Common page titles that host FA devices even without "fire alarm" label
+            "special systems",
+            "fire protection plan",
+            "life safety plan",
+            "low voltage plan",
+            "technology plan",
+            "communications plan",
+            # FA device types that appear in legends/schedules
+            "addressable module",
+            "monitor module",
+            "control module",
+            "initiating device",
+            "notification appliance",
+            "audio/visual",
+            "audible/visual",
+            "combination detector",
+            "beam detector",
+            "linear heat",
+            "waterflow",
+            "tamper switch",
+            "supervisory device",
         ]
 
         return any(keyword in text_lower for keyword in keywords)
@@ -1314,6 +1337,20 @@ class GeminiFireAlarmAnalyzer:
         logger.info("Identifying fire alarm pages...")
         fa_pages = self._identify_fire_alarm_pages(pages_text)
 
+        # Step 1b: Supplement with TOC-referenced FA pages so that pages whose
+        # extracted text is sparse (e.g. mostly graphical) are still included.
+        toc_fa_pages = self._extract_toc_fa_page_numbers(pages_text)
+        if toc_fa_pages:
+            merged = sorted(set(fa_pages) | set(toc_fa_pages))
+            added = sorted(set(toc_fa_pages) - set(fa_pages))
+            if added:
+                logger.info(
+                    "TOC scan added %s additional FA page(s) not caught by keyword rules: %s",
+                    len(added),
+                    added,
+                )
+            fa_pages = merged
+
         # Step 3: Prepare a lean subset of pages to reduce token usage
         focused_pages = self._prioritize_pages_for_ai(pages_text, fa_pages)
 
@@ -1518,6 +1555,10 @@ CRITICAL INSTRUCTION: Synthesize findings from ALL provided pages and images. Do
 Cross-reference information across sheets (e.g., if a device is shown on Page 5 but the key note is on Page 3, combine that info).
 Treat the provided content as a complete package.
 
+IMPORTANT — DO NOT FLAG PAGES AS MISSING: This PDF is a complete construction document set. Every sheet listed in the Sheet Index or Table of Contents IS present in this PDF. Do NOT state that any page is "missing from the provided PDF." If content for a specific sheet is not visible in the extracted text context, note only that "details were not captured in the provided context" — never say the sheet or page is absent. The drawings contain all sheets listed in their index.
+
+FIRE ALARM PAGE TITLES: Fire alarm devices and systems are frequently shown on pages whose titles do NOT say "Fire Alarm." Common page titles that contain fire alarm content include: "Power Plan," "Special Systems," "Special Systems Plan," "Systems Plan," "Fire Protection Plan," "Life Safety Plan," "Low Voltage Plan," "Technology Plan," "Communications Plan," and pages labeled with sheet numbers containing "FA," "FS," or "LS." If the sheet index references sheets with these titles alongside fire alarm sheets, assume fire alarm content exists across multiple drawing types. Additionally, almost every drawing set that lists fire alarm sheets in its index does in fact include the full fire alarm scope in the PDF — treat the presence of FA sheet entries in the index as strong evidence the scope is present, even if the visible page text is sparse.
+
 Keep answers concise and only include information directly supported by the provided pages. Always cite page numbers when referencing notes, devices, or layouts. Fire alarm-focused
 pages identified by rules: {fa_pages}. Drawings are the primary source—use spec excerpts only as backup context and only for
 Division 28 addressable fire alarm control panel requirements.
@@ -1616,6 +1657,7 @@ CRITICAL RULES:
 - Do not repeat the same pitfall or note in multiple fields; deduplicate wording and cite context briefly when helpful.
 - For EVERY item in required_vendors, required_manufacturers, code_requirements, and deal_breakers, you MUST include one matching evidence object with the same claim text, page number, and short quote/snippet from the documents.
 - If there is no evidence, omit the claim from that list.
+- NEVER add a pitfall or note stating that fire alarm drawing sheets are "missing from the provided PDF" or "not included in the PDF." The PDF is a complete set. If a sheet's content was not captured in the extracted text context, that is a context limitation, not a missing document. Omit any such note entirely.
 """
         )
 
@@ -1982,6 +2024,95 @@ Extract the following information:
                     fa_pages.append(page['page_number'])
         
         return sorted(list(set(fa_pages))) # Return unique, sorted list
+
+    def _extract_toc_fa_page_numbers(self, pages_text: List[Dict]) -> List[int]:
+        """
+        Scan the first several pages for a Sheet Index / Table of Contents that lists
+        fire-alarm-related sheets, then return the PDF page numbers of those sheets so
+        they can be force-included even when their own extracted text is sparse.
+
+        Strategy: the TOC page itself references FA sheets by sheet label (e.g. 1-FA-0001).
+        The actual FA drawing page will typically have that same label somewhere in its
+        extracted text.  We collect the labels from the TOC, then scan ALL pages looking
+        for any page whose text contains one of those labels.
+        """
+
+        # Sheet-label patterns that indicate fire alarm content in a TOC row
+        fa_toc_patterns = re.compile(
+            r"""
+            \b(?:
+              (?:fa|fs|ls)[-_]?\d              |  # FA-001, FS-1, LS-2
+              \d+-fa-\d                         |  # 1-FA-0001
+              fire\s+alarm                      |  # "fire alarm" sheet title
+              fire\s+protection                 |  # "fire protection" sheet title
+              special\s+systems                 |  # "special systems" sheet title
+              life\s+safety                     |  # "life safety" sheet title
+              power\s+plan                         # "power plan" (sometimes hosts FA)
+            )
+            """,
+            re.IGNORECASE | re.VERBOSE,
+        )
+
+        # Sheet label extractor — grabs things like "1-FA-0001", "E-FA-101", "FA-001"
+        label_extractor = re.compile(
+            r"\b(?:\w+-)?fa-\w+|\bfs-\w+|\bls-\w+",
+            re.IGNORECASE,
+        )
+
+        # Only scan the first 8 pages for a TOC
+        toc_pages = pages_text[:8]
+        toc_found = False
+        collected_labels: set = set()
+
+        for page in toc_pages:
+            text = page.get("text") or ""
+            text_lower = text.lower()
+
+            # Does this look like a sheet index?
+            is_toc = (
+                "sheet index" in text_lower
+                or "drawing index" in text_lower
+                or "sheet list" in text_lower
+                or "drawing list" in text_lower
+                or "index of drawings" in text_lower
+                or "list of drawings" in text_lower
+                or "table of contents" in text_lower
+            )
+
+            if not is_toc:
+                continue
+
+            toc_found = True
+            # Does the TOC mention FA sheets at all?
+            if fa_toc_patterns.search(text_lower):
+                # Extract specific label strings so we can match them to pages later
+                for match in label_extractor.finditer(text):
+                    collected_labels.add(match.group(0).lower())
+
+        if not toc_found or not collected_labels:
+            return []
+
+        logger.info(
+            "TOC references %s FA-related sheet labels: %s",
+            len(collected_labels),
+            ", ".join(sorted(collected_labels)[:20]),
+        )
+
+        # Find which PDF pages carry those labels in their extracted text
+        referenced_pages: List[int] = []
+        for page in pages_text:
+            page_text_lower = (page.get("text") or "").lower()
+            page_num = page.get("page_number")
+            if page_num is None:
+                continue
+            if any(label in page_text_lower for label in collected_labels):
+                referenced_pages.append(page_num)
+
+        logger.info(
+            "TOC-referenced FA pages found in PDF: %s",
+            referenced_pages[:30],
+        )
+        return referenced_pages
 
     def _prioritize_pages_for_ai(
         self,
