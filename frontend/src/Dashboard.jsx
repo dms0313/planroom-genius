@@ -2109,9 +2109,15 @@ const LeadTable = ({
                         {expandedLeadId === lead.id ? <ChevronUp size={14} className="text-orange-400" /> : <ChevronDown size={14} className="text-slate-500" />}
                         <div className="truncate text-sm">{lead.name}</div>
                       </button>
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
                         <span className="text-[10px] text-slate-600">{lead.site}</span>
+                        {lead.takeoff_timestamp
+                          ? <span title={`Deep scan: ${new Date(lead.takeoff_timestamp).toLocaleDateString()}`} className="flex items-center gap-0.5 text-[9px] text-violet-400 bg-violet-500/10 border border-violet-500/20 px-1 py-0.5 rounded leading-none"><Brain size={8} />deep</span>
+                          : lead.knowledge_last_scanned
+                            ? <span title={`AI scan: ${new Date(lead.knowledge_last_scanned).toLocaleDateString()}`} className="flex items-center gap-0.5 text-[9px] text-slate-500 bg-slate-700/40 border border-slate-600/30 px-1 py-0.5 rounded leading-none"><Brain size={8} />scanned</span>
+                            : null
+                        }
                       </div>
                       {/* Short In-line Comment */}
                       <div className="mt-1">
@@ -2203,7 +2209,24 @@ const LeadTable = ({
                     </td>
                     <td className="px-4 py-2 text-center">
                       <div className="flex justify-center gap-1">
-                        <button onClick={() => triggerSingleScan(lead.id)} disabled={scanningIds.has(lead.id)} className="p-1.5 bg-slate-700 hover:bg-violet-600 text-slate-400 hover:text-white rounded transition-colors disabled:opacity-70 disabled:cursor-not-allowed" title="Force Knowledge Scan">
+                        <button
+                          onClick={() => triggerSingleScan(lead.id)}
+                          disabled={scanningIds.has(lead.id)}
+                          className={`p-1.5 rounded transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${
+                            lead.takeoff_timestamp
+                              ? 'bg-violet-600/30 text-violet-300 border border-violet-500/30 hover:bg-violet-600 hover:text-white hover:border-transparent'
+                              : lead.knowledge_last_scanned
+                                ? 'bg-violet-900/40 text-violet-500 hover:bg-violet-600 hover:text-white'
+                                : 'bg-slate-700 text-slate-400 hover:bg-violet-600 hover:text-white'
+                          }`}
+                          title={
+                            lead.takeoff_timestamp
+                              ? `Deep scan: ${new Date(lead.takeoff_timestamp).toLocaleDateString()} — click to re-scan`
+                              : lead.knowledge_last_scanned
+                                ? `AI scan: ${new Date(lead.knowledge_last_scanned).toLocaleDateString()} — click to re-scan`
+                                : 'Run AI Scan'
+                          }
+                        >
                           {scanningIds.has(lead.id) ? (
                             <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                           ) : (
