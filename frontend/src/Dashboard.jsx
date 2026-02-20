@@ -185,22 +185,43 @@ const badgeHover = (badge, lead) => {
   return badge;
 };
 
-// Detect project type tags from name/description for at-a-glance info
-const detectProjectTags = (lead) => {
-  const tags = [];
-  const text = `${lead.name || ''} ${lead.description || ''} ${lead.knowledge_notes || ''}`.toLowerCase();
-  const name = (lead.name || '').toLowerCase();
-  // Building types that affect fire alarm scope/complexity
-  if (/\bapartment|\bmulti.?family|\bresidential\b|\bcondo/.test(text)) tags.push({ label: 'RESIDENTIAL', color: 'bg-pink-500/20 text-pink-400 border-pink-500/30', hover: 'Apartments / multi-family — typically needs individual unit detection' });
-  if (/\bhospital|\bmedical|\bhealthcare|\bclinic|\bsurgical/.test(text)) tags.push({ label: 'HEALTHCARE', color: 'bg-rose-500/20 text-rose-400 border-rose-500/30', hover: 'Healthcare facility — stringent code requirements' });
-  if (/\bschool|\buniversity|\bcollege|\beducation|\bcampus/.test(text)) tags.push({ label: 'EDUCATION', color: 'bg-sky-500/20 text-sky-400 border-sky-500/30', hover: 'Educational facility — mass notification may apply' });
-  if (/\bhigh.?rise|\b\d{2,}\s*stor(y|ies)/.test(text)) tags.push({ label: 'HIGH-RISE', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30', hover: 'High-rise building — complex zoning & voice evac likely' });
-  if (/\bwarehouse|\bstorage|\bdistribution/.test(text)) tags.push({ label: 'WAREHOUSE', color: 'bg-stone-500/20 text-stone-400 border-stone-500/30', hover: 'Warehouse / storage — large open areas, high ceilings' });
-  if (/\bhotel|\bhospitality|\bresort|\blodg/.test(text)) tags.push({ label: 'HOTEL', color: 'bg-violet-500/20 text-violet-400 border-violet-500/30', hover: 'Hotel / hospitality — individual room detection' });
-  if (/\bchurch|\bworship|\btemple|\bmosque/.test(text)) tags.push({ label: 'WORSHIP', color: 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/30', hover: 'Place of worship — large assembly space' });
-  if (/\bparking\s*(garage|structure|deck)/.test(text)) tags.push({ label: 'PARKING', color: 'bg-neutral-500/20 text-neutral-400 border-neutral-500/30', hover: 'Parking structure — CO detection may apply' });
-  if (/\bdata\s*center|\bserver/.test(name)) tags.push({ label: 'DATA CTR', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', hover: 'Data center — clean agent / early detection' });
-  return tags;
+// Predefined project tags — fixed set manually assigned by user
+const PREDEFINED_TAGS = [
+  // Condition / compliance / scope tags
+  { id: 'MODIFY',       label: 'MODIFY',       color: 'yellow',   hint: 'Existing system to remain',                                    group: 'tags' },
+  { id: 'NO SPRNK',     label: 'NO SPRNK',     color: 'red',      hint: 'No sprinkler per code definitions page',                       group: 'tags' },
+  { id: 'DEAL BREAKER', label: 'DEAL BREAKER', color: 'red',      hint: 'Deal breaker — review before bidding',                         group: 'tags' },
+  { id: 'NEW SYSTEM',   label: 'NEW SYSTEM',   color: 'green',    hint: 'New fire alarm system installation',                           group: 'tags' },
+  { id: 'BABA',         label: 'BABA',         color: 'orange',   hint: 'Buy American Build American required',                         group: 'tags' },
+  { id: 'DAVIS BACON',  label: 'DAVIS BACON',  color: 'orange',   hint: 'Prevailing wage / Davis-Bacon required',                      group: 'tags' },
+  { id: 'BDA ERRC',     label: 'BDA ERRC',     color: 'orange',   hint: 'BDA / ERRC system required',                                  group: 'tags' },
+  { id: 'PHASED',       label: 'PHASED',       color: 'yellow',   hint: 'Phased construction schedule',                                group: 'tags' },
+  { id: 'DISCREPENCY',  label: 'DISCREPENCY',  color: 'red',      hint: 'Plan discrepancy found — needs clarification',                group: 'tags' },
+  { id: 'VOICE',        label: 'VOICE',        color: 'yellow',   hint: 'Voice evacuation / mass notification required',               group: 'tags' },
+  { id: 'NICET',        label: 'NICET',        color: 'yellow',   hint: 'NICET certification required',                                group: 'tags' },
+  { id: 'NETWORK',      label: 'NETWORK',      color: 'yellow',   hint: 'System to be connected to a network',                        group: 'tags' },
+  { id: 'NO FA',        label: 'NO FA',        color: 'red',      hint: 'No fire alarm scope in this project',                        group: 'tags' },
+  { id: 'HIGH LABOR',   label: 'HIGH LABOR',   color: 'red',      hint: 'High labor content',                                         group: 'tags' },
+  { id: 'DESIGN BUILD', label: 'DESIGN BUILD', color: 'yellow',   hint: 'Design-build delivery method',                               group: 'tags' },
+  { id: 'COMP MFG',     label: 'COMP MFG',     color: 'green',    hint: 'Compatible manufacturer (Gamewell-FCI, FireLite, Silent Knight)', group: 'tags' },
+  { id: 'REQ MFR',      label: 'REQ MFR',      color: 'yellow',   hint: 'Required manufacturer specified in specs',                   group: 'tags' },
+  // Location / building type tags
+  { id: 'WAREHOUSE',    label: 'WAREHOUSE',    color: 'location', hint: 'Warehouse / distribution facility',                          group: 'location' },
+  { id: 'EDUCATION',    label: 'EDUCATION',    color: 'location', hint: 'School / university / educational facility',                 group: 'location' },
+  { id: 'HOTEL',        label: 'HOTEL',        color: 'location', hint: 'Hotel / hospitality',                                        group: 'location' },
+  { id: 'APARTMENTS',   label: 'APARTMENTS',   color: 'location', hint: 'Residential apartments / multi-family',                      group: 'location' },
+  { id: 'HOSPITAL',     label: 'HOSPITAL',     color: 'location', hint: 'Hospital / medical center',                                  group: 'location' },
+  { id: 'CLINIC',       label: 'CLINIC',       color: 'location', hint: 'Medical or dental clinic',                                   group: 'location' },
+  { id: 'OFFICE',       label: 'OFFICE',       color: 'location', hint: 'Office building',                                            group: 'location' },
+];
+
+const tagColorClass = (color) => {
+  if (color === 'red')      return 'bg-red-500/10 text-red-400 border-red-500/20';
+  if (color === 'green')    return 'bg-green-500/10 text-green-400 border-green-500/20';
+  if (color === 'orange')   return 'bg-orange-500/10 text-orange-400 border-orange-500/20';
+  if (color === 'yellow')   return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
+  if (color === 'location') return 'bg-sky-500/10 text-sky-400 border-sky-500/20';
+  return 'bg-slate-700/50 text-slate-300 border-slate-600';
 };
 
 const classColor = (cls) => {
@@ -1293,13 +1314,8 @@ export default function LeadDashboard() {
                       </span>
                     </span>
                   )}
-                  {detectProjectTags(descriptionPopup).map((pt, idx) => (
-                    <span key={`pt-${idx}`} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default ${pt.color}`}>
-                      {pt.label}
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                        {pt.hover}
-                      </span>
-                    </span>
+                  {descriptionPopup.tags && descriptionPopup.tags.map((tag, idx) => (
+                    <span key={`ut-${idx}`} className={`text-[10px] px-2 py-0.5 rounded-full border cursor-default ${tagColorClass(tag.color)}`}>{tag.label}</span>
                   ))}
                   {descriptionPopup.knowledge_bid_risk_flags && descriptionPopup.knowledge_bid_risk_flags.map((flag, idx) => (
                     <span key={`rf-${idx}`} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default bg-red-500/10 text-red-400 border-red-500/20`}>
@@ -1860,8 +1876,18 @@ const LeadTable = ({
   const [expandedThumbnail, setExpandedThumbnail] = useState(null);
   const [qaQuestion, setQaQuestion] = useState('');
   const [qaLoading, setQaLoading] = useState(false);
+  const [tagPicker, setTagPicker] = useState(null); // { leadId, top, left }
+  const [activeTagFilters, setActiveTagFilters] = useState([]);
   const itemsPerPage = 50;
-  const totalPages = Math.ceil(data.length / itemsPerPage);
+
+  const visibleData = useMemo(() => {
+    if (activeTagFilters.length === 0) return data;
+    return data.filter(lead =>
+      activeTagFilters.some(tagId => lead.tags?.some(t => t.label === tagId))
+    );
+  }, [data, activeTagFilters]);
+
+  const totalPages = Math.ceil(visibleData.length / itemsPerPage);
 
   useEffect(() => {
     if (!expandedLeadId) { setExpandedThumbnail(null); return; }
@@ -1902,6 +1928,25 @@ const LeadTable = ({
     }
   };
 
+  const toggleLeadTag = async (lead, tagId) => {
+    const predefined = PREDEFINED_TAGS.find(t => t.id === tagId);
+    if (!predefined) return;
+    const currentTags = lead.tags || [];
+    const hasTag = currentTags.some(t => t.label === tagId);
+    const newTags = hasTag
+      ? currentTags.filter(t => t.label !== tagId)
+      : [...currentTags, { label: predefined.label, color: predefined.color, hover: predefined.hint }];
+    await toggleLeadStyle(lead, 'tags', newTags);
+  };
+
+  // Close tag picker when clicking outside
+  useEffect(() => {
+    if (!tagPicker) return;
+    const close = () => setTagPicker(null);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [tagPicker]);
+
   const handleSort = (key) => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -1923,12 +1968,12 @@ const LeadTable = ({
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages);
-  }, [data.length, totalPages, currentPage]);
+  }, [visibleData.length, totalPages, currentPage]);
 
-  const paginatedData = data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginatedData = visibleData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const handlePageChange = (p) => { if (p >= 1 && p <= totalPages) setCurrentPage(p); };
 
-  return (
+  return (<>
     <div className="mb-8 bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col">
       <div className="p-3 md:p-4 border-b border-slate-800 flex flex-col gap-2 md:gap-3 bg-slate-900/50 backdrop-blur">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
@@ -1974,6 +2019,33 @@ const LeadTable = ({
             ))}
           </div>
         )}
+        {/* Tag filter bar */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0 font-semibold">Tags:</span>
+          {PREDEFINED_TAGS.filter(t => t.group === 'tags').map(tag => (
+            <button
+              key={tag.id}
+              onClick={() => setActiveTagFilters(prev => prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id])}
+              title={tag.hint}
+              className={`text-[10px] px-2 py-0.5 rounded border transition-all ${activeTagFilters.includes(tag.id) ? tagColorClass(tag.color) : 'bg-transparent text-slate-600 border-slate-700/50 hover:border-slate-500 hover:text-slate-400'}`}
+            >{tag.label}</button>
+          ))}
+          <span className="text-[10px] text-slate-600 px-1">|</span>
+          {PREDEFINED_TAGS.filter(t => t.group === 'location').map(tag => (
+            <button
+              key={tag.id}
+              onClick={() => setActiveTagFilters(prev => prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id])}
+              title={tag.hint}
+              className={`text-[10px] px-2 py-0.5 rounded border transition-all ${activeTagFilters.includes(tag.id) ? tagColorClass(tag.color) : 'bg-transparent text-slate-600 border-slate-700/50 hover:border-slate-500 hover:text-slate-400'}`}
+            >{tag.label}</button>
+          ))}
+          {activeTagFilters.length > 0 && (
+            <button onClick={() => setActiveTagFilters([])} className="text-[10px] px-1.5 py-0.5 text-slate-500 hover:text-red-400 transition-colors ml-1">× clear</button>
+          )}
+          {activeTagFilters.length > 0 && (
+            <span className="text-[10px] text-slate-500 ml-1">— showing {visibleData.length} of {data.length}</span>
+          )}
+        </div>
       </div>
       <div className="hidden md:block overflow-x-auto flex-grow">
         <table className="w-full table-fixed text-left text-xs text-slate-400">
@@ -2047,22 +2119,16 @@ const LeadTable = ({
                     </td>
                     {/* Tags column */}
                     <td className="px-2 py-2">
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1 items-start">
                         {lead.has_budget && <span className="relative group/tag text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30 cursor-default">BUDGET<span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">Project has budget info</span></span>}
-                        {/* User tags */}
+                        {/* User-assigned predefined tags */}
                         {lead.tags && lead.tags.map((tag, idx) => (
-                          <span key={idx} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tag.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
-                            tag.color === 'red' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
-                              tag.color === 'blue' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                                tag.color === 'orange' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
-                                  tag.color === 'purple' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
-                                    tag.color === 'yellow' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
-                                      tag.color === 'teal' ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' :
-                                        'bg-slate-700 text-slate-300 border-slate-600'
-                            }`}>
-                            {tag.label}
-                            {tag.hover && <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{tag.hover}</span>}
-                          </span>
+                          <button
+                            key={idx}
+                            onClick={(e) => { e.stopPropagation(); toggleLeadTag(lead, tag.label); }}
+                            title={`${tag.hint || tag.label} — click to remove`}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-opacity hover:opacity-70 ${tagColorClass(tag.color)}`}
+                          >{tag.label}</button>
                         ))}
                         {/* Knowledge Badges */}
                         {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
@@ -2077,13 +2143,6 @@ const LeadTable = ({
                             <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{badgeHover('NON-SPRINKLED', lead)}</span>
                           </span>
                         )}
-                        {/* Project type tags */}
-                        {detectProjectTags(lead).map((pt, idx) => (
-                          <span key={`pt-${idx}`} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${pt.color}`}>
-                            {pt.label}
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{pt.hover}</span>
-                          </span>
-                        ))}
                         {/* Bid risk flags */}
                         {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => (
                           <span key={`rf-${idx}`} className="relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default bg-red-500/10 text-red-400 border-red-500/20">
@@ -2091,6 +2150,16 @@ const LeadTable = ({
                             <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{flag}</span>
                           </span>
                         ))}
+                        {/* Tag picker toggle */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setTagPicker(tagPicker?.leadId === lead.id ? null : { leadId: lead.id, top: rect.bottom + 6, left: rect.left });
+                          }}
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-slate-700 text-slate-600 hover:border-slate-500 hover:text-slate-400 transition-all"
+                          title="Add / remove tags"
+                        >+</button>
                       </div>
                     </td>
                     <td className="px-2 py-2">
@@ -2181,13 +2250,8 @@ const LeadTable = ({
                                     </span>
                                   </span>
                                 )}
-                                {detectProjectTags(lead).map((pt, idx) => (
-                                  <span key={`pt-${idx}`} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default ${pt.color}`}>
-                                    {pt.label}
-                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                                      {pt.hover}
-                                    </span>
-                                  </span>
+                                {lead.tags && lead.tags.map((tag, idx) => (
+                                  <span key={`ut-${idx}`} className={`text-[10px] px-2 py-0.5 rounded-full border cursor-default ${tagColorClass(tag.color)}`}>{tag.label}</span>
                                 ))}
                                 {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => (
                                   <span key={`rf-${idx}`} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default bg-red-500/10 text-red-400 border-red-500/20`}>
@@ -2347,13 +2411,12 @@ const LeadTable = ({
                 </div>
               </div>
               {/* Tags */}
-              {(lead.has_budget || (lead.tags && lead.tags.length > 0) || (lead.knowledge_badges && lead.knowledge_badges.length > 0) || (lead.knowledge_last_scanned && !lead.sprinklered) || detectProjectTags(lead).length > 0 || (lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.length > 0)) && (
+              {(lead.has_budget || (lead.tags && lead.tags.length > 0) || (lead.knowledge_badges && lead.knowledge_badges.length > 0) || (lead.knowledge_last_scanned && !lead.sprinklered) || (lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.length > 0)) && (
                 <div className="flex flex-wrap gap-1 mt-2 pl-9">
                   {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
-                  {lead.tags && lead.tags.map((tag, idx) => <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${tag.color === 'green' ? 'bg-green-500/10 text-green-400 border-green-500/20' : tag.color === 'red' ? 'bg-red-500/10 text-red-400 border-red-500/20' : tag.color === 'blue' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : tag.color === 'orange' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' : tag.color === 'purple' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : tag.color === 'yellow' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : tag.color === 'teal' ? 'bg-teal-500/10 text-teal-400 border-teal-500/20' : 'bg-slate-700 text-slate-300 border-slate-600'}`}>{tag.label}</span>)}
+                  {lead.tags && lead.tags.map((tag, idx) => <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${tagColorClass(tag.color)}`}>{tag.label}</span>)}
                   {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => <span key={`kb-${idx}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor(b)}`}>{b}</span>)}
                   {lead.knowledge_last_scanned && !lead.sprinklered && <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor('NON-SPRINKLED')}`}>NO SPRINK</span>}
-                  {detectProjectTags(lead).map((pt, idx) => <span key={`pt-${idx}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${pt.color}`}>{pt.label}</span>)}
                   {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => <span key={`rf-${idx}`} className="text-[10px] px-1.5 py-0.5 rounded border bg-red-500/10 text-red-400 border-red-500/20">{flag.split(/[\s\-\/]+/).slice(0, 2).join(' ').toUpperCase()}</span>)}
                 </div>
               )}
@@ -2402,7 +2465,7 @@ const LeadTable = ({
       {
         totalPages > 1 && (
           <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center text-xs text-slate-400">
-            <span>Showing {paginatedData.length} of {data.length} leads</span>
+            <span>Showing {paginatedData.length} of {visibleData.length} leads{activeTagFilters.length > 0 ? ` (filtered from ${data.length})` : ''}</span>
             <div className="flex gap-2">
               <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Previous</button>
               <span className="flex items-center px-2">Page {currentPage} of {totalPages}</span>
@@ -2412,5 +2475,51 @@ const LeadTable = ({
         )
       }
     </div >
-  );
+
+    {/* Fixed-position tag picker — rendered outside the overflow container */}
+    {tagPicker && (() => {
+      const pickerLead = visibleData.find(l => l.id === tagPicker.leadId) || data.find(l => l.id === tagPicker.leadId);
+      if (!pickerLead) return null;
+      return (
+        <div
+          style={{ position: 'fixed', top: tagPicker.top, left: tagPicker.left, zIndex: 9999 }}
+          className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 w-72"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Assign Tags</span>
+            <button onClick={() => setTagPicker(null)} className="text-slate-600 hover:text-slate-300 transition-colors"><X size={12} /></button>
+          </div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1.5 font-semibold">Project</div>
+          <div className="flex flex-wrap gap-1 mb-3">
+            {PREDEFINED_TAGS.filter(t => t.group === 'tags').map(tag => {
+              const active = pickerLead.tags?.some(t => t.label === tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  onClick={async () => { await toggleLeadTag(pickerLead, tag.id); }}
+                  title={tag.hint}
+                  className={`text-[10px] px-2 py-0.5 rounded border transition-all ${active ? tagColorClass(tag.color) + ' font-semibold' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-200'}`}
+                >{active ? '✓ ' : ''}{tag.label}</button>
+              );
+            })}
+          </div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1.5 font-semibold">Location</div>
+          <div className="flex flex-wrap gap-1">
+            {PREDEFINED_TAGS.filter(t => t.group === 'location').map(tag => {
+              const active = pickerLead.tags?.some(t => t.label === tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  onClick={async () => { await toggleLeadTag(pickerLead, tag.id); }}
+                  title={tag.hint}
+                  className={`text-[10px] px-2 py-0.5 rounded border transition-all ${active ? tagColorClass(tag.color) + ' font-semibold' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-200'}`}
+                >{active ? '✓ ' : ''}{tag.label}</button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    })()}
+  </>);
 };
