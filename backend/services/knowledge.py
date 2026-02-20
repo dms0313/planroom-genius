@@ -1059,30 +1059,20 @@ def _compute_badges(analysis):
     if not analysis.get("requires_fire_alarm"):
         badges.append("NO FA")
     st = analysis.get("system_type", "unknown")
-    if st == "existing":
-        badges.append("EXISTING")
+    if st in ("existing", "modification"):
+        badges.append("MODIFY")
     elif st == "new":
         badges.append("NEW SYSTEM")
-    elif st == "modification":
-        badges.append("MOD")
-    if analysis.get("required_vendors"):
-        badges.append("REQ VENDOR")
     if analysis.get("required_manufacturers"):
         badges.append("REQ MFR")
     if analysis.get("manufacturer_compatible"):
-        badges.append("COMPAT MFR")
-    if analysis.get("manufacturer_incompatible"):
-        badges.append("INCOMPAT MFR")
+        badges.append("COMP MFG")
     if analysis.get("deal_breakers"):
         badges.append("DEAL BREAKER")
     # Scope signal badges
     signals = analysis.get("scope_signals") or {}
     if signals.get("voice_evac"):
         badges.append("VOICE")
-    if signals.get("monitoring"):
-        badges.append("MONITORING")
-    if signals.get("access_control_interface"):
-        badges.append("ACCESS CTRL")
     return badges
 
 
