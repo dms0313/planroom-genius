@@ -847,21 +847,81 @@ class BuildingConnectedTableScraper:
                 log_status(f"[FILES] No download URL found. File type: {type(sample).__name__}")
             return
 
-        # Sort: FILES first (actual documents), then FOLDERs (which download as zip)
-        downloadable.sort(key=lambda x: (0 if x["type"] == "FILE" else 1, -x["size"]))
+        def _bc_file_score(d):
+            """Higher score = more desirable download candidate.
+
+            Priority order:
+              1. PDF files (construction documents)
+              2. ZIP / DWG / RVT / DWF files
+              3. Other document types (DOC, XLS, etc.)
+              4. FOLDER items — last resort; BC folder zip URLs frequently return
+                 HTTP 404, so we only attempt them when no direct files exist.
+              5. Media files (MOV, MP4, JPG, etc.) — avoid; not useful for estimating.
+
+            Within each tier, larger files rank higher.
+            """
+            name_lower = d["name"].lower()
+            ext = os.path.splitext(name_lower)[1]
+
+            if d["type"] == "FOLDER":
+                tier = 20
+            elif ext == ".pdf":
+                tier = 100
+                # Extra bonus for names that suggest a complete drawing set
+                if any(kw in name_lower for kw in ("plan", "permit", "complete", "set",
+                                                    "drawing", "construction", "spec")):
+                    tier += 20
+            elif ext in (".zip", ".dwg", ".rvt", ".dwf"):
+                tier = 80
+            elif ext in (".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"):
+                tier = 50
+            elif ext in (".mov", ".mp4", ".avi", ".wmv", ".mkv",
+                         ".jpg", ".jpeg", ".png", ".gif", ".bmp"):
+                tier = 5   # Media files — skip unless literally nothing else
+            else:
+                tier = 40
+
+            return (tier, d["size"])
 
         log_status(f"[FILES] Found {len(downloadable)} downloadable items: "
                    + ", ".join(f'{d["name"]} ({d["type"]})' for d in downloadable[:5]))
 
-        # Download the largest folder (contains all plans) or first file
-        # Prefer the biggest folder since it likely contains plans/drawings
-        best = None
-        for d in downloadable:
-            if d["type"] == "FOLDER" and d["size"] > 0:
-                best = d
-                break
-        if not best:
-            best = downloadable[0]
+        # Pick the highest-scored candidate
+        best = max(downloadable, key=_bc_file_score)
+
+        # If the best candidate is a FOLDER, try to enumerate its contents first.
+        # BC folder zip downloads frequently return HTTP 404 regardless of auth,
+        # so enumerating for individual PDFs is more reliable.
+        if best["type"] == "FOLDER":
+            import re as _re
+            m = _re.search(r"/file/([0-9a-f]{24})/", best["url"])
+            folder_id = m.group(1) if m else None
+            if folder_id:
+                log_status(f"[FILES] FOLDER selected — trying to enumerate contents (id={folder_id})...")
+                try:
+                    inner_files = await self._api.get_opportunity_files(folder_id)
+                    if inner_files:
+                        inner_dl = []
+                        for f in inner_files:
+                            if not isinstance(f, dict):
+                                continue
+                            raw = (f.get("downloadUrl") or f.get("download_url")
+                                   or f.get("url") or f.get("signedUrl"))
+                            if not raw:
+                                continue
+                            if raw.startswith("/_/") or raw.startswith("/api/"):
+                                raw = f"{BC_ORIGIN}{raw}"
+                            inner_dl.append({
+                                "url": raw,
+                                "name": f.get("name", "download"),
+                                "type": f.get("type", "FILE").upper(),
+                                "size": f.get("size", 0),
+                            })
+                        if inner_dl:
+                            best = max(inner_dl, key=_bc_file_score)
+                            log_status(f"[FILES] Folder enumerated — using '{best['name']}' instead")
+                except Exception as _e:
+                    log_status(f"[FILES] Folder enumeration failed: {_e}")
 
         download_url = best["url"]
         log_status(f"[FILES] Downloading '{best['name']}' ({best['size']:,} bytes) from: {download_url[:80]}...")

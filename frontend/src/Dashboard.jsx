@@ -2222,6 +2222,33 @@ const LeadTable = ({
                             </div>
                           </div>
 
+                          {/* Also Bidding — shown when duplicates from different companies were merged */}
+                          {lead.also_listed_by && lead.also_listed_by.length > 0 && (
+                            <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg px-4 py-3">
+                              <h4 className="text-xs font-semibold text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                <Building2 size={12} /> Also Bidding
+                              </h4>
+                              <div className="flex flex-wrap gap-2">
+                                {/* Primary company on this record */}
+                                {lead.company && lead.company !== 'N/A' && (
+                                  <span className="text-[11px] bg-blue-500/10 border border-blue-500/20 text-blue-300 px-2.5 py-1 rounded-full flex items-center gap-1">
+                                    <Building2 size={10} className="text-blue-400" />
+                                    {lead.company}
+                                    <span className="text-blue-500/60 text-[10px]">via {lead.site}</span>
+                                  </span>
+                                )}
+                                {/* Merged duplicates */}
+                                {lead.also_listed_by.map((entry, idx) => (
+                                  <span key={idx} className="text-[11px] bg-slate-700/50 border border-slate-600/50 text-slate-300 px-2.5 py-1 rounded-full flex items-center gap-1">
+                                    <Building2 size={10} className="text-slate-500" />
+                                    {entry.gc || 'Unknown'}
+                                    <span className="text-slate-500 text-[10px]">via {entry.site}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Internal Comments */}
                           <div className="mt-2">
                             <h4 className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-1">Internal Comments</h4>
