@@ -257,7 +257,6 @@ const getSystemTags = (lead) => {
   const seen = new Set();
   const add = (id) => { if (id && PREDEFINED_TAGS.some(t => t.id === id)) seen.add(id); };
   (lead.knowledge_badges || []).forEach(b => add(normalizeBadge(b)));
-  if (lead.knowledge_last_scanned && !lead.sprinklered) add('NO SPRNK');
   (lead.knowledge_bid_risk_flags || []).forEach(f => add(mapRiskFlagToTag(f)));
   return [...seen];
 };
@@ -413,6 +412,9 @@ export default function LeadDashboard() {
 
     // Sorting
     result.sort((a, b) => {
+      // Strikethrough leads always sink to the bottom
+      if (a.strikethrough !== b.strikethrough) return a.strikethrough ? 1 : -1;
+
       let aVal = a[sortConfig.key];
       let bVal = b[sortConfig.key];
 

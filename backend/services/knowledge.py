@@ -722,7 +722,8 @@ Return ONLY valid JSON with EXACTLY this schema:
     "monitoring": true/false,
     "voice_evac": true/false,
     "duct_detectors": true/false,
-    "access_control_interface": true/false
+    "access_control_interface": true/false,
+    "non_sprinkled": true/false
   },
   "evidence": [
     {
@@ -743,6 +744,7 @@ Guidelines:
 - evidence must include concrete support for key conclusions; use [] if no reliable support found.
 - bid_risk_flags should include known bid constraints (labor restrictions, proprietary requirements, compressed schedule, unusual coordination burden, etc.).
 - scope_signals booleans should reflect whether each signal appears in plans/specs.
+- non_sprinkled: set to true ONLY when plans or specs explicitly state the building is NOT sprinklered (e.g. "non-sprinklered", "building not sprinklered", sprinkler system absent per code definitions page). Do NOT set true merely because sprinklers are not mentioned.
 - recommended_next_action:
     * "bid" when scope is clear and winnable.
     * "review" when viable but uncertain/risky and needs human estimator review.
@@ -769,6 +771,7 @@ def _default_analysis_result(notes=""):
             "voice_evac": False,
             "duct_detectors": False,
             "access_control_interface": False,
+            "non_sprinkled": False,
         },
         "evidence": [],
         "confidence_score": 0.0,
@@ -1073,6 +1076,8 @@ def _compute_badges(analysis):
     signals = analysis.get("scope_signals") or {}
     if signals.get("voice_evac"):
         badges.append("VOICE")
+    if signals.get("non_sprinkled"):
+        badges.append("NO SPRNK")
     return badges
 
 
@@ -1338,7 +1343,7 @@ def set_file_overrides_batch(lead_id, overrides_dict):
 # Main scan
 # ---------------------------------------------------------------------------
 
-def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead=None, force_rescan=False, thinking=False):
+def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead=None, force_rescan=False, thinking=False, is_single_scan=False):
     """
     Core scanning logic for a single project folder.
     Returns True if scanned, False if skipped.
@@ -1359,6 +1364,14 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
     if not known_lead:
         if matched_lead and matched_lead.get("priority") == "Low" and not force_rescan:
             logger.info(f"Skipping Low Priority project: {folder_name}")
+            _status["skipped"] += 1
+            return False
+
+    # Skip bulk re-scan if a deep scan has already been performed.
+    # Only manual single-lead scans (is_single_scan=True) bypass this.
+    if not is_single_scan and not force_rescan:
+        if matched_lead and matched_lead.get("takeoff_timestamp"):
+            logger.info(f"Skipping (deep scan already done): {folder_name}")
             _status["skipped"] += 1
             return False
 
@@ -1646,7 +1659,7 @@ def scan_local_downloads(lead_id=None, force_rescan=False, thinking=False):
             if not _status["running"]:
                 logger.info("Scan stopped by user")
                 break
-            
+
             _scan_project_folder(
                 project_dir=path,
                 cache=cache,
@@ -1654,7 +1667,8 @@ def scan_local_downloads(lead_id=None, force_rescan=False, thinking=False):
                 folder_name=name,
                 known_lead=known_lead,
                 force_rescan=force_rescan,
-                thinking=thinking
+                thinking=thinking,
+                is_single_scan=bool(lead_id),
             )
 
         # Save everything
