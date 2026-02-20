@@ -1883,7 +1883,15 @@ const LeadTable = ({
   const visibleData = useMemo(() => {
     if (activeTagFilters.length === 0) return data;
     return data.filter(lead =>
-      activeTagFilters.some(tagId => lead.tags?.some(t => t.label === tagId))
+      activeTagFilters.some(tagId => {
+        // Manually-assigned predefined tags
+        if (lead.tags?.some(t => t.label === tagId)) return true;
+        // AI knowledge badges (NO FA, DEAL BREAKER, NEW SYSTEM, VOICE, REQ MFR, etc.)
+        if (lead.knowledge_badges?.includes(tagId)) return true;
+        // NO SPRNK filter matches non-sprinklered scanned leads
+        if (tagId === 'NO SPRNK' && lead.knowledge_last_scanned && !lead.sprinklered) return true;
+        return false;
+      })
     );
   }, [data, activeTagFilters]);
 
