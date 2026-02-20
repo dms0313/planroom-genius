@@ -946,13 +946,21 @@ class PlanHubScraper:
 
             # Step B: Wait for "Download Now" button and click it
             if initial_download_clicked:
+                # Give the server a moment to register the request and for the
+                # initial Download button to be replaced/disabled.  Without this
+                # delay the broad selectors below match the Step-A button instantly
+                # (reported as "after ~0s") causing a double-click with no effect.
+                await asyncio.sleep(3)
+
+                # NOTE: Do NOT include generic 'button:has-text("Download")' or
+                # 'planhub-button:has-text("Download")' here — those match the
+                # Step-A button that was just clicked and cause false detection.
                 download_now_selectors = [
                     'button[qa-locator="button-download-now"]',
                     'planhub-button#right-button button',
-                    'button:has-text("Download Now")',
-                    'planhub-button:has-text("Download Now")',
                     '#right-button button',
-                    'button.btn-primary:has-text("Download")',
+                    'button.btn-primary:has-text("Download Now")',
+                    'planhub-button:has-text("Download Now")',
                 ]
 
                 # Server needs time to prepare files — poll for up to 90 seconds
@@ -1026,16 +1034,18 @@ class PlanHubScraper:
 
                     # Check for new tabs/popups with S3 or file URLs
                     if not download_started:
-                        # Give the popup a moment to open
-                        await asyncio.sleep(2)
+                        # PlanHub may take several seconds to open the download tab
+                        await asyncio.sleep(5)
                         for np in new_pages:
                             try:
                                 np_url = np.url
                                 log_status(f"  -> Popup tab: {np_url[:100]}")
-                                # Accept any S3, storage, or file-extension URLs
+                                # Accept S3/storage URLs, file-extension URLs, and
+                                # any PlanHub-hosted download/file URLs
                                 if any(d in np_url.lower() for d in (
                                     "s3.amazonaws.com", "s3.us-", "blob.core",
                                     "storage.googleapis", "cloudfront",
+                                    "planhub.com/download", "planhub.com/file",
                                     ".pdf", ".zip", ".dwg",
                                 )):
                                     dest_path = await self._download_captured_url(np_url, lead)
