@@ -224,6 +224,44 @@ const tagColorClass = (color) => {
   return 'bg-slate-700/50 text-slate-300 border-slate-600';
 };
 
+// Normalize old knowledge badge names → predefined tag IDs
+const normalizeBadge = (badge) => {
+  const b = badge.toUpperCase().trim();
+  if (b === 'MOD' || b === 'MODIFICATION' || b === 'EXISTING' || b === 'EXISTING SYSTEM') return 'MODIFY';
+  if (b === 'COMPAT MFR' || b === 'COMPATIBLE MFR') return 'COMP MFG';
+  if (b === 'NO SPRINK' || b === 'NON-SPRINKLED' || b === 'NO SPRNK') return 'NO SPRNK';
+  if (b === 'INCOMPAT MFR' || b === 'INCOMPATIBLE MFR' || b === 'MONITORING' || b === 'ACCESS CTRL' || b === 'REQ VENDOR') return null;
+  const valid = PREDEFINED_TAGS.find(t => t.id === b);
+  return valid ? valid.id : null;
+};
+
+// Map a free-text bid_risk_flag string → predefined tag ID (or null)
+const mapRiskFlagToTag = (flag) => {
+  const f = flag.toLowerCase();
+  if (/davis.?bacon|prevailing.?wage/.test(f)) return 'DAVIS BACON';
+  if (/buy.?american|baba\b|build.?america|\bais\b/.test(f)) return 'BABA';
+  if (/\bbda\b|\berrc\b/.test(f)) return 'BDA ERRC';
+  if (/nicet/.test(f)) return 'NICET';
+  if (/design.?build|delegated.?design/.test(f)) return 'DESIGN BUILD';
+  if (/discrepan/.test(f)) return 'DISCREPENCY';
+  if (/high.?labor/.test(f)) return 'HIGH LABOR';
+  if (/phased/.test(f)) return 'PHASED';
+  if (/voice.?evac/.test(f)) return 'VOICE';
+  if (/\bnetwork\b/.test(f)) return 'NETWORK';
+  if (/no.?fa\b|no fire alarm/.test(f)) return 'NO FA';
+  return null;
+};
+
+// All normalized AI/system-derived tags for a lead (deduplicated, predefined only)
+const getSystemTags = (lead) => {
+  const seen = new Set();
+  const add = (id) => { if (id && PREDEFINED_TAGS.some(t => t.id === id)) seen.add(id); };
+  (lead.knowledge_badges || []).forEach(b => add(normalizeBadge(b)));
+  if (lead.knowledge_last_scanned && !lead.sprinklered) add('NO SPRNK');
+  (lead.knowledge_bid_risk_flags || []).forEach(f => add(mapRiskFlagToTag(f)));
+  return [...seen];
+};
+
 const classColor = (cls) => {
   if (cls === 'plan') return 'bg-blue-500/20 text-blue-400 border-blue-500/40';
   if (cls === 'spec') return 'bg-green-500/20 text-green-400 border-green-500/40';
@@ -1298,32 +1336,12 @@ export default function LeadDashboard() {
                 )}
                 <div className="flex gap-2 flex-wrap">
                   {descriptionPopup.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/30">Has Budget</span>}
-                  {descriptionPopup.knowledge_badges && descriptionPopup.knowledge_badges.map((b, idx) => (
-                    <span key={idx} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)} cursor-default`}>
-                      {b}
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                        {badgeHover(b, descriptionPopup)}
-                      </span>
-                    </span>
-                  ))}
-                  {descriptionPopup.knowledge_last_scanned && !descriptionPopup.sprinklered && (
-                    <span className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default ${badgeColor('NON-SPRINKLED')}`}>
-                      NON-SPRINKLED
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                        {badgeHover('NON-SPRINKLED', descriptionPopup)}
-                      </span>
-                    </span>
-                  )}
+                  {getSystemTags(descriptionPopup).map((tagId, idx) => {
+                    const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
+                    return pt ? <span key={`st-${idx}`} className={`text-[10px] px-2 py-0.5 rounded-full border cursor-default ${tagColorClass(pt.color)}`} title={pt.hint}>{pt.label}</span> : null;
+                  })}
                   {descriptionPopup.tags && descriptionPopup.tags.map((tag, idx) => (
                     <span key={`ut-${idx}`} className={`text-[10px] px-2 py-0.5 rounded-full border cursor-default ${tagColorClass(tag.color)}`}>{tag.label}</span>
-                  ))}
-                  {descriptionPopup.knowledge_bid_risk_flags && descriptionPopup.knowledge_bid_risk_flags.map((flag, idx) => (
-                    <span key={`rf-${idx}`} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default bg-red-500/10 text-red-400 border-red-500/20`}>
-                      {flag}
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                        Bid risk: {flag}
-                      </span>
-                    </span>
                   ))}
                 </div>
 
@@ -1882,17 +1900,12 @@ const LeadTable = ({
 
   const visibleData = useMemo(() => {
     if (activeTagFilters.length === 0) return data;
-    return data.filter(lead =>
-      activeTagFilters.some(tagId => {
-        // Manually-assigned predefined tags
-        if (lead.tags?.some(t => t.label === tagId)) return true;
-        // AI knowledge badges (NO FA, DEAL BREAKER, NEW SYSTEM, VOICE, REQ MFR, etc.)
-        if (lead.knowledge_badges?.includes(tagId)) return true;
-        // NO SPRNK filter matches non-sprinklered scanned leads
-        if (tagId === 'NO SPRNK' && lead.knowledge_last_scanned && !lead.sprinklered) return true;
-        return false;
-      })
-    );
+    return data.filter(lead => {
+      const systemTags = getSystemTags(lead);
+      return activeTagFilters.some(tagId =>
+        lead.tags?.some(t => t.label === tagId) || systemTags.includes(tagId)
+      );
+    });
   }, [data, activeTagFilters]);
 
   const totalPages = Math.ceil(visibleData.length / itemsPerPage);
@@ -2144,26 +2157,13 @@ const LeadTable = ({
                             className={`text-[10px] px-1.5 py-0.5 rounded border transition-opacity hover:opacity-70 ${tagColorClass(tag.color)}`}
                           >{tag.label}</button>
                         ))}
-                        {/* Knowledge Badges */}
-                        {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
-                          <span key={`kb-${idx}`} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${badgeColor(b)}`}>
-                            {b}
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{badgeHover(b, lead)}</span>
-                          </span>
-                        ))}
-                        {lead.knowledge_last_scanned && !lead.sprinklered && (
-                          <span className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${badgeColor('NON-SPRINKLED')}`}>
-                            NO SPRINK
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{badgeHover('NON-SPRINKLED', lead)}</span>
-                          </span>
-                        )}
-                        {/* Bid risk flags */}
-                        {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => (
-                          <span key={`rf-${idx}`} className="relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default bg-red-500/10 text-red-400 border-red-500/20">
-                            {flag.split(/[\s\-\/]+/).slice(0, 2).join(' ').toUpperCase()}
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">{flag}</span>
-                          </span>
-                        ))}
+                        {/* AI system tags — normalized to predefined set */}
+                        {getSystemTags(lead).map((tagId, idx) => {
+                          const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
+                          return pt ? (
+                            <span key={`st-${idx}`} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tagColorClass(pt.color)}`} title={pt.hint}>{pt.label}</span>
+                          ) : null;
+                        })}
                         {/* Tag picker toggle */}
                         <button
                           onClick={(e) => {
@@ -2265,32 +2265,12 @@ const LeadTable = ({
                                 ) : <span className="text-slate-500 italic">No summary available. Run AI scan for details.</span>}
                               </p>
                               <div className="flex gap-2 mt-3 flex-wrap">
-                                {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => (
-                                  <span key={idx} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border ${badgeColor(b)} cursor-default`}>
-                                    {b}
-                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                                      {badgeHover(b, lead)}
-                                    </span>
-                                  </span>
-                                ))}
-                                {lead.knowledge_last_scanned && !lead.sprinklered && (
-                                  <span className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default ${badgeColor('NON-SPRINKLED')}`}>
-                                    NON-SPRINKLED
-                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                                      {badgeHover('NON-SPRINKLED', lead)}
-                                    </span>
-                                  </span>
-                                )}
+                                {getSystemTags(lead).map((tagId, idx) => {
+                                  const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
+                                  return pt ? <span key={`st-${idx}`} className={`text-[10px] px-2 py-0.5 rounded-full border cursor-default ${tagColorClass(pt.color)}`} title={pt.hint}>{pt.label}</span> : null;
+                                })}
                                 {lead.tags && lead.tags.map((tag, idx) => (
                                   <span key={`ut-${idx}`} className={`text-[10px] px-2 py-0.5 rounded-full border cursor-default ${tagColorClass(tag.color)}`}>{tag.label}</span>
-                                ))}
-                                {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => (
-                                  <span key={`rf-${idx}`} className={`relative group/kb text-[10px] px-2 py-0.5 rounded-full border cursor-default bg-red-500/10 text-red-400 border-red-500/20`}>
-                                    {flag}
-                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-red-300 whitespace-nowrap opacity-0 group-hover/kb:opacity-100 pointer-events-none transition-opacity z-50">
-                                      Bid risk: {flag}
-                                    </span>
-                                  </span>
                                 ))}
                               </div>
                             </div>
@@ -2442,13 +2422,14 @@ const LeadTable = ({
                 </div>
               </div>
               {/* Tags */}
-              {(lead.has_budget || (lead.tags && lead.tags.length > 0) || (lead.knowledge_badges && lead.knowledge_badges.length > 0) || (lead.knowledge_last_scanned && !lead.sprinklered) || (lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.length > 0)) && (
+              {(lead.has_budget || (lead.tags && lead.tags.length > 0) || getSystemTags(lead).length > 0) && (
                 <div className="flex flex-wrap gap-1 mt-2 pl-9">
                   {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
                   {lead.tags && lead.tags.map((tag, idx) => <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${tagColorClass(tag.color)}`}>{tag.label}</span>)}
-                  {lead.knowledge_badges && lead.knowledge_badges.map((b, idx) => <span key={`kb-${idx}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor(b)}`}>{b}</span>)}
-                  {lead.knowledge_last_scanned && !lead.sprinklered && <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badgeColor('NON-SPRINKLED')}`}>NO SPRINK</span>}
-                  {lead.knowledge_bid_risk_flags && lead.knowledge_bid_risk_flags.map((flag, idx) => <span key={`rf-${idx}`} className="text-[10px] px-1.5 py-0.5 rounded border bg-red-500/10 text-red-400 border-red-500/20">{flag.split(/[\s\-\/]+/).slice(0, 2).join(' ').toUpperCase()}</span>)}
+                  {getSystemTags(lead).map((tagId, idx) => {
+                    const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
+                    return pt ? <span key={`st-${idx}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${tagColorClass(pt.color)}`} title={pt.hint}>{pt.label}</span> : null;
+                  })}
                 </div>
               )}
               {/* Key info */}
