@@ -459,3 +459,98 @@ class IsqftAPIClient:
         except Exception as e:
             log_status(f"Download failed: {e}")
             return None
+
+    # -- iSqFt API methods ---------------------------------------------------
+
+    async def get_bid_board_projects(self) -> list:
+        """
+        Fetch all projects from the iSqFt bid board.
+
+        Requests a large page (200 rows) and iterates if total suggests more.
+        """
+        url = f"{self.config.API_BASE_URL}/bidCenter/projects/getBidBoardProjects"
+        payload = {
+            "startIndex": 0,
+            "numberOfRows": 200,
+            "dataFilterValues": {},
+        }
+        all_projects = []
+        start = 0
+        page_size = 200
+
+        while True:
+            payload["startIndex"] = start
+            data = await self._request("POST", url, json=payload)
+            if not data:
+                log_status(f"getBidBoardProjects returned None at offset {start}")
+                break
+
+            rows = data.get("data") or []
+            if not isinstance(rows, list):
+                log_status(f"Unexpected data shape: {type(rows)}")
+                break
+
+            all_projects.extend(rows)
+            log_status(f"Fetched {len(rows)} projects (total so far: {len(all_projects)})")
+
+            total = data.get("numberOfRows") or data.get("total") or 0
+            if total and len(all_projects) < int(total) and len(rows) == page_size:
+                start += page_size
+                await asyncio.sleep(0.3)
+            else:
+                break
+
+        return all_projects
+
+    async def get_document_list(self, project_id: str, package_id: str) -> list:
+        """
+        Fetch the document tree for a project and return flat list of leaf files.
+
+        Tries two URL patterns; falls back to second if first returns None.
+        """
+        url = f"{self.config.API_BASE_URL}/projects/{project_id}/documentlist"
+        params = {"packageId": package_id}
+        data = await self._request("GET", url, params=params)
+        if not data:
+            url2 = f"{self.config.API_BASE_URL}/bidCenter/projects/{project_id}/documents"
+            data = await self._request("GET", url2, params=params)
+        if not data:
+            return []
+        tree = data if isinstance(data, list) else (data.get("data") or [])
+        return self._flatten_leaves(tree)
+
+    def _flatten_leaves(self, nodes: list) -> list:
+        """Recursively collect all IsLeaf == 1 nodes from the document tree."""
+        leaves = []
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            if node.get("IsLeaf") == 1:
+                leaves.append(node)
+            children = node.get("Children") or []
+            if children:
+                leaves.extend(self._flatten_leaves(children))
+        return leaves
+
+    def find_combined_plans(self, leaves: list) -> dict | None:
+        """
+        Return best single Plans PDF to download:
+        1. File named with 'combined' in DisplayName (DocumentType == Plans)
+        2. Largest Plans PDF by Size
+        3. First accessible Plans leaf
+        """
+        plans = [f for f in leaves if f.get("DocumentType") == "Plans" and f.get("IsAccessible")]
+        if not plans:
+            return None
+        for f in plans:
+            name = (f.get("DisplayName") or "").lower()
+            if "combined" in name and name.endswith(".pdf"):
+                return f
+        pdfs = [f for f in plans if (f.get("DisplayName") or "").lower().endswith(".pdf")]
+        if pdfs:
+            return max(pdfs, key=lambda x: x.get("Size", 0))
+        return plans[0]
+
+    def build_download_url(self, project_id: str, item_id: str) -> str:
+        """Build document download URL. Adjust path if 404 on first run."""
+        return f"{self.config.API_BASE_URL}/projects/{project_id}/documents/{item_id}/download"
