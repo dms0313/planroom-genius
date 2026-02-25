@@ -559,7 +559,7 @@ async def run_agents(runtime_settings=None):
 
     scraper_status["running"] = False
     scraper_status["current_step"] = "idle"
-    summary = f"BC: {scraper_status['bc_leads_found']} | PH: {scraper_status['ph_leads_found']} | BPR: {scraper_status['bpr_leads_found']} | LBB: {scraper_status['lbb_leads_found']}"
+    summary = f"BC: {scraper_status['bc_leads_found']} | PH: {scraper_status['ph_leads_found']} | BPR: {scraper_status['bpr_leads_found']} | LBB: {scraper_status['lbb_leads_found']} | iSqFt: {scraper_status['isqft_leads_found']}"
     update_status("Scraper run complete", summary)
 
     print("\n" + "="*60, flush=True)

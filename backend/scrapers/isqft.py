@@ -442,18 +442,18 @@ class IsqftAPIClient:
                         dest_filename = cd.split("filename=")[-1].strip('"; ')
 
                 dest = os.path.join(dest_dir, dest_filename)
-                data = b""
-                async for chunk in r.aiter_bytes(8192):
-                    data += chunk
+                total = 0
+                with open(dest, "wb") as f:
+                    async for chunk in r.aiter_bytes(8192):
+                        f.write(chunk)
+                        total += len(chunk)
 
-                if len(data) < 100:
-                    log_status(f"Skipped tiny response ({len(data)} bytes) for: {dest_filename}")
+                if total < 100:
+                    os.remove(dest)
+                    log_status(f"Skipped tiny response ({total} bytes) for: {dest_filename}")
                     return None
 
-                with open(dest, "wb") as f:
-                    f.write(data)
-
-                log_status(f"Downloaded: {dest_filename} ({len(data):,} bytes)")
+                log_status(f"Downloaded: {dest_filename} ({total:,} bytes)")
                 return dest
 
         except Exception as e:
@@ -586,7 +586,7 @@ class IsqftScraper:
                 return v
         return default
 
-    def _parse_date(self, date_str: str):
+    def parse_date(self, date_str: str):
         if not date_str or date_str == "N/A":
             return None
         for fmt in DATE_FORMATS:
@@ -601,7 +601,7 @@ class IsqftScraper:
         return None
 
     def _is_past_due(self, date_str: str) -> bool:
-        parsed = self._parse_date(date_str)
+        parsed = self.parse_date(date_str)
         return bool(parsed and parsed < date.today())
 
     def _map_lead(self, proj: dict) -> dict:
