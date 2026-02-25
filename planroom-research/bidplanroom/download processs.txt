@@ -1,6 +1,0 @@
-project list page >
-project details page >
-View Plans: #project-info-container > div:nth-child(4) > div > div > a:nth-child(1) > span
-Open Project Plan Folder: #launch-plans-btn > span
-Check Select All: #applicationHost > div > div.css-13bog6r-shell > div.css-anjy84-content > div > div.css-ndbj9-container > div > div.css-1s7evc > label > label > input
-Download: #applicationHost > div > div.css-13bog6r-shell > div.css-anjy84-content > div > div:nth-child(7) > div.css-1c7oem8 > div > div > div.css-1tepa3u-downloadButton > button > div
