@@ -1385,13 +1385,22 @@ class PlanHubScraper:
             contact_name = "N/A"
             contact_phone = ""
             contact_email = ""
+            planhub_gcs = []
             gc_list = proj.get("general_contractors") or []
             if isinstance(gc_list, list) and gc_list:
                 gc = gc_list[0]
                 gc_company = self._get(gc, "name", "company_name", "company", default="N/A")
-                contact_name = self._get(gc, "contact_name", "contact", "full_name", default="N/A")
-                contact_phone = self._get(gc, "phone", "contact_phone", default="")
-                contact_email = self._get(gc, "email", "contact_email", default="")
+                contact_name = self._get(gc, "user_name", "contact_name", "contact", "full_name", default="N/A")
+                contact_phone = self._get(gc, "phone_number", "phone", "contact_phone", default="")
+                contact_email = self._get(gc, "email_address", "email", "contact_email", default="")
+                # Store all GCs for display in the details panel
+                for gc_entry in gc_list:
+                    planhub_gcs.append({
+                        "company_name": self._get(gc_entry, "company_name", "name", "company", default="N/A"),
+                        "user_name": self._get(gc_entry, "user_name", "contact_name", "contact", "full_name", default=""),
+                        "phone_number": self._get(gc_entry, "phone_number", "phone", "contact_phone", default=""),
+                        "email_address": self._get(gc_entry, "email_address", "email", "contact_email", default=""),
+                    })
 
             # Build URL
             if not project_url or project_url == "N/A":
@@ -1427,6 +1436,7 @@ class PlanHubScraper:
                 "files_link": None,
                 "download_link": None,
                 "local_file_path": None,
+                "planhub_gcs": planhub_gcs if len(planhub_gcs) > 1 else [],
             }
 
             self.leads.append(lead)

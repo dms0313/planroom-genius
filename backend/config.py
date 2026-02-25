@@ -384,6 +384,24 @@ class PlanHubConfig(ScraperConfig):
     DOWNLOAD_FILES_BTN = 'body > planhub-main > div > mat-sidenav-container > mat-sidenav-content > app-root > div > app-project-details > div > app-project-details-v2 > div > div > div.tabs-container > div.project-files.ng-star-inserted > mat-card > planhub-project-file-table > div > div.table-pagination.flex-row.align-space-between.pd-0 > planhub-button > button'
 
 
+class IsqftConfig(ScraperConfig):
+    """iSqFt-specific configuration."""
+
+    # URLs — verify API_BASE_URL by inspecting Playwright-intercepted network requests on first run
+    LOGIN_URL = "https://www.isqft.com/login"
+    API_BASE_URL = os.getenv("ISQFT_API_BASE_URL", "https://net.isqft.com/api/v1")
+
+    # Auth token cache
+    TOKEN_FILE = os.path.join(os.path.dirname(__file__), "isqft_token.json")
+
+    # Credentials (set in .env)
+    LOGIN_EMAIL = os.getenv("ISQFT_LOGIN") or os.getenv("SITE_LOGIN", "")
+    LOGIN_PASSWORD = os.getenv("ISQFT_PW") or os.getenv("SITE_PW", "")
+
+    # Scraping limits
+    MAX_PROJECTS_DEFAULT = None  # None = all
+
+
 # Date parsing formats
 DATE_FORMATS = [
     "%Y-%m-%d",
