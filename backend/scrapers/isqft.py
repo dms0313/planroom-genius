@@ -266,13 +266,26 @@ class IsqftAPIClient:
             if not captured_token:
                 log_status("Performing login...")
                 try:
-                    email_selector = 'input[type="email"], input[name="email"], input[id="email"], input[name="username"]'
-                    pw_selector = 'input[type="password"], input[name="password"], input[id="password"]'
-                    submit_selector = 'button[type="submit"], button:has-text("Sign In"), button:has-text("Log In"), button:has-text("Login")'
+                    # iSqFt uses id="email-input" and id="password-input" (no name attr)
+                    # The submit button has type="button" (not submit) and starts disabled;
+                    # it only enables after React onChange fires — so we use page.type()
+                    # to simulate real keystrokes instead of fill().
+                    email_selector = '#email-input, input[type="email"]'
+                    pw_selector = '#password-input, input[type="password"]'
+                    submit_selector = '#login-btn, button[data-testid="login-btn"]'
 
                     await page.wait_for_selector(email_selector, timeout=10000)
-                    await page.fill(email_selector, self.config.LOGIN_EMAIL)
-                    await page.fill(pw_selector, self.config.LOGIN_PASSWORD)
+                    # Click to focus, then type to trigger React onChange events
+                    await page.click(email_selector)
+                    await page.type(email_selector, self.config.LOGIN_EMAIL, delay=50)
+                    await page.click(pw_selector)
+                    await page.type(pw_selector, self.config.LOGIN_PASSWORD, delay=50)
+
+                    # Wait for button to become enabled (React enables it once both fields are filled)
+                    try:
+                        await page.wait_for_selector(f'{submit_selector}:not([disabled])', timeout=5000)
+                    except Exception:
+                        log_status("Warning: submit button may still be disabled, attempting click anyway")
                     await page.click(submit_selector)
                     log_status("Submitted login form, waiting for token capture...")
 
