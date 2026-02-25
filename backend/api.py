@@ -184,7 +184,8 @@ async def get_scraper_status_endpoint():
         "last_error": status["last_error"],
         "leads_found": {
             "buildingconnected": status["bc_leads_found"],
-            "planhub": status["ph_leads_found"]
+            "planhub": status["ph_leads_found"],
+            "isqft": status.get("isqft_leads_found", 0)
         }
     }
 

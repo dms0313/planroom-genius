@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from buildingconnected_table_scraper import BuildingConnectedTableScraper
 from scrapers.planhub import PlanHubScraper
+from scrapers.isqft import IsqftScraper
 from scrapers.bidplanroom import BidplanroomScraper
 from scrapers.loydbuildsbetter import LoydBuildsBetterScraper
 from services.storage import save_leads, deduplicate_database
@@ -33,6 +34,7 @@ scraper_status = {
     "ph_leads_found": 0,
     "bpr_leads_found": 0,
     "lbb_leads_found": 0,
+    "isqft_leads_found": 0,
     "current_step": "idle"
 }
 
@@ -102,6 +104,7 @@ DEFAULT_SETTINGS = {
     "bidplanroom": True,
     "loydbuildsbetter": True,
     "buildingconnected": True,
+    "isqft": True,
     "use_gdrive": True
 }
 
@@ -425,7 +428,7 @@ async def run_agents(runtime_settings=None):
     if settings.get("buildingconnected", True):
         try:
             update_status("BuildingConnected: Initializing browser")
-            print("\n[4/4] BuildingConnected Table Scraper", flush=True)
+            print("\n[4/5] BuildingConnected Table Scraper", flush=True)
             print("-" * 40, flush=True)
             logger.info("Launching BuildingConnected Table Scraper...")
             sys.stdout.flush()
@@ -483,6 +486,64 @@ async def run_agents(runtime_settings=None):
             sys.stdout.flush()
     else:
         logger.info("BuildingConnected scraper disabled in settings")
+
+    # Run iSqFt Scraper
+    if not scraper_status["running"]:
+        logger.info("Scan stopped before iSqFt")
+        return
+
+    if settings.get("isqft", True):
+        try:
+            update_status("iSqFt: Initializing")
+            print("\n[5/5] iSqFt Scraper", flush=True)
+            print("-" * 40, flush=True)
+            logger.info("Launching iSqFt Scraper...")
+
+            isqft_scraper = IsqftScraper()
+
+            async def collect_isqft_logs():
+                from scrapers.isqft import get_isqft_logs
+                while scraper_status["running"]:
+                    try:
+                        for log in get_isqft_logs():
+                            add_to_log(log)
+                    except Exception:
+                        pass
+                    await asyncio.sleep(0.5)
+
+            isqft_log_collector = asyncio.create_task(collect_isqft_logs())
+
+            try:
+                isqft_leads = await asyncio.wait_for(
+                    isqft_scraper.run(max_projects=None, download_files=True),
+                    timeout=900,
+                )
+            except asyncio.TimeoutError:
+                logger.error("iSqFt scraper timed out")
+                add_to_log("[ISQFT] TIMEOUT after 15 minutes")
+                isqft_leads = isqft_scraper.leads if hasattr(isqft_scraper, "leads") else []
+
+            isqft_log_collector.cancel()
+            try:
+                await isqft_log_collector
+            except asyncio.CancelledError:
+                pass
+
+            scraper_status["isqft_leads_found"] = len(isqft_leads)
+            update_status("iSqFt: Complete", f"Found {len(isqft_leads)} leads")
+            print(f"\n[OK] iSqFt found {len(isqft_leads)} leads", flush=True)
+            leads.extend(isqft_leads)
+
+            # Incremental save
+            save_leads(leads)
+
+        except Exception as e:
+            scraper_status["last_error"] = f"iSqFt: {str(e)}"
+            update_status("iSqFt: ERROR", str(e))
+            logger.error(f"iSqFt Scraper failed: {e}")
+            traceback.print_exc()
+    else:
+        logger.info("iSqFt scraper disabled in settings")
 
     # Save aggregated results
     update_status("Saving results to database")
