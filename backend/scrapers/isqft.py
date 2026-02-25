@@ -18,7 +18,7 @@ import json
 import base64
 import asyncio
 import traceback
-from datetime import datetime
+from datetime import datetime, date
 
 import httpx
 
@@ -554,3 +554,257 @@ class IsqftAPIClient:
     def build_download_url(self, project_id: str, item_id: str) -> str:
         """Build document download URL. Adjust path if 404 on first run."""
         return f"{self.config.API_BASE_URL}/projects/{project_id}/documents/{item_id}/download"
+
+
+# ---------------------------------------------------------------------------
+# IsqftScraper
+# ---------------------------------------------------------------------------
+class IsqftScraper:
+    """
+    iSqFt scraper — public interface matches PlanHub:
+        scraper = IsqftScraper()
+        leads = await scraper.run(max_projects=None, download_files=True)
+    """
+
+    def __init__(self):
+        self.config = IsqftConfig()
+        self.leads: list = []
+        self.processed_ids: set = set()
+        self.download_dir = self.config.DOWNLOAD_DIR
+        os.makedirs(self.download_dir, exist_ok=True)
+        self._api = IsqftAPIClient(self.config)
+
+    # -- helpers -------------------------------------------------------------
+
+    @staticmethod
+    def _get(obj, *keys, default="N/A"):
+        if not isinstance(obj, dict):
+            return default
+        for k in keys:
+            v = obj.get(k)
+            if v is not None and v != "":
+                return v
+        return default
+
+    def _parse_date(self, date_str: str):
+        if not date_str or date_str == "N/A":
+            return None
+        for fmt in DATE_FORMATS:
+            try:
+                return datetime.strptime(str(date_str).strip(), fmt).date()
+            except ValueError:
+                continue
+        try:
+            return datetime.fromisoformat(str(date_str).replace("Z", "+00:00")).date()
+        except Exception:
+            pass
+        return None
+
+    def _is_past_due(self, date_str: str) -> bool:
+        parsed = self._parse_date(date_str)
+        return bool(parsed and parsed < date.today())
+
+    def _map_lead(self, proj: dict) -> dict:
+        """Map a getBidBoardProjects item to the internal lead schema."""
+        isqft_id = str(proj.get("isqftId") or proj.get("id") or "")
+        lead_id = f"isqft_{isqft_id}"
+
+        addr = proj.get("address") or {}
+        city = addr.get("city") or ""
+        state = addr.get("state") or ""
+        zipcode = addr.get("zipcode") or ""
+        addr_line = addr.get("addressLine1") or ""
+
+        location = f"{city}, {state}" if city and state else (city or state or "N/A")
+        full_address_parts = [p for p in [addr_line, city, state, zipcode] if p]
+        full_address = ", ".join(full_address_parts) if full_address_parts else location
+
+        bid_date = proj.get("bidDate") or "N/A"
+        gc_company = proj.get("gcCompanyName") or "N/A"
+
+        contact_names = proj.get("packageContactsNames") or []
+        contact_name = contact_names[0] if contact_names else "N/A"
+
+        return {
+            "id": lead_id,
+            "name": proj.get("title") or "Unknown",
+            "gc": gc_company,
+            "company": gc_company,
+            "contact_name": contact_name,
+            "contact_phone": "",
+            "contact_email": "",
+            "bid_date": bid_date,
+            "due_date": bid_date,
+            "site": "iSqFt",
+            "source": "iSqFt",
+            "sprinklered": False,
+            "location": location,
+            "city": city,
+            "state": state,
+            "full_address": full_address,
+            "url": f"https://www.isqft.com/projects/{isqft_id}",
+            "value": "",
+            "project_type": "",
+            "description": "",
+            "extracted_at": datetime.now().isoformat(),
+            "files_link": None,
+            "download_link": None,
+            "local_file_path": None,
+            # iSqFt-specific extras
+            "isqft_id": isqft_id,
+            "isqft_package_id": str(proj.get("packageId") or ""),
+            "isqft_document_count": proj.get("documentCount") or 0,
+            "isqft_phase": proj.get("phaseStatus") or "",
+            "isqft_is_rfq": bool(proj.get("isRfq")),
+            "isqft_bid_board_status": proj.get("bidBoardStatus") or "",
+            "isqft_document_status": proj.get("documentStatus") or "",
+        }
+
+    async def _handle_download(self, lead: dict):
+        """Fetch document list, find combined plans PDF, download it."""
+        isqft_id = lead.get("isqft_id", "")
+        package_id = lead.get("isqft_package_id", "")
+        if not isqft_id:
+            return
+
+        project_name_clean = "".join(
+            c for c in lead["name"][:60] if c.isalnum() or c in " -_"
+        ).strip()
+        dest_dir = os.path.join(self.download_dir, project_name_clean)
+
+        # Check Google Drive first
+        if GDRIVE_AVAILABLE and should_use_gdrive():
+            try:
+                existing = check_file_exists(f"{project_name_clean}.pdf", source="iSqFt")
+                if not existing:
+                    existing = check_file_exists(f"{project_name_clean}.zip", source="iSqFt")
+                if existing:
+                    lead["gdrive_file_id"] = existing.get("file_id")
+                    lead["gdrive_link"] = existing.get("web_link")
+                    lead["download_link"] = existing.get("web_link")
+                    lead["storage_type"] = "gdrive"
+                    log_status(f"  -> Already in Google Drive")
+                    return
+            except Exception as e:
+                log_status(f"  -> GDrive pre-check error: {e}")
+
+        log_status(f"  -> Fetching document list for project {isqft_id}...")
+        leaves = await self._api.get_document_list(isqft_id, package_id)
+        if not leaves:
+            log_status(f"  -> No accessible documents found")
+            return
+
+        target = self._api.find_combined_plans(leaves)
+        if not target:
+            log_status(f"  -> No Plans PDF found in document list")
+            return
+
+        item_id = str(target.get("ItemId") or "")
+        filename = target.get("DisplayName") or f"{project_name_clean}.pdf"
+        log_status(f"  -> Downloading '{filename}' (ItemId={item_id})...")
+
+        download_url = self._api.build_download_url(isqft_id, item_id)
+        local_path = await self._api.download_file(download_url, dest_dir, filename)
+
+        if not local_path:
+            log_status(f"  -> Download failed for {filename}")
+            return
+
+        web_path = f"/downloads/{project_name_clean}/{filename}"
+        lead["local_file_path"] = web_path
+        lead["download_link"] = web_path
+        lead["storage_type"] = "local"
+
+        if GDRIVE_AVAILABLE and should_use_gdrive():
+            try:
+                result = upload_and_cleanup(
+                    local_path,
+                    filename=f"{project_name_clean}.pdf",
+                    source="iSqFt",
+                    delete_local=True,
+                )
+                if result:
+                    lead["gdrive_file_id"] = result.get("file_id")
+                    lead["gdrive_link"] = result.get("web_link")
+                    lead["gdrive_download_link"] = result.get("download_link")
+                    lead["download_link"] = result.get("web_link")
+                    lead["storage_type"] = "gdrive"
+                    log_status(f"  -> Uploaded to Google Drive")
+            except Exception as e:
+                log_status(f"  -> Google Drive upload failed: {e}")
+
+    # -- main ----------------------------------------------------------------
+
+    async def scrape_all_projects(self, max_projects=None, download_files=False):
+        log_status("=" * 40)
+        log_status("Starting iSqFt scrape")
+
+        if not await self._api.ensure_auth():
+            log_status("Authentication failed — aborting")
+            return []
+
+        log_status("Fetching bid board projects...")
+        all_projects = await self._api.get_bid_board_projects()
+        log_status(f"Fetched {len(all_projects)} total projects from API")
+
+        if max_projects:
+            all_projects = all_projects[:max_projects]
+
+        for i, proj in enumerate(all_projects):
+            isqft_id = str(proj.get("isqftId") or proj.get("id") or i)
+            lead_id = f"isqft_{isqft_id}"
+
+            if lead_id in self.processed_ids:
+                log_status(f"Skipping duplicate: {lead_id}")
+                continue
+            self.processed_ids.add(lead_id)
+
+            if proj.get("isArchived"):
+                log_status(f"Skipping archived: {proj.get('title', '')[:40]}")
+                continue
+
+            bid_date_str = proj.get("bidDate") or ""
+            if bid_date_str and self._is_past_due(bid_date_str):
+                log_status(f"Skipping past-due: {proj.get('title', '')[:40]}")
+                continue
+
+            lead = self._map_lead(proj)
+            log_status(f"[{i+1}/{len(all_projects)}] {lead['name'][:50]} | {lead['company']} | {lead['location']} | bid {lead['bid_date']}")
+
+            if download_files:
+                await self._handle_download(lead)
+                await asyncio.sleep(0.5)
+
+            self.leads.append(lead)
+
+        log_status(f"COMPLETE — {len(self.leads)} leads")
+        return self.leads
+
+    async def save_results(self, output_file=None):
+        from config import ScraperConfig
+        output_file = output_file or ScraperConfig.DB_FILE
+        existing = []
+        if os.path.exists(output_file):
+            try:
+                with open(output_file) as f:
+                    existing = json.load(f)
+            except Exception:
+                pass
+        existing_ids = {l.get("id") for l in existing}
+        new_leads = [l for l in self.leads if l.get("id") not in existing_ids]
+        with open(output_file, "w") as f:
+            json.dump(existing + new_leads, f, indent=2)
+        log_status(f"Saved {len(new_leads)} new leads (total: {len(existing) + len(new_leads)})")
+
+    async def run(self, max_projects=None, download_files=False):
+        try:
+            await self._api.open()
+            await self.scrape_all_projects(max_projects, download_files)
+            await self.save_results()
+            return self.leads
+        except Exception as e:
+            log_status(f"Fatal error: {e}")
+            traceback.print_exc()
+            return self.leads
+        finally:
+            await self._api.close()
