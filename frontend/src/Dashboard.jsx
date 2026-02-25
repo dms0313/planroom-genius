@@ -42,7 +42,7 @@ const buildTakeoffHtml = (lead) => {
       ['Wiring', sp.WIRING_CLASS], ['Monitoring', sp.MONITORING],
       ['Audio', sp.AUDIO_SYSTEM],
       ['Approved Mfrs', Array.isArray(sp.APPROVED_MANUFACTURERS) ? sp.APPROVED_MANUFACTURERS.join(', ') : sp.APPROVED_MANUFACTURERS],
-    ].filter(([, v]) => v && v !== 'unknown');
+    ].filter(([, v]) => v && v !== 'unknown' && String(v).toLowerCase() !== 'addressable');
     if (specItems.length) {
       h.push('<p><strong>Key Specs</strong></p>');
       h.push('<ul>' + specItems.map(([k, v]) => li(k, v)).join('') + '</ul>');
@@ -1448,7 +1448,7 @@ export default function LeadDashboard() {
                             ['Monitoring', sp.MONITORING],
                             ['Audio', sp.AUDIO_SYSTEM],
                             ['Approved Mfrs', Array.isArray(sp.APPROVED_MANUFACTURERS) ? sp.APPROVED_MANUFACTURERS.join(', ') : sp.APPROVED_MANUFACTURERS],
-                          ].filter(([, v]) => v && v !== 'unknown');
+                          ].filter(([, v]) => v && v !== 'unknown' && String(v).toLowerCase() !== 'addressable');
                           return specItems.length > 0 ? (
                             <div className="mt-2 pt-2 border-t border-red-500/15">
                               <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Key Specs</div>

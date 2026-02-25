@@ -33,26 +33,54 @@ ADVISORY_MODE = "advisory"
 ANALYSIS_MODES = (EXTRACTION_MODE, ADVISORY_MODE)
 
 _SHARED_INSTRUCTION_GUARDRAILS = (
-    "MANDATORY OUTPUT GUARDRAILS:\\n"
-    "- Do not invent or infer specific code section numbers, clause IDs, or legal citations that are not explicitly present in the provided documents.\\n"
-    "- If a requested value cannot be found in the provided documents, output exactly 'unknown' for that value.\\n"
-    "- Every nontrivial factual claim must include a page citation in the corresponding field/object (e.g., page number or page list).\\n"
+    "MANDATORY OUTPUT GUARDRAILS:\n"
+    "- Do not invent or infer specific code section numbers, clause IDs, or legal citations that are not explicitly present in the provided documents.\n"
+    "- If a requested value cannot be found in the provided documents, output exactly 'unknown' for that value.\n"
+    "- Every nontrivial factual claim must include a page citation in the corresponding field/object (e.g., page number or page list).\n"
+    "- When estimating device counts, clearly label them as 'estimated from drawings' vs 'specified in schedule.'\n"
+    "- Distinguish between what is SHOWN on drawings vs what is only listed in the symbol legend.\n"
 )
 
 EXTRACTION_MODE_SYSTEM_INSTRUCTIONS = (
-    "You are operating in EXTRACTION MODE for construction fire alarm document analysis.\\n"
-    "Your task is strict factual extraction only. Focus only on information explicitly present in the provided documents.\\n"
-    "Do not provide strategy, competitive positioning, bid advice, value engineering recommendations, or optimization suggestions.\\n"
-    "Use neutral language and preserve ambiguity from source documents instead of filling gaps.\\n\\n"
+    "You are a senior fire alarm estimator with 20+ years of experience reviewing construction bid documents.\n"
+    "You are operating in EXTRACTION MODE — strict factual extraction only.\n"
+    "\n"
+    "DOMAIN EXPERTISE TO APPLY:\n"
+    "- Think like an estimator preparing a competitive bid. Extract everything needed to price the job.\n"
+    "- Cross-reference across drawing disciplines: mechanical schedules reveal duct detectors, architectural plans reveal occupancy and area, "
+    "electrical plans reveal panel locations and circuit requirements, plumbing plans may show sprinkler tie-ins.\n"
+    "- Quantify when possible — don't just say 'smoke detectors required,' count how many are shown on drawings.\n"
+    "- Pay attention to keyed notes, general notes, and abbreviation legends — these often contain critical scope details.\n"
+    "- Look for items that affect labor: ceiling heights, concealed vs exposed wiring, access difficulties, phasing requirements.\n"
+    "\n"
+    "Focus only on information explicitly present in the provided documents.\n"
+    "Do not provide strategy, competitive positioning, bid advice, value engineering recommendations, or optimization suggestions.\n"
+    "Use neutral language and preserve ambiguity from source documents instead of filling gaps.\n\n"
     f"{_SHARED_INSTRUCTION_GUARDRAILS}"
 )
 
 ADVISORY_MODE_SYSTEM_INSTRUCTIONS = (
-    "You are operating in ADVISORY MODE for construction fire alarm document analysis.\\n"
-    "First provide strict factual extraction from the provided documents.\\n"
-    "Optional estimator guidance is allowed only after factual findings are established and must be clearly labeled as advisory.\\n"
-    "Any advisory statement must explicitly include uncertainty language and a jurisdiction caveat (AHJ/code cycle/local amendments may differ).\\n"
-    "Never present advisory content as certain fact.\\n\\n"
+    "You are a senior fire alarm estimator with 20+ years of experience reviewing construction bid documents.\n"
+    "You are operating in ADVISORY MODE — factual extraction PLUS estimator guidance.\n"
+    "\n"
+    "DOMAIN EXPERTISE TO APPLY:\n"
+    "- Think like an estimator preparing a competitive bid. Extract everything needed to price the job.\n"
+    "- Cross-reference across drawing disciplines: mechanical schedules reveal duct detectors, architectural plans reveal occupancy and area, "
+    "electrical plans reveal panel locations and circuit requirements, plumbing plans may show sprinkler tie-ins.\n"
+    "- Quantify when possible — don't just say 'smoke detectors required,' count how many are shown on drawings.\n"
+    "- Pay attention to keyed notes, general notes, and abbreviation legends — these often contain critical scope details.\n"
+    "- Look for items that affect labor: ceiling heights, concealed vs exposed wiring, access difficulties, phasing requirements.\n"
+    "\n"
+    "First provide strict factual extraction from the provided documents.\n"
+    "Then provide estimator advisory guidance, clearly labeled as [ADVISORY]:\n"
+    "- Suggest value engineering opportunities (e.g., 'If AHJ allows, horn/strobes could replace speaker/strobes to reduce cost').\n"
+    "- Note where alternate manufacturers could save cost or improve schedule.\n"
+    "- Flag scope gaps the GC may RFI about or areas where the spec is ambiguous.\n"
+    "- Provide rough labor hour guidance when device counts are visible (e.g., 'Approximately 45 devices — typical 2-person crew, 3-4 day install').\n"
+    "- Identify coordination risks with other trades (HVAC duct detector access, ceiling grid conflicts, etc.).\n"
+    "\n"
+    "Any advisory statement must explicitly include uncertainty language and a jurisdiction caveat (AHJ/code cycle/local amendments may differ).\n"
+    "Never present advisory content as certain fact.\n\n"
     f"{_SHARED_INSTRUCTION_GUARDRAILS}"
 )
 
@@ -1396,6 +1424,7 @@ class GeminiFireAlarmAnalyzer:
         hvac_mechanical = composite_response.get('hvac_mechanical', {}) or {}
         competitive_advantages = composite_response.get('competitive_advantages', []) or []
         high_impact_claims = composite_response.get('high_impact_claims', {}) or {}
+        estimating_insights = composite_response.get('estimating_insights', []) or []
 
         # Step 9: If the documents show no FA content, derive code-based expectations
         logger.info("Deriving code-based expectations (if no fire alarm content is shown)...")
@@ -1425,8 +1454,8 @@ class GeminiFireAlarmAnalyzer:
             'project_details': project_details,
             'fire_alarm_details': fire_alarm_details,
             'hvac_mechanical': hvac_mechanical,
-            'hvac_mechanical': hvac_mechanical,
             'competitive_advantages': competitive_advantages,
+            'estimating_insights': estimating_insights,
             'project_tags': composite_response.get('project_tags', []) or [],
             # Common fields
             'spec_book_context': None,
@@ -1480,6 +1509,10 @@ class GeminiFireAlarmAnalyzer:
                 'building_type': None,
                 'applicable_codes': [],
                 'occupancy_type': None,
+                'square_footage': None,
+                'number_of_floors': None,
+                'construction_type': None,
+                'bid_date': None,
             },
             'fire_alarm_details': {
                 'fire_alarm_required': None,
@@ -1493,6 +1526,11 @@ class GeminiFireAlarmAnalyzer:
                 'fire_doors_present': None,
                 'fire_barriers_present': None,
                 'general_notes': [],
+                'device_count_estimate': None,
+                'wiring_info': None,
+                'monitoring_requirements': None,
+                'integration_points': [],
+                'sequence_of_operations': [],
             },
             'hvac_mechanical': {
                 'hvac_equipment': [],
@@ -1500,9 +1538,12 @@ class GeminiFireAlarmAnalyzer:
                 'fire_smoke_dampers_present': None,
                 'smoke_dampers_present': None,
                 'access_control_doors': [],
+                'elevator_recall': None,
+                'kitchen_hood_suppression': None,
             },
             'competitive_advantages': [],
             'project_tags': [],
+            'estimating_insights': [],
         }
 
     def _compile_page_context(
@@ -1587,16 +1628,25 @@ class GeminiFireAlarmAnalyzer:
         image_note = self._image_guidance_text(image_payload, image_pages)
 
         prompt = self._add_system_instruction(
-            f"""You are a fire alarm estimator AI. Using the consolidated project context and optional spec excerpts, extract
-all requested details in a single structured JSON response.
+            f"""You are a senior fire alarm estimator with 20+ years of experience. Using the consolidated project context and optional spec excerpts, extract
+all requested details in a single structured JSON response. Your goal is to produce everything an estimator needs to prepare a competitive bid.
 
 CRITICAL INSTRUCTION: Synthesize findings from ALL provided pages and images. Do not analyze pages in isolation.
 Cross-reference information across sheets (e.g., if a device is shown on Page 5 but the key note is on Page 3, combine that info).
-Treat the provided content as a complete package.
+Treat the provided content as a complete package. Cross-reference mechanical schedules with electrical plans to find duct detector requirements.
+Check architectural plans for occupancy types, ceiling heights, and areas that affect device spacing and labor.
 
 IMPORTANT — DO NOT FLAG PAGES AS MISSING: This PDF is a complete construction document set. Every sheet listed in the Sheet Index or Table of Contents IS present in this PDF. Do NOT state that any page is "missing from the provided PDF." If content for a specific sheet is not visible in the extracted text context, note only that "details were not captured in the provided context" — never say the sheet or page is absent. The drawings contain all sheets listed in their index.
 
 FIRE ALARM PAGE TITLES: Fire alarm devices and systems are frequently shown on pages whose titles do NOT say "Fire Alarm." Common page titles that contain fire alarm content include: "Power Plan," "Special Systems," "Special Systems Plan," "Systems Plan," "Fire Protection Plan," "Life Safety Plan," "Low Voltage Plan," "Technology Plan," "Communications Plan," and pages labeled with sheet numbers containing "FA," "FS," or "LS." If the sheet index references sheets with these titles alongside fire alarm sheets, assume fire alarm content exists across multiple drawing types. Additionally, almost every drawing set that lists fire alarm sheets in its index does in fact include the full fire alarm scope in the PDF — treat the presence of FA sheet entries in the index as strong evidence the scope is present, even if the visible page text is sparse.
+
+ESTIMATOR MINDSET: Think about what affects pricing and labor:
+- Device counts directly affect material and labor costs
+- Wiring class (A vs B) dramatically changes wire quantities
+- Ceiling heights over 10' require lifts or scaffolding
+- Concealed wiring in finished spaces vs exposed in warehouses changes labor significantly
+- Phased construction requires temporary systems and multiple inspections
+- Existing system tie-ins require compatibility research and may limit manufacturer choice
 
 Keep answers concise and only include information directly supported by the provided pages. Always cite page numbers when referencing notes, devices, or layouts. Fire alarm-focused
 pages identified by rules: {fa_pages}. Drawings are the primary source—use spec excerpts only as backup context and only for
@@ -1619,13 +1669,13 @@ ORIGINAL FIELDS (maintain backward compatibility):
 - mechanical_devices: {{duct_detectors: array, dampers: array, high_airflow_units: array}}
 - device_layout_review: {{primary_fa_page: {{page, reason}}, unusual_placements: array, co_detection: {{needed, reason}}}}
 - specifications: {{CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, WIRING_CLASS, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM, EXISTING_SYSTEM_PANEL_MODEL}}
-- possible_pitfalls: array of project-specific conflicts, omissions, or risks an estimator should flag (no canned checklists)
-- estimating_notes: array of coordination or estimating notes tailored to this project (do not duplicate pitfalls; keep concise and case-specific)
+- possible_pitfalls: array of project-specific conflicts, omissions, or risks an estimator should flag (no canned checklists). Be SPECIFIC — reference actual page numbers, device types, and spec sections. Examples of good pitfalls: "Spec calls for Notifier (proprietary) but drawings show Gamewell symbols — clarify with engineer (Pg E2.1 vs Spec 283111.2.1)" or "Duct detector shown on RTU-3 but no junction box detail provided for above-ceiling access (Pg M2.1)"
+- estimating_notes: array of coordination or estimating notes tailored to this project (do not duplicate pitfalls; keep concise and case-specific). Focus on items that affect COST: labor complexity, material quantities, coordination needs, permit/inspection requirements.
 - high_impact_claims: {{required_vendors, required_manufacturers, code_requirements, deal_breakers, evidence, validation_warnings}}
 
 NEW STANDARDIZED FIELDS (for improved organization):
-1. scope_summary: A concise 2-3 sentence summary of the project scope from a fire alarm perspective.
-   Example: "New construction of a daycare center in Overland Park, KS. Project requires design-build fire alarm system for a warehouse and office tenant finish. Includes notification (horns/strobes), sprinkler monitoring, and HVAC shutdown."
+1. scope_summary: A concise 2-4 sentence summary of the project scope from a fire alarm perspective. Include building type, approximate size if stated, system type, and key scope elements.
+   Example: "New construction of a 45,000 SF daycare center in Overland Park, KS. Project requires a new addressable fire alarm system with notification appliances (horn/strobes), smoke detection, sprinkler monitoring, duct detector interfaces for 4 RTUs, and HVAC shutdown integration. Voice evacuation is not required. System must be compatible with city-mandated monitoring protocol."
 
 2. project_details: {{
    - project_name: Name on title/cover page
@@ -1635,13 +1685,17 @@ NEW STANDARDIZED FIELDS (for improved organization):
    - building_type: "middle school", "high school", "open warehouse", "office space", "manufacturing", "childcare center", etc.
    - applicable_codes: array of code references (e.g., ["NFPA 72-2019", "IBC 2018", "NFPA 101-2018"])
    - occupancy_type: IBC occupancy classification (e.g., "B - Business", "E - Educational", "A-3 - Assembly")
+   - square_footage: Building area in SF if stated on cover page, plans, or specs. Return null if not found.
+   - number_of_floors: Number of stories/floors. Return null if not found.
+   - construction_type: IBC construction type (I-V) if mentioned. Return null if not found.
+   - bid_date: Bid due date if visible on cover page or in project info. Return null if not found.
 }}
 
 3. fire_alarm_details: {{
    - fire_alarm_required: "yes" or "no"
    - sprinkler_status: "yes" or "no"
    - panel_status: "new", "existing to remain", "retrofit", etc.
-   - existing_panel_manufacturer: Manufacturer name (and model if shown) for any existing fire alarm panel referenced in the drawings, schedules, or notes. Include model number when visible. Recognize these model numbers even when the brand is not written — Silent Knight: SK-6808, SK6808, SK 6808, SK-6820, SK6820, SK 6820, 6820EVS, 6808EVS, any model ending in EVS; Gamewell-FCI: 7100 series; FireLite: ES-50x, ES-100x, ES-1000x; Siemens: Cerberus, FC2005, Desigo; EST/Edwards: FSP502, FSP1004, FireShield, EST3; Notifier: NFW-xxx, NFS-xxx; Simplex: 4100ES, 4010; Honeywell; Bosch; Mircom; Johnson Controls / JCI. Return null if no existing panel is mentioned.
+   - existing_panel_manufacturer: Manufacturer name (and model if shown) for any existing fire alarm panel referenced in the drawings, schedules, or notes. Include model number when visible. Recognize these model numbers even when the brand is not written — Silent Knight: SK-6808, SK6808, SK 6808, SK-6820, SK6820, SK 6820, 6820EVS, 6808EVS, any model ending in EVS; Gamewell-FCI: 7100 series; FireLite: ES-50x, ES-100x, ES-1000x; Siemens: Cerberus, FC2005, Desigo; EST/Edwards: FSP502, FSP1004, FireShield, EST3, EST4, iO Series; Notifier: NFW-xxx, NFS-xxx; Simplex: 4100ES, 4010; Honeywell; Bosch; Mircom; Johnson Controls / JCI. Return null if no existing panel is mentioned.
    - layout_page_provided: "Yes" or "No". If yes, include page number.
    - voice_required: "yes" or "no"
    - co_required: "YES", "NO", or "UNCLEAR" based on occupancy (e.g., residential vs business) and gas/fuel sources.
@@ -1649,6 +1703,11 @@ NEW STANDARDIZED FIELDS (for improved organization):
    - fire_doors_present: "yes" or "no"
    - fire_barriers_present: "yes" or "no"
    - general_notes: array of strings. Copy any General Notes or Keyed Notes that strictly pertain to fire alarm. Cite page number for each (e.g., "Key Note 4: Connect duct detector to FACP (Pg M1.1)").
+   - device_count_estimate: object with approximate counts by device type extracted from drawings/schedules. Keys: smoke_detectors, heat_detectors, pull_stations, horn_strobes, speaker_strobes, duct_detectors, monitor_modules, control_modules, relay_modules, beam_detectors, other. Use integer values. Set to null if counts cannot be reasonably estimated. Label source as "counted_from_drawings" or "from_device_schedule".
+   - wiring_info: object {{class: "A" or "B" or null, pathway: "conduit" or "cable_tray" or "open" or null, notes: string or null}}. Extract wiring class and pathway requirements from specs or notes.
+   - monitoring_requirements: string describing central station monitoring needs (e.g., "UL-listed central station monitoring required per spec", "Proprietary monitoring", or null)
+   - integration_points: array of strings listing other building systems the fire alarm must interface with (e.g., ["elevator recall", "HVAC shutdown", "access control release", "sprinkler monitoring", "kitchen hood suppression", "BMS/BAS", "mass notification"])
+   - sequence_of_operations: array of objects {{trigger: string, action: string, page: number or null}} describing relay/shutdown sequences mentioned in notes or riser diagrams. Example: {{trigger: "Duct detector alarm on RTU-1", action: "Shut down RTU-1 via control relay", page: 5}}
 }}
 
 4. hvac_mechanical: {{
@@ -1657,6 +1716,8 @@ NEW STANDARDIZED FIELDS (for improved organization):
    - fire_smoke_dampers_present: "yes" or "no" or null
    - smoke_dampers_present: "yes" or "no" or null
    - access_control_doors: array of objects with {{location: string, door_count: number, electric_strike_release_required: boolean, page: number}}
+   - elevator_recall: object {{required: "yes" or "no" or null, shunt_trip: "yes" or "no" or null, elevator_count: number or null, page: number or null}} or null. Extract elevator recall and shunt trip requirements if shown.
+   - kitchen_hood_suppression: object {{present: "yes" or "no" or null, fa_tie_in_required: "yes" or "no" or null, page: number or null}} or null. Note if kitchen hood suppression system requires fire alarm tie-in.
 }}
 
 5. competitive_advantages: array of strings containing advice or recommendations to gain an edge over competing bidders
@@ -1686,6 +1747,14 @@ NEW STANDARDIZED FIELDS (for improved organization):
        - "Hospital", "Healthcare" -> color: "teal", hover: "Healthcare"
        - "Government", "Military" -> color: "teal", hover: "Government"
 
+7. estimating_insights: array of objects {{ "category": string, "detail": string, "impact": string }}.
+   Categories: "material", "labor", "coordination", "schedule", "risk", "cost_driver".
+   Provide specific, actionable insights that affect pricing. Examples:
+   - {{category: "labor", detail: "Exposed structure in warehouse — surface-mount devices reduce install time", impact: "Lower labor cost"}}
+   - {{category: "cost_driver", detail: "Class A wiring specified — doubles wire quantities vs Class B", impact: "Higher material cost"}}
+   - {{category: "coordination", detail: "4 duct detectors required — coordinate access panels with HVAC contractor above ceiling grid", impact: "Schedule coordination needed"}}
+   - {{category: "risk", detail: "Spec requires ES-200XP panels but no approved equal — sole source pricing applies", impact: "No competitive pricing"}}
+
 CRITICAL RULES:
 - If a field is unknown, use null, an empty array, or an empty object as appropriate.
 - Do not invent devices or notes; prioritize project-specific content only.
@@ -1694,9 +1763,12 @@ CRITICAL RULES:
 - HVAC equipment over 2,000 CFM must be flagged with over_2000_cfm: true
 - Extract Keyed/General Notes accurately with page citations.
 - Do not repeat the same pitfall or note in multiple fields; deduplicate wording and cite context briefly when helpful.
+- MANUFACTURER DETECTION: Keyed notes and general notes are the PRIMARY source of required manufacturer specifications on construction documents. Always scan them for phrases like "system to be [Brand]", "shall be [Brand] [Model]", "[Brand] or approved equal", "basis of design: [Brand]", "connect to existing [Brand]", or "compatible with [Brand]". Recognized Edwards/EST model numbers include: EST3, EST4, FSP502, FSP1004, FireShield, iO Series. When found, add to both high_impact_claims.required_manufacturers AND specifications.APPROVED_MANUFACTURERS.
 - For EVERY item in required_vendors, required_manufacturers, code_requirements, and deal_breakers, you MUST include one matching evidence object with the same claim text, page number, and short quote/snippet from the documents.
 - If there is no evidence, omit the claim from that list.
 - NEVER add a pitfall or note stating that fire alarm drawing sheets are "missing from the provided PDF" or "not included in the PDF." The PDF is a complete set. If a sheet's content was not captured in the extracted text context, that is a context limitation, not a missing document. Omit any such note entirely.
+- For device_count_estimate: count devices visible on floor plans and schedules, not just from the symbol legend. Clearly note the source.
+- For sequence_of_operations: extract ONLY sequences explicitly stated in the documents. Do not infer standard sequences.
 """
         )
 
@@ -2544,7 +2616,10 @@ Return JSON with:
         image_note = self._image_guidance_text(image_payload, image_pages)
 
         prompt = f"""Extract fire alarm system specifications from these pages and spec book excerpts. Always review fire alarm related notes AND any
-general notes to see if the plans list the manufacturer/model of an existing fire alarm control panel.
+general notes to see if the plans list the manufacturer/model of an existing fire alarm control panel. IMPORTANT: Keyed notes and general notes
+frequently specify required manufacturers using phrases like "system to be [Brand]", "shall be [Brand] [Model]", "basis of design: [Brand]", or
+"compatible with [Brand] system". Always scan all notes for these patterns and include any found brands in APPROVED_MANUFACTURERS. Recognized
+Edwards/EST models include EST3, EST4, FSP502, FSP1004, FireShield, iO Series.
 
 SOURCE TEXT:
 {combined_text[:15000]}
