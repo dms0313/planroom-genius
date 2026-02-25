@@ -645,6 +645,7 @@ export default function LeadDashboard() {
       bidplanroom: false,
       loydbuildsbetter: false,
       buildingconnected: false,
+      isqft: false,
       use_gdrive: scraperSettings.use_gdrive,
       [scraperName]: true,
     };
@@ -1003,6 +1004,7 @@ export default function LeadDashboard() {
                   { key: 'bidplanroom', label: 'Bidplanroom', bg: 'bg-emerald-600/20', bgHover: 'hover:bg-emerald-600/30', text: 'text-emerald-400' },
                   { key: 'loydbuildsbetter', label: 'Loyd Builds Better', bg: 'bg-amber-600/20', bgHover: 'hover:bg-amber-600/30', text: 'text-amber-400' },
                   { key: 'buildingconnected', label: 'BuildingConnected', bg: 'bg-purple-600/20', bgHover: 'hover:bg-purple-600/30', text: 'text-purple-400' },
+                  { key: 'isqft', label: 'iSqFt', bg: 'bg-orange-600/20', bgHover: 'hover:bg-orange-600/30', text: 'text-orange-400' },
                 ].map(s => (
                   <button
                     key={s.key}
@@ -1792,7 +1794,7 @@ export default function LeadDashboard() {
                 {scraperStatus && !scraperStatus.running && scraperStatus.last_status && <span className="text-xs text-slate-400">Last: {scraperStatus.last_status}</span>}
               </div>
               <div className="flex items-center gap-2">
-                {scraperStatus?.leads_found && <span className="text-xs text-slate-400">BC: {scraperStatus.leads_found.buildingconnected} | PH: {scraperStatus.leads_found.planhub}</span>}
+                {scraperStatus?.leads_found && <span className="text-xs text-slate-400">BC: {scraperStatus.leads_found.buildingconnected} | PH: {scraperStatus.leads_found.planhub} | iSqFt: {scraperStatus.leads_found.isqft ?? 0}</span>}
                 <button onClick={clearConsoleLogs} className="px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition">Clear</button>
                 <button onClick={() => setConsoleMinimized(!consoleMinimized)} className="p-1 text-slate-400 hover:text-white transition">{consoleMinimized ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
                 <button onClick={() => setShowConsole(false)} className="p-1 text-slate-400 hover:text-white transition"><X size={14} /></button>
