@@ -1336,6 +1336,31 @@ export default function LeadDashboard() {
                     </ul>
                   </div>
                 )}
+                {descriptionPopup.planhub_gcs && descriptionPopup.planhub_gcs.length > 0 && (
+                  <div className="bg-slate-800/50 border border-slate-600/40 rounded-lg p-3">
+                    <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1">
+                      <Building2 size={10} />Contractors Bidding ({descriptionPopup.planhub_gcs.length})
+                    </div>
+                    <ul className="space-y-2">
+                      {descriptionPopup.planhub_gcs.map((gc, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <Building2 size={11} className="text-slate-500 mt-0.5 shrink-0" />
+                          <div>
+                            <span className="text-sm text-slate-200 font-medium">{gc.company_name || 'Unknown'}</span>
+                            {gc.user_name && <span className="text-slate-400 text-xs ml-1.5">· {gc.user_name}</span>}
+                            {(gc.email_address || gc.phone_number) && (
+                              <div className="text-[11px] text-slate-500 mt-0.5">
+                                {gc.email_address && <span>{gc.email_address}</span>}
+                                {gc.email_address && gc.phone_number && <span className="mx-1">·</span>}
+                                {gc.phone_number && <span>{gc.phone_number}</span>}
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="flex gap-2 flex-wrap">
                   {descriptionPopup.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/30">Has Budget</span>}
                   {getSystemTags(descriptionPopup).map((tagId, idx) => {
