@@ -533,25 +533,18 @@ def download_file(file_id, destination_dir=None, filename=None):
             logger.info(f"File already exists locally: {local_path}")
             return local_path
         
-        # Download file content
-        import io
+        # Download file content — stream directly to disk to avoid OOM on large files
         from googleapiclient.http import MediaIoBaseDownload
-        
+
         request = service.files().get_media(fileId=file_id)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-        
         logger.info(f"Downloading from Google Drive: {drive_filename}")
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-            if status:
-                logger.debug(f"Download progress: {int(status.progress() * 100)}%")
-        
-        # Write to local file
-        fh.seek(0)
         with open(local_path, 'wb') as f:
-            f.write(fh.read())
+            downloader = MediaIoBaseDownload(f, request, chunksize=10 * 1024 * 1024)
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+                if status:
+                    logger.debug(f"Download progress: {int(status.progress() * 100)}%")
         
         logger.info(f"Downloaded to: {local_path}")
         return local_path

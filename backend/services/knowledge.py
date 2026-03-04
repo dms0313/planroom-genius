@@ -932,7 +932,7 @@ def _call_gemini(images, context="", thinking=False):
 
     # Try preferred model first, fall back to secondary if quota/availability issues
     models = [
-        "gemini-3-pro-preview",
+        "gemini-pro-latest",
         "gemini-2.5-flash",
     ]
     base_url = "https://generativelanguage.googleapis.com/v1beta/models"

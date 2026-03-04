@@ -193,7 +193,7 @@ def save_leads(new_leads):
                         ex_words = set(ex_name_norm.split())
                         if len(ex_words) >= 2:
                             overlap = lead_words & ex_words
-                            shorter = min(len(lead_words), len(ex_words))
+                            shorter = max(len(lead_words), len(ex_words))
                             if len(overlap) / shorter >= 0.7:
                                 duplicate_index = idx
                                 logger.info(f"Partial name match: '{lead.get('name')}' ~ '{existing_lead.get('name')}' (same bid date)")
@@ -403,7 +403,7 @@ def deduplicate_database():
             if len(ex_words) < 2:
                 continue
             overlap = lead_words & ex_words
-            shorter = min(len(lead_words), len(ex_words))
+            shorter = max(len(lead_words), len(ex_words))
             if len(overlap) / shorter >= 0.7:
                 deduplicated[i] = merge_lead_info(deduplicated[i], other)
                 partial_remove.add(j)
