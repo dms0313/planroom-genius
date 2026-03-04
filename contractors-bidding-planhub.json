@@ -1,0 +1,100 @@
+{
+  "result": {
+    "total_general_contractors": 7,
+    "general_contractors": [
+      {
+        "id": 839059,
+        "company_id": 302822,
+        "company_name": "Centric Builds",
+        "user_name": "Evan Chiles",
+        "company_logo": "https:\/\/planhubapp.s3.us-west-2.amazonaws.com\/images\/logo\/328709_EdjFAtWzIvKYc.PNG?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEDYaCXVzLXdlc3QtMiJHMEUCICG6RprJ2bT7%2B7847ml1dMfpdn9Tu2jkzLy6jyrA3gYWAiEA41qJZ1oBtq75WNx%2Fp8wOJVUAFX1ByCSAqhJMX7o2SDsqvAUI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAEGgw3NzE1MTk2MzIyODQiDOx2l7Nl1PUITgAHBSqQBRAE5H6zkMPPtSvy1U3oU9NyhBfe0KTieWJMcHxjcqzl%2B5LaRE1GvcF5r6cMC1f7VwihqlC6kWetM5M4RLH8PW%2BtCj8HTHpGSzR1ryAngCSvctXI%2FLiVtojrpEdl%2BRMNfEbf3hTMW6ZU6MdDbdZRkYGWkHYYiRfS4pyiuMrlep8efpr5xozFkZgyiBNh%2FGL6gAqT58pxbnPHT4p8sZLkjKswxLnfSno21xI79yIHMdhpbCe2%2FlqDqnYo5zblJwv%2FuIm7lB1AAanTgkhTj0XKKOtxix9tu4ppTvT7rDemib8M9%2FgKd4kon7TLBJRVRId28BTprWfxAegr1164%2FBlFtob0NfWvb0UHpY6H%2FIoSrfiJqUkL%2BbqTdmY3Ly1zIkrrjBMcAAe7RJhrxBJL4rQve9cxlrc%2Bp4k2XHg8Eb%2FiSWdcNTgO5WUCi2ufVvC2iaWxNfl74%2FOB5onUZOR5BtZuGd95vjuNoYsPsNQ7PWJp19GlAlU1rRJjiiiAef%2B1OKzCSaMqWWrhoLeWFMDgacTxEG8pvg%2B2f%2F2BINIyp9WzZ4NzdIox2hBkwS1U1x6NjxH%2BDgu5mytohv00j3Es5fqE7DBf8mtUUG%2FazBi4EfZONf0XvM205apstjl76stu8yH74%2BP1Y8FQtidiPlj5eHs926Myhd61LXfsKcSRB7TrdVEYpQvT%2BiDE9b%2FzUcB%2B8DTmBdNBIymFcTGgaQYTVdpUPfmGpsRglcBXq5d7zWoWAJ4IErdKKZU4GbMV9ZWJ%2B6uQZDkdkLOvD2LVCf3eL99LEIdXIJHNml4lLl%2FUVi6YKDJN23sMZ0UXnudgbAnFScx8K7Aey9aAFc9xfqAlHGOHyz4vG0cUSc%2Bd2rJP1hRFzpn%2BMI22%2BMwGOrEBqwkpiTmoPVKyUiWgk0elysCTecUdzye8NUYj24KHBs3yAPUgToJ7xYxtZaIHqAXOe0fBjKABFtHETVG56yQp9HBBFnYbk2jnE5p37mdamHgT8mlCjRq7QabBTVfSpjYdnYkmSExoO0hcAtGsSyXc1wO714FPZEuGO5wLaDRirOan5notI0mayTU9EN7k771lUzYPEfB9e9mF8oOiikuPcXRZpW4mAx6WM7Wfsav6JyXC&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIA3HIRHKOOOUYINQN5%2F20260224%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260224T221434Z&X-Amz-SignedHeaders=host&X-Amz-Expires=604800&X-Amz-Signature=3beba1fc1e019a3ee06277dd292a2e9a53baa3baadbd8366ed8a7bac9a5e2cb8",
+        "bid_due_date": "2026-02-26T12:00:00+00:00",
+        "in_network": null,
+        "is_unlocked": true,
+        "phone_number": "",
+        "email_address": "Evan.Chiles@centric.build",
+        "awarded_status": null
+      },
+      {
+        "id": 360450,
+        "company_id": 326683,
+        "company_name": "Navigate Building Solutions",
+        "user_name": "Craig Schluter",
+        "company_logo": "https:\/\/planhubapp.s3.us-west-2.amazonaws.com\/images\/logo\/360446_toDCmejUHd.PNG?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEDYaCXVzLXdlc3QtMiJHMEUCICG6RprJ2bT7%2B7847ml1dMfpdn9Tu2jkzLy6jyrA3gYWAiEA41qJZ1oBtq75WNx%2Fp8wOJVUAFX1ByCSAqhJMX7o2SDsqvAUI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAEGgw3NzE1MTk2MzIyODQiDOx2l7Nl1PUITgAHBSqQBRAE5H6zkMPPtSvy1U3oU9NyhBfe0KTieWJMcHxjcqzl%2B5LaRE1GvcF5r6cMC1f7VwihqlC6kWetM5M4RLH8PW%2BtCj8HTHpGSzR1ryAngCSvctXI%2FLiVtojrpEdl%2BRMNfEbf3hTMW6ZU6MdDbdZRkYGWkHYYiRfS4pyiuMrlep8efpr5xozFkZgyiBNh%2FGL6gAqT58pxbnPHT4p8sZLkjKswxLnfSno21xI79yIHMdhpbCe2%2FlqDqnYo5zblJwv%2FuIm7lB1AAanTgkhTj0XKKOtxix9tu4ppTvT7rDemib8M9%2FgKd4kon7TLBJRVRId28BTprWfxAegr1164%2FBlFtob0NfWvb0UHpY6H%2FIoSrfiJqUkL%2BbqTdmY3Ly1zIkrrjBMcAAe7RJhrxBJL4rQve9cxlrc%2Bp4k2XHg8Eb%2FiSWdcNTgO5WUCi2ufVvC2iaWxNfl74%2FOB5onUZOR5BtZuGd95vjuNoYsPsNQ7PWJp19GlAlU1rRJjiiiAef%2B1OKzCSaMqWWrhoLeWFMDgacTxEG8pvg%2B2f%2F2BINIyp9WzZ4NzdIox2hBkwS1U1x6NjxH%2BDgu5mytohv00j3Es5fqE7DBf8mtUUG%2FazBi4EfZONf0XvM205apstjl76stu8yH74%2BP1Y8FQtidiPlj5eHs926Myhd61LXfsKcSRB7TrdVEYpQvT%2BiDE9b%2FzUcB%2B8DTmBdNBIymFcTGgaQYTVdpUPfmGpsRglcBXq5d7zWoWAJ4IErdKKZU4GbMV9ZWJ%2B6uQZDkdkLOvD2LVCf3eL99LEIdXIJHNml4lLl%2FUVi6YKDJN23sMZ0UXnudgbAnFScx8K7Aey9aAFc9xfqAlHGOHyz4vG0cUSc%2Bd2rJP1hRFzpn%2BMI22%2BMwGOrEBqwkpiTmoPVKyUiWgk0elysCTecUdzye8NUYj24KHBs3yAPUgToJ7xYxtZaIHqAXOe0fBjKABFtHETVG56yQp9HBBFnYbk2jnE5p37mdamHgT8mlCjRq7QabBTVfSpjYdnYkmSExoO0hcAtGsSyXc1wO714FPZEuGO5wLaDRirOan5notI0mayTU9EN7k771lUzYPEfB9e9mF8oOiikuPcXRZpW4mAx6WM7Wfsav6JyXC&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIA3HIRHKOOOUYINQN5%2F20260224%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260224T221434Z&X-Amz-SignedHeaders=host&X-Amz-Expires=604800&X-Amz-Signature=41e65b368e7001f0795ed0dbbc614735de064008e27a3e405465a9c4ba71cc3b",
+        "bid_due_date": "2026-02-26T12:00:00+00:00",
+        "in_network": null,
+        "is_unlocked": true,
+        "phone_number": "314-713-6205",
+        "email_address": "craig@navigatebuildingsolutions.com",
+        "awarded_status": null
+      },
+      {
+        "id": 374819,
+        "company_id": 337367,
+        "company_name": "Nabholz Construction Corporation",
+        "user_name": "Mitchell Fuemmeler",
+        "company_logo": "https:\/\/planhubapp.s3.us-west-2.amazonaws.com\/images\/logo\/374819_qRGYMdtZTvP.jpg?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEDYaCXVzLXdlc3QtMiJHMEUCICG6RprJ2bT7%2B7847ml1dMfpdn9Tu2jkzLy6jyrA3gYWAiEA41qJZ1oBtq75WNx%2Fp8wOJVUAFX1ByCSAqhJMX7o2SDsqvAUI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAEGgw3NzE1MTk2MzIyODQiDOx2l7Nl1PUITgAHBSqQBRAE5H6zkMPPtSvy1U3oU9NyhBfe0KTieWJMcHxjcqzl%2B5LaRE1GvcF5r6cMC1f7VwihqlC6kWetM5M4RLH8PW%2BtCj8HTHpGSzR1ryAngCSvctXI%2FLiVtojrpEdl%2BRMNfEbf3hTMW6ZU6MdDbdZRkYGWkHYYiRfS4pyiuMrlep8efpr5xozFkZgyiBNh%2FGL6gAqT58pxbnPHT4p8sZLkjKswxLnfSno21xI79yIHMdhpbCe2%2FlqDqnYo5zblJwv%2FuIm7lB1AAanTgkhTj0XKKOtxix9tu4ppTvT7rDemib8M9%2FgKd4kon7TLBJRVRId28BTprWfxAegr1164%2FBlFtob0NfWvb0UHpY6H%2FIoSrfiJqUkL%2BbqTdmY3Ly1zIkrrjBMcAAe7RJhrxBJL4rQve9cxlrc%2Bp4k2XHg8Eb%2FiSWdcNTgO5WUCi2ufVvC2iaWxNfl74%2FOB5onUZOR5BtZuGd95vjuNoYsPsNQ7PWJp19GlAlU1rRJjiiiAef%2B1OKzCSaMqWWrhoLeWFMDgacTxEG8pvg%2B2f%2F2BINIyp9WzZ4NzdIox2hBkwS1U1x6NjxH%2BDgu5mytohv00j3Es5fqE7DBf8mtUUG%2FazBi4EfZONf0XvM205apstjl76stu8yH74%2BP1Y8FQtidiPlj5eHs926Myhd61LXfsKcSRB7TrdVEYpQvT%2BiDE9b%2FzUcB%2B8DTmBdNBIymFcTGgaQYTVdpUPfmGpsRglcBXq5d7zWoWAJ4IErdKKZU4GbMV9ZWJ%2B6uQZDkdkLOvD2LVCf3eL99LEIdXIJHNml4lLl%2FUVi6YKDJN23sMZ0UXnudgbAnFScx8K7Aey9aAFc9xfqAlHGOHyz4vG0cUSc%2Bd2rJP1hRFzpn%2BMI22%2BMwGOrEBqwkpiTmoPVKyUiWgk0elysCTecUdzye8NUYj24KHBs3yAPUgToJ7xYxtZaIHqAXOe0fBjKABFtHETVG56yQp9HBBFnYbk2jnE5p37mdamHgT8mlCjRq7QabBTVfSpjYdnYkmSExoO0hcAtGsSyXc1wO714FPZEuGO5wLaDRirOan5notI0mayTU9EN7k771lUzYPEfB9e9mF8oOiikuPcXRZpW4mAx6WM7Wfsav6JyXC&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIA3HIRHKOOOUYINQN5%2F20260224%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260224T221434Z&X-Amz-SignedHeaders=host&X-Amz-Expires=604800&X-Amz-Signature=4b72f2e3b1011cf7a37a41ec5c017b4d962ee8628cc599c624546bf00f22ea0e",
+        "bid_due_date": "2026-02-26T12:00:00+00:00",
+        "in_network": null,
+        "is_unlocked": true,
+        "phone_number": null,
+        "email_address": "mitchell.fuemmeler@nabholz.com",
+        "awarded_status": null
+      },
+      {
+        "id": 205821,
+        "company_id": 387965,
+        "company_name": "Lejas Corporation",
+        "user_name": "Randy Ringleb",
+        "company_logo": "https:\/\/planhubapp.s3.us-west-2.amazonaws.com\/images\/logo\/default-logo.png?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEDYaCXVzLXdlc3QtMiJHMEUCICG6RprJ2bT7%2B7847ml1dMfpdn9Tu2jkzLy6jyrA3gYWAiEA41qJZ1oBtq75WNx%2Fp8wOJVUAFX1ByCSAqhJMX7o2SDsqvAUI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAEGgw3NzE1MTk2MzIyODQiDOx2l7Nl1PUITgAHBSqQBRAE5H6zkMPPtSvy1U3oU9NyhBfe0KTieWJMcHxjcqzl%2B5LaRE1GvcF5r6cMC1f7VwihqlC6kWetM5M4RLH8PW%2BtCj8HTHpGSzR1ryAngCSvctXI%2FLiVtojrpEdl%2BRMNfEbf3hTMW6ZU6MdDbdZRkYGWkHYYiRfS4pyiuMrlep8efpr5xozFkZgyiBNh%2FGL6gAqT58pxbnPHT4p8sZLkjKswxLnfSno21xI79yIHMdhpbCe2%2FlqDqnYo5zblJwv%2FuIm7lB1AAanTgkhTj0XKKOtxix9tu4ppTvT7rDemib8M9%2FgKd4kon7TLBJRVRId28BTprWfxAegr1164%2FBlFtob0NfWvb0UHpY6H%2FIoSrfiJqUkL%2BbqTdmY3Ly1zIkrrjBMcAAe7RJhrxBJL4rQve9cxlrc%2Bp4k2XHg8Eb%2FiSWdcNTgO5WUCi2ufVvC2iaWxNfl74%2FOB5onUZOR5BtZuGd95vjuNoYsPsNQ7PWJp19GlAlU1rRJjiiiAef%2B1OKzCSaMqWWrhoLeWFMDgacTxEG8pvg%2B2f%2F2BINIyp9WzZ4NzdIox2hBkwS1U1x6NjxH%2BDgu5mytohv00j3Es5fqE7DBf8mtUUG%2FazBi4EfZONf0XvM205apstjl76stu8yH74%2BP1Y8FQtidiPlj5eHs926Myhd61LXfsKcSRB7TrdVEYpQvT%2BiDE9b%2FzUcB%2B8DTmBdNBIymFcTGgaQYTVdpUPfmGpsRglcBXq5d7zWoWAJ4IErdKKZU4GbMV9ZWJ%2B6uQZDkdkLOvD2LVCf3eL99LEIdXIJHNml4lLl%2FUVi6YKDJN23sMZ0UXnudgbAnFScx8K7Aey9aAFc9xfqAlHGOHyz4vG0cUSc%2Bd2rJP1hRFzpn%2BMI22%2BMwGOrEBqwkpiTmoPVKyUiWgk0elysCTecUdzye8NUYj24KHBs3yAPUgToJ7xYxtZaIHqAXOe0fBjKABFtHETVG56yQp9HBBFnYbk2jnE5p37mdamHgT8mlCjRq7QabBTVfSpjYdnYkmSExoO0hcAtGsSyXc1wO714FPZEuGO5wLaDRirOan5notI0mayTU9EN7k771lUzYPEfB9e9mF8oOiikuPcXRZpW4mAx6WM7Wfsav6JyXC&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIA3HIRHKOOOUYINQN5%2F20260224%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260224T221434Z&X-Amz-SignedHeaders=host&X-Amz-Expires=3600&X-Amz-Signature=7a172672fd0d0df4601263c546d21f089175b014dca63446c83638811cea9499",
+        "bid_due_date": "2026-02-26T12:00:00+00:00",
+        "in_network": null,
+        "is_unlocked": true,
+        "phone_number": "(480) 775-1152",
+        "email_address": "rringleb@lejascorp.com",
+        "awarded_status": null,
+        "is_preferred": true
+      },
+      {
+        "id": 949607,
+        "company_id": 523033,
+        "company_name": "Monarch Build",
+        "user_name": "Courtney Kounkel",
+        "company_logo": "https:\/\/planhubapp.s3.us-west-2.amazonaws.com\/images\/logo\/default-logo.png?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEDYaCXVzLXdlc3QtMiJHMEUCICG6RprJ2bT7%2B7847ml1dMfpdn9Tu2jkzLy6jyrA3gYWAiEA41qJZ1oBtq75WNx%2Fp8wOJVUAFX1ByCSAqhJMX7o2SDsqvAUI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAEGgw3NzE1MTk2MzIyODQiDOx2l7Nl1PUITgAHBSqQBRAE5H6zkMPPtSvy1U3oU9NyhBfe0KTieWJMcHxjcqzl%2B5LaRE1GvcF5r6cMC1f7VwihqlC6kWetM5M4RLH8PW%2BtCj8HTHpGSzR1ryAngCSvctXI%2FLiVtojrpEdl%2BRMNfEbf3hTMW6ZU6MdDbdZRkYGWkHYYiRfS4pyiuMrlep8efpr5xozFkZgyiBNh%2FGL6gAqT58pxbnPHT4p8sZLkjKswxLnfSno21xI79yIHMdhpbCe2%2FlqDqnYo5zblJwv%2FuIm7lB1AAanTgkhTj0XKKOtxix9tu4ppTvT7rDemib8M9%2FgKd4kon7TLBJRVRId28BTprWfxAegr1164%2FBlFtob0NfWvb0UHpY6H%2FIoSrfiJqUkL%2BbqTdmY3Ly1zIkrrjBMcAAe7RJhrxBJL4rQve9cxlrc%2Bp4k2XHg8Eb%2FiSWdcNTgO5WUCi2ufVvC2iaWxNfl74%2FOB5onUZOR5BtZuGd95vjuNoYsPsNQ7PWJp19GlAlU1rRJjiiiAef%2B1OKzCSaMqWWrhoLeWFMDgacTxEG8pvg%2B2f%2F2BINIyp9WzZ4NzdIox2hBkwS1U1x6NjxH%2BDgu5mytohv00j3Es5fqE7DBf8mtUUG%2FazBi4EfZONf0XvM205apstjl76stu8yH74%2BP1Y8FQtidiPlj5eHs926Myhd61LXfsKcSRB7TrdVEYpQvT%2BiDE9b%2FzUcB%2B8DTmBdNBIymFcTGgaQYTVdpUPfmGpsRglcBXq5d7zWoWAJ4IErdKKZU4GbMV9ZWJ%2B6uQZDkdkLOvD2LVCf3eL99LEIdXIJHNml4lLl%2FUVi6YKDJN23sMZ0UXnudgbAnFScx8K7Aey9aAFc9xfqAlHGOHyz4vG0cUSc%2Bd2rJP1hRFzpn%2BMI22%2BMwGOrEBqwkpiTmoPVKyUiWgk0elysCTecUdzye8NUYj24KHBs3yAPUgToJ7xYxtZaIHqAXOe0fBjKABFtHETVG56yQp9HBBFnYbk2jnE5p37mdamHgT8mlCjRq7QabBTVfSpjYdnYkmSExoO0hcAtGsSyXc1wO714FPZEuGO5wLaDRirOan5notI0mayTU9EN7k771lUzYPEfB9e9mF8oOiikuPcXRZpW4mAx6WM7Wfsav6JyXC&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIA3HIRHKOOOUYINQN5%2F20260224%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260224T221434Z&X-Amz-SignedHeaders=host&X-Amz-Expires=3600&X-Amz-Signature=7a172672fd0d0df4601263c546d21f089175b014dca63446c83638811cea9499",
+        "bid_due_date": "2026-02-26T12:00:00+00:00",
+        "in_network": null,
+        "is_unlocked": true,
+        "phone_number": "9136093868",
+        "email_address": "courtney.kounkel@monarch.build",
+        "awarded_status": null
+      },
+      {
+        "id": 891122,
+        "company_id": 688734,
+        "company_name": "Lytle Construction, Inc",
+        "user_name": "Alan Hicks",
+        "company_logo": "https:\/\/planhubapp.s3.us-west-2.amazonaws.com\/images\/logo\/default-logo.png?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEDYaCXVzLXdlc3QtMiJHMEUCICG6RprJ2bT7%2B7847ml1dMfpdn9Tu2jkzLy6jyrA3gYWAiEA41qJZ1oBtq75WNx%2Fp8wOJVUAFX1ByCSAqhJMX7o2SDsqvAUI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAEGgw3NzE1MTk2MzIyODQiDOx2l7Nl1PUITgAHBSqQBRAE5H6zkMPPtSvy1U3oU9NyhBfe0KTieWJMcHxjcqzl%2B5LaRE1GvcF5r6cMC1f7VwihqlC6kWetM5M4RLH8PW%2BtCj8HTHpGSzR1ryAngCSvctXI%2FLiVtojrpEdl%2BRMNfEbf3hTMW6ZU6MdDbdZRkYGWkHYYiRfS4pyiuMrlep8efpr5xozFkZgyiBNh%2FGL6gAqT58pxbnPHT4p8sZLkjKswxLnfSno21xI79yIHMdhpbCe2%2FlqDqnYo5zblJwv%2FuIm7lB1AAanTgkhTj0XKKOtxix9tu4ppTvT7rDemib8M9%2FgKd4kon7TLBJRVRId28BTprWfxAegr1164%2FBlFtob0NfWvb0UHpY6H%2FIoSrfiJqUkL%2BbqTdmY3Ly1zIkrrjBMcAAe7RJhrxBJL4rQve9cxlrc%2Bp4k2XHg8Eb%2FiSWdcNTgO5WUCi2ufVvC2iaWxNfl74%2FOB5onUZOR5BtZuGd95vjuNoYsPsNQ7PWJp19GlAlU1rRJjiiiAef%2B1OKzCSaMqWWrhoLeWFMDgacTxEG8pvg%2B2f%2F2BINIyp9WzZ4NzdIox2hBkwS1U1x6NjxH%2BDgu5mytohv00j3Es5fqE7DBf8mtUUG%2FazBi4EfZONf0XvM205apstjl76stu8yH74%2BP1Y8FQtidiPlj5eHs926Myhd61LXfsKcSRB7TrdVEYpQvT%2BiDE9b%2FzUcB%2B8DTmBdNBIymFcTGgaQYTVdpUPfmGpsRglcBXq5d7zWoWAJ4IErdKKZU4GbMV9ZWJ%2B6uQZDkdkLOvD2LVCf3eL99LEIdXIJHNml4lLl%2FUVi6YKDJN23sMZ0UXnudgbAnFScx8K7Aey9aAFc9xfqAlHGOHyz4vG0cUSc%2Bd2rJP1hRFzpn%2BMI22%2BMwGOrEBqwkpiTmoPVKyUiWgk0elysCTecUdzye8NUYj24KHBs3yAPUgToJ7xYxtZaIHqAXOe0fBjKABFtHETVG56yQp9HBBFnYbk2jnE5p37mdamHgT8mlCjRq7QabBTVfSpjYdnYkmSExoO0hcAtGsSyXc1wO714FPZEuGO5wLaDRirOan5notI0mayTU9EN7k771lUzYPEfB9e9mF8oOiikuPcXRZpW4mAx6WM7Wfsav6JyXC&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIA3HIRHKOOOUYINQN5%2F20260224%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260224T221434Z&X-Amz-SignedHeaders=host&X-Amz-Expires=3600&X-Amz-Signature=7a172672fd0d0df4601263c546d21f089175b014dca63446c83638811cea9499",
+        "bid_due_date": "2026-02-26T12:00:00+00:00",
+        "in_network": null,
+        "is_unlocked": true,
+        "phone_number": "8165247275",
+        "email_address": "ahicks@lytleconst.com",
+        "awarded_status": null
+      },
+      {
+        "id": 865961,
+        "company_id": 662802,
+        "company_name": "Civic Elite General Contracting",
+        "user_name": "Matt Cooper",
+        "company_logo": "https:\/\/planhubapp.s3.us-west-2.amazonaws.com\/images\/logo\/default-logo.png?X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Security-Token=IQoJb3JpZ2luX2VjEDYaCXVzLXdlc3QtMiJHMEUCICG6RprJ2bT7%2B7847ml1dMfpdn9Tu2jkzLy6jyrA3gYWAiEA41qJZ1oBtq75WNx%2Fp8wOJVUAFX1ByCSAqhJMX7o2SDsqvAUI%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARAEGgw3NzE1MTk2MzIyODQiDOx2l7Nl1PUITgAHBSqQBRAE5H6zkMPPtSvy1U3oU9NyhBfe0KTieWJMcHxjcqzl%2B5LaRE1GvcF5r6cMC1f7VwihqlC6kWetM5M4RLH8PW%2BtCj8HTHpGSzR1ryAngCSvctXI%2FLiVtojrpEdl%2BRMNfEbf3hTMW6ZU6MdDbdZRkYGWkHYYiRfS4pyiuMrlep8efpr5xozFkZgyiBNh%2FGL6gAqT58pxbnPHT4p8sZLkjKswxLnfSno21xI79yIHMdhpbCe2%2FlqDqnYo5zblJwv%2FuIm7lB1AAanTgkhTj0XKKOtxix9tu4ppTvT7rDemib8M9%2FgKd4kon7TLBJRVRId28BTprWfxAegr1164%2FBlFtob0NfWvb0UHpY6H%2FIoSrfiJqUkL%2BbqTdmY3Ly1zIkrrjBMcAAe7RJhrxBJL4rQve9cxlrc%2Bp4k2XHg8Eb%2FiSWdcNTgO5WUCi2ufVvC2iaWxNfl74%2FOB5onUZOR5BtZuGd95vjuNoYsPsNQ7PWJp19GlAlU1rRJjiiiAef%2B1OKzCSaMqWWrhoLeWFMDgacTxEG8pvg%2B2f%2F2BINIyp9WzZ4NzdIox2hBkwS1U1x6NjxH%2BDgu5mytohv00j3Es5fqE7DBf8mtUUG%2FazBi4EfZONf0XvM205apstjl76stu8yH74%2BP1Y8FQtidiPlj5eHs926Myhd61LXfsKcSRB7TrdVEYpQvT%2BiDE9b%2FzUcB%2B8DTmBdNBIymFcTGgaQYTVdpUPfmGpsRglcBXq5d7zWoWAJ4IErdKKZU4GbMV9ZWJ%2B6uQZDkdkLOvD2LVCf3eL99LEIdXIJHNml4lLl%2FUVi6YKDJN23sMZ0UXnudgbAnFScx8K7Aey9aAFc9xfqAlHGOHyz4vG0cUSc%2Bd2rJP1hRFzpn%2BMI22%2BMwGOrEBqwkpiTmoPVKyUiWgk0elysCTecUdzye8NUYj24KHBs3yAPUgToJ7xYxtZaIHqAXOe0fBjKABFtHETVG56yQp9HBBFnYbk2jnE5p37mdamHgT8mlCjRq7QabBTVfSpjYdnYkmSExoO0hcAtGsSyXc1wO714FPZEuGO5wLaDRirOan5notI0mayTU9EN7k771lUzYPEfB9e9mF8oOiikuPcXRZpW4mAx6WM7Wfsav6JyXC&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIA3HIRHKOOOUYINQN5%2F20260224%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20260224T221434Z&X-Amz-SignedHeaders=host&X-Amz-Expires=3600&X-Amz-Signature=7a172672fd0d0df4601263c546d21f089175b014dca63446c83638811cea9499",
+        "bid_due_date": "2026-02-26T12:00:00+00:00",
+        "in_network": null,
+        "is_unlocked": true,
+        "phone_number": "8163852690",
+        "email_address": "matt.cooper@civicelite.com",
+        "awarded_status": null,
+        "is_preferred": true
+      }
+    ]
+  }
+}

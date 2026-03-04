@@ -204,7 +204,8 @@ const PREDEFINED_TAGS = [
   { id: 'HIGH LABOR',   label: 'HIGH LABOR',   color: 'red',      hint: 'High labor content',                                         group: 'tags' },
   { id: 'DESIGN BUILD', label: 'DESIGN BUILD', color: 'yellow',   hint: 'Design-build delivery method',                               group: 'tags' },
   { id: 'COMP MFG',     label: 'COMP MFG',     color: 'green',    hint: 'Compatible manufacturer (Gamewell-FCI, FireLite, Silent Knight)', group: 'tags' },
-  { id: 'REQ MFR',      label: 'REQ MFR',      color: 'yellow',   hint: 'Required manufacturer specified in specs',                   group: 'tags' },
+  { id: 'REQ MFR',      label: 'REQ MFR',      color: 'red',      hint: 'Required manufacturer specified in specs',                   group: 'tags' },
+  { id: 'REQ VENDOR',   label: 'REQ VENDOR',   color: 'glow-red', hint: 'Required vendor specified in specs',                         group: 'tags' },
   // Location / building type tags
   { id: 'WAREHOUSE',    label: 'WAREHOUSE',    color: 'location', hint: 'Warehouse / distribution facility',                          group: 'location' },
   { id: 'EDUCATION',    label: 'EDUCATION',    color: 'location', hint: 'School / university / educational facility',                 group: 'location' },
@@ -221,6 +222,7 @@ const tagColorClass = (color) => {
   if (color === 'orange')   return 'bg-orange-500/10 text-orange-400 border-orange-500/20';
   if (color === 'yellow')   return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
   if (color === 'location') return 'bg-sky-500/10 text-sky-400 border-sky-500/20';
+  if (color === 'glow-red') return 'bg-red-500/15 text-red-400 border-red-500/50 shadow-[0_0_6px_2px_rgba(239,68,68,0.35)]';
   return 'bg-slate-700/50 text-slate-300 border-slate-600';
 };
 
@@ -230,7 +232,7 @@ const normalizeBadge = (badge) => {
   if (b === 'MOD' || b === 'MODIFICATION' || b === 'EXISTING' || b === 'EXISTING SYSTEM') return 'MODIFY';
   if (b === 'COMPAT MFR' || b === 'COMPATIBLE MFR') return 'COMP MFG';
   if (b === 'NO SPRINK' || b === 'NON-SPRINKLED' || b === 'NO SPRNK') return 'NO SPRNK';
-  if (b === 'INCOMPAT MFR' || b === 'INCOMPATIBLE MFR' || b === 'MONITORING' || b === 'ACCESS CTRL' || b === 'REQ VENDOR') return null;
+  if (b === 'INCOMPAT MFR' || b === 'INCOMPATIBLE MFR' || b === 'MONITORING' || b === 'ACCESS CTRL') return null;
   const valid = PREDEFINED_TAGS.find(t => t.id === b);
   return valid ? valid.id : null;
 };

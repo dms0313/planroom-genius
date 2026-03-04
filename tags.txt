@@ -1,0 +1,27 @@
+TAGS: 
+    yellow / MODIFY: existing to remain
+    red / NO SPRNK: no sprinkler (only add this tag when the code definitions page shows that sprinkler is not included in the bldg)
+    red / DEAL BREAKER
+    green / NEW SYSTEM
+    orange / BABA: buy american build american
+    orange / DAVIS BACON: prevailing wage
+    orange / BDA ERRC
+    yellow / PHASED
+    red / DISCREPENCY
+    yellow / VOICE 
+    yellow / NICET
+    yellow / NETWORK: system to be connected to a network
+    red / NO FA
+    red / HIGH LABOR
+    yellow / DESIGN BUILD
+    green / COMP MFG: if project is spec'ed for GAMEWELL-FCI, FIRELITE, SILENT KNIGHT
+    yellow / REQ MFR: required manufacturer
+
+LOCATIONS:
+    WAREHOUSE
+    EDUCATION
+    HOTEL
+    APARTMENTS
+    HOSPITAL
+    CLINIC
+    OFFICE
