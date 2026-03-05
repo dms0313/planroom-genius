@@ -387,9 +387,9 @@ class PlanHubConfig(ScraperConfig):
 class IsqftConfig(ScraperConfig):
     """iSqFt-specific configuration."""
 
-    # URLs — verify API_BASE_URL by inspecting Playwright-intercepted network requests on first run
-    LOGIN_URL = "https://www.isqft.com/login"
-    API_BASE_URL = os.getenv("ISQFT_API_BASE_URL", "https://net.isqft.com/api/v1")
+    # URLs
+    LOGIN_URL = "https://login.io.constructconnect.com/login?sso=false&returnUrl=https%3A%2F%2Fapp.constructconnect.com%2Fapi%2Fgcipconsume%3FreturnUrl%3Dhttps%253A%252F%252Fapp.constructconnect.com%252Fe"
+    API_BASE_URL = os.getenv("ISQFT_API_BASE_URL", "https://app.constructconnect.com/api")
 
     # Auth token cache
     TOKEN_FILE = os.path.join(os.path.dirname(__file__), "isqft_token.json")

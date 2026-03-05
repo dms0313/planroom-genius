@@ -85,16 +85,24 @@ class IsqftAPIClient:
     def _headers(self):
         return {
             "Authorization": f"Bearer {self._token}",
-            "Accept": "application/json",
+            "Accept": "application/json, text/plain, */*",
             "Content-Type": "application/json",
+            "Origin": "https://app.constructconnect.com",
+            "Referer": "https://app.constructconnect.com/bidcenter/tabs/inbox",
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/144.0.0.0 Safari/537.36"
+                "Chrome/145.0.0.0 Safari/537.36"
             ),
         }
 
     # -- token management ----------------------------------------------------
+
+    @staticmethod
+    def _is_jwt(token: str) -> bool:
+        """Check if string looks like a valid JWT (3 dot-separated base64url parts)."""
+        parts = token.split(".")
+        return len(parts) == 3 and all(len(p) >= 4 for p in parts)
 
     @staticmethod
     def _decode_exp(token: str) -> int | None:
@@ -132,21 +140,36 @@ class IsqftAPIClient:
                 with open(self.config.TOKEN_FILE, "r") as f:
                     data = json.load(f)
                 token = data.get("token", "")
-                if token and self._is_token_valid(token):
+                if not token:
+                    return None
+                exp = self._decode_exp(token)
+                if exp is None:
+                    # Session token (e.g. ccstate) has no exp claim — use stored expires_at
+                    expires_at = data.get("expires_at", 0)
+                    now = datetime.now().timestamp()
+                    if isinstance(expires_at, (int, float)) and expires_at > now + 300:
+                        log_status("Loaded valid cached session token from disk")
+                        return token
+                    log_status("Cached session token has expired")
+                    return None
+                if self._is_token_valid(token):
                     log_status("Loaded valid cached auth token from disk")
                     return token
-                if token:
-                    log_status("Cached auth token has expired or is near expiry")
+                log_status("Cached auth token has expired or is near expiry")
             except Exception as e:
                 log_status(f"Could not read token file: {e}")
         return None
 
     def _save_token(self, token: str):
         try:
+            exp = self._decode_exp(token)
+            # For session tokens without exp claim, default to 1 hour from now
+            expires_at = exp if exp else (datetime.now().timestamp() + 3600)
             with open(self.config.TOKEN_FILE, "w") as f:
                 json.dump({
                     "token": token,
                     "saved_at": datetime.now().isoformat(),
+                    "expires_at": expires_at,
                 }, f, indent=2)
             log_status("Saved auth token to disk")
         except Exception as e:
@@ -233,6 +256,10 @@ class IsqftAPIClient:
                 if not isinstance(body, dict):
                     return
 
+                # The /api/token endpoint returns a session JWT without exp —
+                # accept any valid-looking JWT from that specific endpoint
+                is_token_endpoint = "/api/token" in response.url
+
                 # Try known keys: token, accessToken, jwt
                 for key in ("token", "accessToken", "jwt"):
                     candidate = body.get(key)
@@ -240,6 +267,10 @@ class IsqftAPIClient:
                         if self._is_token_valid(candidate):
                             captured_token = candidate
                             log_status(f"Intercepted token from response JSON key '{key}'")
+                            return
+                        if is_token_endpoint and self._is_jwt(candidate):
+                            captured_token = candidate
+                            log_status(f"Intercepted session token from /api/token key '{key}'")
                             return
 
                 # Try nested data.token
@@ -250,6 +281,10 @@ class IsqftAPIClient:
                         if self._is_token_valid(candidate):
                             captured_token = candidate
                             log_status("Intercepted token from response JSON key 'data.token'")
+                            return
+                        if is_token_endpoint and self._is_jwt(candidate):
+                            captured_token = candidate
+                            log_status("Intercepted session token from /api/token key 'data.token'")
                             return
 
             page.on("response", _on_response)
@@ -266,19 +301,16 @@ class IsqftAPIClient:
             if not captured_token:
                 log_status("Performing login...")
                 try:
-                    # iSqFt uses id="email-input" and id="password-input" (no name attr)
-                    # The submit button has type="button" (not submit) and starts disabled;
-                    # it only enables after React onChange fires — so we use page.type()
-                    # to simulate real keystrokes instead of fill().
-                    email_selector = '#email-input, input[type="email"]'
-                    pw_selector = '#password-input, input[type="password"]'
-                    submit_selector = '#login-btn, button[data-testid="login-btn"]'
+                    # iSqFt login form selectors (exact IDs)
+                    email_selector = '#email-input'
+                    pw_selector = '#password-input'
+                    submit_selector = '#login-btn'
 
                     await page.wait_for_selector(email_selector, timeout=10000)
-                    # Click to focus, then type to trigger React onChange events
-                    await page.click(email_selector)
+                    # Triple-click to select any pre-filled value, then type to trigger React onChange
+                    await page.click(email_selector, click_count=3)
                     await page.type(email_selector, self.config.LOGIN_EMAIL, delay=50)
-                    await page.click(pw_selector)
+                    await page.click(pw_selector, click_count=3)
                     await page.type(pw_selector, self.config.LOGIN_PASSWORD, delay=50)
 
                     # Wait for button to become enabled (React enables it once both fields are filled)
@@ -287,13 +319,56 @@ class IsqftAPIClient:
                     except Exception:
                         log_status("Warning: submit button may still be disabled, attempting click anyway")
                     await page.click(submit_selector)
-                    log_status("Submitted login form, waiting for token capture...")
+                    log_status("Submitted login form, waiting for redirect...")
+                    await asyncio.sleep(3)
 
-                    # Wait up to 20 seconds for the token to be captured
-                    for _ in range(20):
+                    # Navigate to bid center to trigger authenticated API calls
+                    if not captured_token:
+                        log_status("Navigating to bid center to capture token...")
+                        try:
+                            await page.goto(
+                                "https://app.constructconnect.com/bidcenter/tabs/inbox",
+                                wait_until="networkidle",
+                                timeout=30000,
+                            )
+                        except Exception:
+                            pass
+
+                    # Wait up to 15 seconds for the token to be captured
+                    for _ in range(15):
                         if captured_token:
                             break
                         await asyncio.sleep(1)
+
+                    # Fallback 1: extract Firebase accessToken from CCGIPAuth cookie
+                    if not captured_token:
+                        log_status("Attempting token extraction from browser cookies...")
+                        try:
+                            cookies = await ctx.cookies()
+                            for cookie in cookies:
+                                if cookie["name"] == "CCGIPAuth":
+                                    auth_data = json.loads(cookie["value"])
+                                    access_token = auth_data.get("accessToken", "")
+                                    if access_token and self._is_token_valid(access_token):
+                                        captured_token = access_token
+                                        log_status("Extracted valid accessToken from CCGIPAuth cookie")
+                                        break
+                        except Exception as e:
+                            log_status(f"CCGIPAuth cookie extraction failed: {e}")
+
+                    # Fallback 2: use ccstate session cookie (no exp — saved with timed expiry)
+                    if not captured_token:
+                        try:
+                            cookies = await ctx.cookies()
+                            for cookie in cookies:
+                                if cookie["name"] == "ccstate":
+                                    token_val = cookie["value"]
+                                    if token_val and self._is_jwt(token_val):
+                                        captured_token = token_val
+                                        log_status("Extracted ccstate session token from cookies")
+                                        break
+                        except Exception as e:
+                            log_status(f"ccstate cookie extraction failed: {e}")
                 except Exception as e:
                     log_status(f"Login form interaction failed: {e}")
 
@@ -620,6 +695,7 @@ class IsqftScraper:
     def _map_lead(self, proj: dict) -> dict:
         """Map a getBidBoardProjects item to the internal lead schema."""
         isqft_id = str(proj.get("isqftId") or proj.get("id") or "")
+        unique_id = proj.get("uniqueProjectId") or f"itb-{isqft_id}"
         lead_id = f"isqft_{isqft_id}"
 
         addr = proj.get("address") or {}
@@ -627,6 +703,7 @@ class IsqftScraper:
         state = addr.get("state") or ""
         zipcode = addr.get("zipcode") or ""
         addr_line = addr.get("addressLine1") or ""
+        county = addr.get("county") or ""
 
         location = f"{city}, {state}" if city and state else (city or state or "N/A")
         full_address_parts = [p for p in [addr_line, city, state, zipcode] if p]
@@ -654,8 +731,9 @@ class IsqftScraper:
             "location": location,
             "city": city,
             "state": state,
+            "county": county,
             "full_address": full_address,
-            "url": f"https://www.isqft.com/projects/{isqft_id}",
+            "url": f"https://app.constructconnect.com/bidcenter/project/{unique_id}",
             "value": "",
             "project_type": "",
             "description": "",
@@ -663,14 +741,20 @@ class IsqftScraper:
             "files_link": None,
             "download_link": None,
             "local_file_path": None,
-            # iSqFt-specific extras
+            # iSqFt / ConstructConnect extras
             "isqft_id": isqft_id,
+            "isqft_unique_id": unique_id,
             "isqft_package_id": str(proj.get("packageId") or ""),
             "isqft_document_count": proj.get("documentCount") or 0,
+            "isqft_addenda_count": proj.get("addendaCount") or 0,
             "isqft_phase": proj.get("phaseStatus") or "",
             "isqft_is_rfq": bool(proj.get("isRfq")),
             "isqft_bid_board_status": proj.get("bidBoardStatus") or "",
             "isqft_document_status": proj.get("documentStatus") or "",
+            "isqft_is_viewed": bool(proj.get("isViewed")),
+            "isqft_date_received": proj.get("dateReceived") or "",
+            "isqft_gc_created_by": proj.get("createdByUserCompanyName") or "",
+            "isqft_shared_by": proj.get("sharedByUserCompanyName") or "",
         }
 
     async def _handle_download(self, lead: dict):

@@ -243,6 +243,10 @@ async def manual_login_isqft():
         ctx = await pw.chromium.launch_persistent_context(**launch_kwargs)
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
 
+        def _is_jwt(token: str) -> bool:
+            parts = token.split(".")
+            return len(parts) == 3 and all(len(p) >= 4 for p in parts)
+
         async def on_response(response):
             nonlocal captured_token
             if captured_token:
@@ -270,12 +274,19 @@ async def manual_login_isqft():
             if not isinstance(body, dict):
                 return
 
+            # /api/token returns a session JWT without exp — accept any valid-looking JWT
+            is_token_endpoint = "/api/token" in response.url
+
             for key in ("token", "accessToken", "jwt"):
                 candidate = body.get(key)
                 if candidate and isinstance(candidate, str) and len(candidate) > 20:
                     if _is_valid(candidate):
                         captured_token = candidate
                         print(f"\n  [+] Token captured from JSON key '{key}'!")
+                        return
+                    if is_token_endpoint and _is_jwt(candidate):
+                        captured_token = candidate
+                        print(f"\n  [+] Session token captured from /api/token key '{key}'!")
                         return
 
             data_obj = body.get("data")
@@ -285,6 +296,10 @@ async def manual_login_isqft():
                     if _is_valid(candidate):
                         captured_token = candidate
                         print(f"\n  [+] Token captured from JSON key 'data.token'!")
+                        return
+                    if is_token_endpoint and _is_jwt(candidate):
+                        captured_token = candidate
+                        print(f"\n  [+] Session token captured from /api/token key 'data.token'!")
                         return
 
         page.on("response", on_response)
@@ -302,17 +317,66 @@ async def manual_login_isqft():
 
         input("  Press Enter after you have logged in successfully...")
 
+        # Navigate to bid center to trigger authenticated API calls and capture token
+        print("  Navigating to bid center to capture token...")
+        try:
+            await page.goto(
+                "https://app.constructconnect.com/bidcenter/tabs/inbox",
+                wait_until="networkidle",
+                timeout=30000,
+            )
+        except Exception:
+            pass
+
+        # Wait up to 10 seconds for the token to be captured
+        for _ in range(10):
+            if captured_token:
+                break
+            await asyncio.sleep(1)
+
+        # Fallback 1: extract Firebase accessToken from CCGIPAuth cookie
+        if not captured_token:
+            print("  Attempting token extraction from browser cookies...")
+            try:
+                cookies = await ctx.cookies()
+                for cookie in cookies:
+                    if cookie["name"] == "CCGIPAuth":
+                        auth_data = json.loads(cookie["value"])
+                        access_token = auth_data.get("accessToken", "")
+                        if access_token and _is_valid(access_token):
+                            captured_token = access_token
+                            print("  [+] Extracted valid accessToken from CCGIPAuth cookie!")
+                            break
+            except Exception as e:
+                print(f"  CCGIPAuth cookie extraction failed: {e}")
+
+        # Fallback 2: ccstate session cookie (no exp — will be saved with timed expiry)
+        if not captured_token:
+            try:
+                cookies = await ctx.cookies()
+                for cookie in cookies:
+                    if cookie["name"] == "ccstate":
+                        token_val = cookie["value"]
+                        if token_val and _is_jwt(token_val):
+                            captured_token = token_val
+                            print("  [+] Extracted ccstate session token from cookies!")
+                            break
+            except Exception as e:
+                print(f"  ccstate cookie extraction failed: {e}")
+
         await ctx.close()
 
     if captured_token:
         try:
+            exp = _decode_exp(captured_token)
+            expires_at = exp if exp else (datetime.now().timestamp() + 3600)
             with open(cfg.TOKEN_FILE, "w") as f:
                 json.dump({
                     "token": captured_token,
                     "saved_at": datetime.now().isoformat(),
+                    "expires_at": expires_at,
                 }, f, indent=2)
-            exp = _decode_exp(captured_token)
-            exp_str = datetime.fromtimestamp(exp).isoformat() if exp else "unknown"
+            exp_str = datetime.fromtimestamp(exp).isoformat() if exp else f"~1h from now (session token)"
             print()
             print(f"  Token saved to: {cfg.TOKEN_FILE}")
             print(f"  Expires:        {exp_str}")
