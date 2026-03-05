@@ -178,17 +178,16 @@ async def run_agents(runtime_settings=None):
     try:
         with open(STATUS_FILE, 'w') as f:
             f.write(f"=== Scraper Run Started: {datetime.now().isoformat()} ===\n")
-    except:
-        # Run Triage Agent
-        update_status("Running Triage Agent...")
-        try:
-            triaged_count = triage_projects()
-            logger.info(f"Triaged {triaged_count} projects")
-        except Exception as e:
-            logger.error(f"Triage failed: {e}")
+    except Exception:
+        pass
 
-        # Run Knowledge Scanner
-        update_status("Running Knowledge Scanner...")
+    # Run Triage Agent
+    update_status("Running Triage Agent...")
+    try:
+        triaged_count = triage_projects()
+        logger.info(f"Triaged {triaged_count} projects")
+    except Exception as e:
+        logger.error(f"Triage failed: {e}")
 
     print("\n" + "="*60, flush=True)
     print("  SCRAPER RUN STARTED", flush=True)
