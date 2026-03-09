@@ -748,135 +748,149 @@ async def send_lead_to_notion(lead_id: str):
 
     import re as _re
 
-    def _heading(text, level=2):
-        htype = f"heading_{level}"
-        return {"object": "block", "type": htype, htype: {"rich_text": [{"type": "text", "text": {"content": text[:2000]}}]}}
+    def _h(level, text):
+        t = f"heading_{level}"
+        return {"object": "block", "type": t, t: {"rich_text": [{"type": "text", "text": {"content": str(text)[:2000]}}]}}
 
-    def _bullet(text):
-        t = str(text).strip()[:2000]
-        return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": t}}]}}
+    def _para(text):
+        return {"object": "block", "type": "paragraph", "paragraph": {
+            "rich_text": [{"type": "text", "text": {"content": str(text)[:2000]}}]}}
+
+    def _bold_bullet(label, value):
+        """Bullet with bold label: '• Label: value' matching clipboard format."""
+        lbl = str(label)
+        val = str(value)[:1990]
+        return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {
+            "rich_text": [
+                {"type": "text", "text": {"content": f"{lbl}: "}, "annotations": {"bold": True}},
+                {"type": "text", "text": {"content": val}},
+            ]
+        }}
+
+    def _plain_bullet(text):
+        return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {
+            "rich_text": [{"type": "text", "text": {"content": str(text)[:2000]}}]}}
 
     def _divider():
         return {"object": "block", "type": "divider", "divider": {}}
 
-    # Deep scan results (takeoff data)
     takeoff_ts = lead.get("takeoff_timestamp")
     snap = lead.get("takeoff_snapshot") or {}
-    fa_briefing = lead.get("takeoff_fa_briefing") or {}
-    mechanical = lead.get("takeoff_mechanical") or {}
+    fab = lead.get("takeoff_fa_briefing") or {}
+    mech = lead.get("takeoff_mechanical") or {}
+    fa_notes_raw = lead.get("takeoff_fa_notes") or []
     pitfalls = lead.get("takeoff_pitfalls") or []
     est_notes = lead.get("takeoff_estimating_notes") or []
     advantages = lead.get("takeoff_competitive_advantages") or []
-    fa_notes = lead.get("takeoff_fa_notes") or []
+    proj_tags = lead.get("takeoff_project_tags") or []
 
     if takeoff_ts:
-        scan_date = takeoff_ts[:10]
+        # Title header — mirrors: <h1>Project — FA Takeoff</h1>
+        project_name = lead.get("name") or "Project"
         children.append(_divider())
-        children.append(_heading(f"🔬 Deep Scan Results — {scan_date}", level=2))
+        children.append(_h(1, f"{project_name} — FA Takeoff"))
 
-        # Project Snapshot
-        scope = snap.get("scope_summary") or ""
-        if scope:
-            children.append(_heading("Project Scope", level=3))
-            children.append(_txt_block(scope[:2000]))
+        # ── Project Snapshot ──
+        if snap:
+            children.append(_h(2, "Project Snapshot"))
+            scope = snap.get("scope_summary") or ""
+            if scope:
+                children.append(_para(scope))
+            pd = snap.get("project_details") or {}
+            codes = pd.get("applicable_codes")
+            if isinstance(codes, list):
+                codes = ", ".join(str(c) for c in codes)
+            for label, val in [
+                ("Project",    pd.get("project_name")),
+                ("Address",    pd.get("project_address") or pd.get("project_location")),
+                ("Type",       pd.get("project_type")),
+                ("Building",   pd.get("building_type") or pd.get("occupancy_type")),
+                ("Codes",      codes),
+                ("Occupancy",  pd.get("occupancy_classification")),
+            ]:
+                if val:
+                    children.append(_bold_bullet(label, val))
 
-        pd = snap.get("project_details") or {}
-        detail_lines = []
-        for label, key in [
-            ("Project Type", "project_type"), ("Building Type", "building_type"),
-            ("Occupancy", "occupancy_classification"), ("Codes", "applicable_codes"),
-        ]:
-            val = pd.get(key)
-            if val:
-                if isinstance(val, list):
-                    val = ", ".join(str(v) for v in val)
-                detail_lines.append(f"{label}: {val}")
-        if detail_lines:
-            children.append(_txt_block("\n".join(detail_lines)))
+        # ── Fire Alarm Briefing ──
+        if fab:
+            children.append(_h(2, "Fire Alarm Briefing"))
+            fa = fab.get("fire_alarm_details") or {}
+            for label, val in [
+                ("Panel Status", fa.get("panel_status") or fa.get("existing_system")),
+                ("Sprinkler",    fa.get("sprinkler_status")),
+                ("Voice Evac",   fa.get("voice_evac") or fa.get("voice_required")),
+                ("CO Detection", fa.get("co_detection")),
+            ]:
+                if val:
+                    children.append(_bold_bullet(label, val))
+            sp = fab.get("specifications") or {}
+            spec_items = []
+            for label, key in [
+                ("Control Panel", "CONTROL_PANEL"), ("System Type", "SYSTEM_TYPE"),
+                ("Wiring",        "WIRING_CLASS"),  ("Monitoring",   "MONITORING"),
+                ("Audio",         "AUDIO_SYSTEM"),
+                ("Approved Mfrs", "APPROVED_MANUFACTURERS"),
+            ]:
+                val = sp.get(key)
+                if val and str(val).lower() not in ("unknown", "none", "", "addressable"):
+                    if isinstance(val, list):
+                        val = ", ".join(str(v) for v in val)
+                    spec_items.append((label, val))
+            if spec_items:
+                children.append(_para("Key Specs"))  # matches <p><strong>Key Specs</strong></p>
+                for label, val in spec_items:
+                    children.append(_bold_bullet(label, val))
 
-        # Fire Alarm Briefing
-        fa = fa_briefing.get("fire_alarm_details") or {}
-        specs = fa_briefing.get("specifications") or {}
-        fa_lines = []
-        for label, key in [
-            ("Panel Status", "panel_status"), ("Existing System", "existing_system"),
-            ("Sprinkler", "sprinkler_status"), ("Voice Evac", "voice_evac"),
-            ("CO Detection", "co_detection"),
-        ]:
-            val = fa.get(key)
-            if val and str(val).lower() not in ("unknown", "none", ""):
-                fa_lines.append(f"{label}: {val}")
-        spec_lines = []
-        for label, key in [
-            ("Control Panel", "CONTROL_PANEL"), ("System Type", "SYSTEM_TYPE"),
-            ("Wiring Class", "WIRING_CLASS"), ("Monitoring", "MONITORING"),
-            ("Audio", "AUDIO_SYSTEM"), ("Approved Manufacturers", "APPROVED_MANUFACTURERS"),
-        ]:
-            val = specs.get(key)
-            if val and str(val).lower() not in ("unknown", "none", "", "addressable"):
-                if isinstance(val, list):
-                    val = ", ".join(str(v) for v in val)
-                spec_lines.append(f"{label}: {val}")
-        if fa_lines or spec_lines:
-            children.append(_heading("Fire Alarm Details", level=3))
-            if fa_lines:
-                children.append(_txt_block("\n".join(fa_lines)))
-            if spec_lines:
-                children.append(_txt_block("\n".join(spec_lines)))
-
-        # Required Vendors / Manufacturers
-        req_mfrs = lead.get("knowledge_required_manufacturers") or []
-        req_vendors = lead.get("knowledge_required_vendors") or []
-        if req_mfrs or req_vendors:
-            children.append(_heading("Required Vendors & Manufacturers", level=3))
-            for m in req_mfrs:
-                children.append(_bullet(f"Manufacturer: {m}"))
-            for v in req_vendors:
-                children.append(_bullet(f"Vendor: {v}"))
-
-        # Mechanical Coordination
-        mech_lines = []
-        for label, key in [
-            ("Duct Detectors/RTU", "duct_detectors_per_rtu"), ("Dampers", "dampers"),
-            ("Access Doors", "access_control_doors"),
-        ]:
-            val = mechanical.get(key) or mechanical.get(key.split("/")[0].lower().replace(" ", "_"))
-            if val:
-                mech_lines.append(f"{label}: {val}")
-        mech_equip = mechanical.get("equipment") or []
-        if mech_lines or mech_equip:
-            children.append(_heading("Mechanical Coordination", level=3))
-            for line in mech_lines:
-                children.append(_bullet(line))
-            for eq in mech_equip:
+        # ── Mechanical Coordination ──
+        if mech and any(mech.values()):
+            children.append(_h(2, "Mechanical Coordination"))
+            for label, val in [
+                ("Duct Detectors/RTU", mech.get("duct_detectors_per_rtu") or mech.get("duct_detectors")),
+                ("Dampers",            mech.get("dampers") or mech.get("fire_smoke_dampers")),
+                ("Access Doors",       mech.get("access_control_doors") or mech.get("access_doors")),
+            ]:
+                if val:
+                    children.append(_bold_bullet(label, val))
+            for eq in (mech.get("equipment") or []):
                 name = eq.get("name") or eq.get("type") or "Unit"
                 cfm = eq.get("cfm", "")
-                children.append(_bullet(f"{name}{f' ({cfm} CFM)' if cfm else ''}"))
+                children.append(_plain_bullet(f"{name}{f' ({cfm} CFM)' if cfm else ''}"))
 
-        # FA Notes
-        if fa_notes:
-            children.append(_heading("Fire Alarm Notes", level=3))
-            for n in fa_notes[:20]:
+        # ── Fire Alarm Notes ──
+        if fa_notes_raw:
+            children.append(_h(2, "Fire Alarm Notes"))
+            for n in fa_notes_raw:
                 page = n.get("page", "") if isinstance(n, dict) else ""
-                content = n.get("content", str(n)) if isinstance(n, dict) else str(n)
-                children.append(_bullet(f"[p{page}] {content}" if page else content))
+                content = (n.get("content") or (str(n) if not isinstance(n, dict) else "")) or ""
+                children.append(_plain_bullet(f"[p{page}] {content}" if page else content))
 
-        # Pitfalls & Estimating Notes
+        # ── Conflicts, Pitfalls & Advice ──
         if pitfalls or est_notes:
-            children.append(_heading("Pitfalls & Estimating Notes", level=3))
-            for p in pitfalls[:15]:
-                text = p.get("content", str(p)) if isinstance(p, dict) else str(p)
-                children.append(_bullet(f"⚠️ {text}"))
-            for n in est_notes[:15]:
-                text = n.get("content", str(n)) if isinstance(n, dict) else str(n)
-                children.append(_bullet(text))
+            children.append(_h(2, "Conflicts, Pitfalls & Advice"))
+            for p in pitfalls:
+                text = (p.get("content") if isinstance(p, dict) else None) or str(p)
+                children.append(_plain_bullet(text))
+            for n in est_notes:
+                text = (n.get("content") if isinstance(n, dict) else None) or str(n)
+                children.append(_plain_bullet(text))
 
-        # Competitive Advantages
+        # ── Competitive Advantages ──
         if advantages:
-            children.append(_heading("Competitive Advantages", level=3))
-            for a in advantages[:10]:
-                text = a.get("content", str(a)) if isinstance(a, dict) else str(a)
-                children.append(_bullet(f"✅ {text}"))
+            children.append(_h(2, "Competitive Advantages"))
+            for a in advantages:
+                text = (a.get("content") if isinstance(a, dict) else None) or str(a)
+                children.append(_plain_bullet(text))
+
+        # ── Tags + date footer ──
+        if proj_tags:
+            tag_labels = ", ".join(
+                t.get("label", str(t)) if isinstance(t, dict) else str(t)
+                for t in proj_tags
+            )
+            children.append(_para(f"Tags: {tag_labels}"))
+
+        scan_date_str = takeoff_ts[:10]
+        children.append(_para(f"Deep Scan: {scan_date_str}"))
 
     else:
         # No deep scan — fall back to knowledge notes / description
@@ -884,15 +898,24 @@ async def send_lead_to_notion(lead_id: str):
         if notes:
             notes_clean = _re.sub(r'<[^>]+>', '', notes).strip()[:1900]
             if notes_clean:
-                children.append(_txt_block(notes_clean))
+                children.append(_para(notes_clean))
 
-    # --- Create the Notion page ---
+    # Also remove Contact Name/Phone/Email from properties — they are rollup fields
+    # derived from the Company relation and cannot be set directly via API
+    for rollup_key in ("Contact Name", "Phone", "Email"):
+        properties.pop(rollup_key, None)
+
+    # --- Create the Notion page (Notion limit: 100 blocks per request) ---
+    BLOCK_LIMIT = 100
+    first_batch = children[:BLOCK_LIMIT]
+    remaining = children[BLOCK_LIMIT:]
+
     payload = {
         "parent": {"database_id": NOTION_DB_ID},
         "properties": properties,
     }
-    if children:
-        payload["children"] = children
+    if first_batch:
+        payload["children"] = first_batch
 
     try:
         resp = req.post(
@@ -901,20 +924,35 @@ async def send_lead_to_notion(lead_id: str):
             json=payload,
             timeout=15,
         )
-        if resp.status_code in (200, 201):
-            page = resp.json()
-            page_url = page.get("url", "")
-            logger.info(f"Created Notion page for lead {lead_id}: {page_url}")
-            return {
-                "status": "success",
-                "notion_url": page_url,
-                "notion_page_id": page.get("id"),
-            }
-        else:
+        if resp.status_code not in (200, 201):
             error_body = resp.json()
             msg = error_body.get("message", resp.text)
             logger.error(f"Notion API error for lead {lead_id}: {resp.status_code} {msg}")
             raise HTTPException(status_code=502, detail=f"Notion API error: {msg}")
+
+        page = resp.json()
+        page_id = page.get("id")
+        page_url = page.get("url", "")
+        logger.info(f"Created Notion page for lead {lead_id}: {page_url}")
+
+        # Append remaining blocks in batches of 100
+        while remaining:
+            batch = remaining[:BLOCK_LIMIT]
+            remaining = remaining[BLOCK_LIMIT:]
+            append_resp = req.patch(
+                f"{NOTION_API_BASE}/blocks/{page_id}/children",
+                headers=_notion_headers(),
+                json={"children": batch},
+                timeout=15,
+            )
+            if append_resp.status_code not in (200, 201):
+                logger.warning(f"Notion append blocks failed: {append_resp.text[:200]}")
+
+        return {
+            "status": "success",
+            "notion_url": page_url,
+            "notion_page_id": page_id,
+        }
     except HTTPException:
         raise
     except Exception as e:
