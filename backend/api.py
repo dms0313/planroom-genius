@@ -599,18 +599,41 @@ async def send_lead_to_notion(lead_id: str):
         from backend.config import DATE_FORMATS
         from datetime import datetime as _dt
         parsed_date = None
-        for fmt in DATE_FORMATS:
-            try:
-                parsed_date = _dt.strptime(bid_date.strip(), fmt)
-                break
-            except (ValueError, AttributeError):
-                continue
+        # Try ISO format first (most scrapers store in this format)
+        try:
+            parsed_date = _dt.fromisoformat(str(bid_date).replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            pass
+        if not parsed_date:
+            for fmt in DATE_FORMATS:
+                try:
+                    parsed_date = _dt.strptime(str(bid_date).strip(), fmt)
+                    break
+                except (ValueError, AttributeError):
+                    continue
         if parsed_date:
             properties["Due Date"] = {"date": {"start": parsed_date.strftime("%Y-%m-%d")}}
 
-    # Project Address (place type) — requires lat/lon so we skip if no coordinates
-    # The address is included in the page title note instead via the project name
-    # (Notion's place property requires geocoded lat/lon which we don't have)
+    # Project Address (place type) — geocode via Nominatim to get lat/lon
+    address = lead.get("full_address") or lead.get("location") or ""
+    if address and address not in ("N/A", ""):
+        try:
+            geo_resp = req.get(
+                "https://nominatim.openstreetmap.org/search",
+                params={"q": address, "format": "json", "limit": 1},
+                headers={"User-Agent": "planroom-genius/1.0 (contact@marmicfire.com)"},
+                timeout=5,
+            )
+            if geo_resp.status_code == 200:
+                results = geo_resp.json()
+                if results:
+                    lat = float(results[0]["lat"])
+                    lon = float(results[0]["lon"])
+                    properties["Project Address"] = {
+                        "place": {"lat": lat, "lon": lon, "query": address[:500]}
+                    }
+        except Exception as geo_err:
+            logger.warning(f"Geocoding failed for '{address}': {geo_err}")
 
     # Company (relation)
     company_name = lead.get("company") or lead.get("gc") or ""

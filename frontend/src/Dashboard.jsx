@@ -148,41 +148,22 @@ const badgeColor = (badge) => {
   return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
 };
 
-const badgeHover = (badge, lead) => {
-  if (badge === 'NO FA') return 'No fire alarm scope found in project documents — likely not a FA job';
-  if (badge === 'EXISTING') {
-    const mfrs = lead?.knowledge_required_manufacturers;
-    return mfrs?.length > 0
-      ? `Existing system — panel: ${mfrs.join(', ')}`
-      : 'Existing fire alarm system — check plans for panel manufacturer';
-  }
-  if (badge === 'NEW SYSTEM') return 'New fire alarm system installation — full scope';
-  if (badge === 'MODIFICATION' || badge === 'MOD') return 'Modification/retrofit to existing fire alarm system';
-  if (badge === 'REQ MFR') {
-    const mfrs = lead?.knowledge_required_manufacturers;
-    return mfrs?.length > 0 ? `Required: ${mfrs.join(', ')}` : 'Manufacturer specified in specs';
-  }
-  if (badge === 'REQ VENDOR') {
-    const vendors = lead?.knowledge_required_vendors;
-    return vendors?.length > 0 ? `Required: ${vendors.join(', ')}` : 'Vendor specified in specs';
-  }
-  if (badge === 'COMPATIBLE MFR' || badge === 'COMPAT MFR') {
-    const mfrs = lead?.knowledge_required_manufacturers;
-    return mfrs?.length > 0 ? `Compatible — ${mfrs.join(', ')}` : 'Specified manufacturer is compatible with our products';
-  }
-  if (badge === 'INCOMPATIBLE MFR' || badge === 'INCOMPAT MFR') {
-    const mfrs = lead?.knowledge_required_manufacturers;
-    return mfrs?.length > 0 ? `NOT compatible — ${mfrs.join(', ')}` : 'Specified manufacturer is NOT compatible';
-  }
-  if (badge === 'DEAL BREAKER') {
+// Returns rich hover text for any tag ID, using live lead data for mfr/vendor tags
+const getTagHoverText = (tagId, lead) => {
+  const mfrs = lead?.knowledge_required_manufacturers;
+  const vendors = lead?.knowledge_required_vendors;
+  const mfrList = mfrs?.length ? mfrs.join(', ') : null;
+  const vendorList = vendors?.length ? vendors.join(', ') : null;
+  if (tagId === 'REQ MFR')      return mfrList ? `Required manufacturer: ${mfrList}` : 'Manufacturer specified in specs';
+  if (tagId === 'COMP MFG')     return mfrList ? `Compatible: ${mfrList}` : 'Compatible manufacturer on file';
+  if (tagId === 'INCOMPAT MFG') return mfrList ? `NOT compatible: ${mfrList}` : 'Incompatible manufacturer — cannot service';
+  if (tagId === 'REQ VENDOR')   return vendorList ? `Required vendor: ${vendorList}` : 'Sole-source vendor specified in specs';
+  if (tagId === 'DEAL BREAKER') {
     const reasons = lead?.knowledge_deal_breakers;
-    return reasons?.length > 0 ? reasons.join(' · ') : 'Deal breaker identified — review details';
+    return reasons?.length ? reasons.join(' · ') : 'Deal breaker identified — review details';
   }
-  if (badge === 'VOICE') return 'Voice evacuation / mass notification system required';
-  if (badge === 'MONITORING') return 'Monitoring services included in scope';
-  if (badge === 'ACCESS CTRL') return 'Access control interface / integration required';
-  if (badge === 'NON-SPRINKLED') return 'Building is NOT sprinklered — may need more detection';
-  return badge;
+  const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
+  return pt?.hint || tagId;
 };
 
 // Predefined project tags — fixed set. Users may only assign tags from this list.
@@ -196,6 +177,7 @@ const PREDEFINED_TAGS = [
   { id: 'NO SPRNK',      label: 'NO SPRNK',      color: 'red',      hint: 'No sprinkler per code definitions page',                         group: 'scope' },
   { id: 'NETWORK',       label: 'NETWORK',       color: 'yellow',   hint: 'System to be connected to a network',                            group: 'scope' },
   { id: 'COMP MFG',      label: 'COMP MFG',      color: 'green',    hint: 'Compatible manufacturer on file (Gamewell-FCI / FireLite / SK)', group: 'scope' },
+  { id: 'INCOMPAT MFG',  label: 'INCOMPAT MFG',  color: 'glow-red', hint: 'Incompatible manufacturer — existing system we cannot service',   group: 'scope' },
   { id: 'REQ MFR',       label: 'REQ MFR',       color: 'red',      hint: 'Required manufacturer specified in specs',                       group: 'scope' },
   { id: 'REQ VENDOR',    label: 'REQ VENDOR',    color: 'glow-red', hint: 'Required vendor / sole-source specified in specs',               group: 'scope' },
   // ── FLAGS ──────────────────────────────────────────────────────────────────
@@ -255,6 +237,7 @@ const normalizeBadge = (badge) => {
   if (b === 'NEW SYSTEM' || b === 'NEW FA' || b === 'NEW FIRE ALARM') return 'NEW SYSTEM';
   if (b === 'NO SPRINK' || b === 'NON-SPRINKLED' || b === 'NO SPRNK' || b === 'NOT SPRINKLERED') return 'NO SPRNK';
   if (b === 'COMPAT MFR' || b === 'COMPATIBLE MFR' || b === 'COMP MFG') return 'COMP MFG';
+  if (b === 'INCOMPAT MFR' || b === 'INCOMPATIBLE MFR' || b === 'INCOMPAT MFG') return 'INCOMPAT MFG';
   if (b === 'REQ MFR' || b === 'REQUIRED MFR' || b === 'REQUIRED MANUFACTURER') return 'REQ MFR';
   if (b === 'REQ VENDOR' || b === 'REQUIRED VENDOR' || b === 'SOLE SOURCE') return 'REQ VENDOR';
   if (b === 'BDA' || b === 'ERRC' || b === 'BDA/ERRC') return 'BDA ERRC';
@@ -366,7 +349,8 @@ export default function LeadDashboard() {
     bidplanroom: true,
     loydbuildsbetter: true,
     buildingconnected: true,
-    use_gdrive: true
+    use_gdrive: true,
+    gemini_model: 'gemini-2.5-flash'
   });
 
   // Console monitor state
@@ -401,6 +385,7 @@ export default function LeadDashboard() {
   const [folderBrowserPath, setFolderBrowserPath] = useState('');
   const [folderBrowserItems, setFolderBrowserItems] = useState([]);
   const [folderBrowserLoading, setFolderBrowserLoading] = useState(false);
+  const [folderBrowserTarget, setFolderBrowserTarget] = useState(null); // null = edit modal mode, leadId = quick-assign mode
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [notionStatus, setNotionStatus] = useState({}); // leadId -> 'loading'|'success'|'error'
 
@@ -792,7 +777,6 @@ export default function LeadDashboard() {
       const data = await res.json();
       if (res.ok) {
         setNotionStatus(s => ({ ...s, [lead.id]: 'success' }));
-        if (data.notion_url) window.open(data.notion_url, '_blank', 'noopener');
         setTimeout(() => setNotionStatus(s => ({ ...s, [lead.id]: null })), 4000);
       } else {
         setNotionStatus(s => ({ ...s, [lead.id]: 'error' }));
@@ -958,9 +942,40 @@ export default function LeadDashboard() {
     } catch (e) { console.error('Fail:', e); alert('Access denied'); }
     setFolderBrowserLoading(false);
   };
-  const selectFolder = () => {
-    if (folderBrowserPath) setFormData(prev => ({ ...prev, files_link: folderBrowserPath }));
+  const selectFolder = async () => {
+    if (folderBrowserPath) {
+      if (folderBrowserTarget) {
+        // Quick-assign mode: save directly to the lead
+        try {
+          await fetch(`${API_BASE}/leads/${folderBrowserTarget}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files_link: folderBrowserPath })
+          });
+          fetchLeads(true);
+        } catch (e) { console.error('Failed to save folder:', e); }
+        setFolderBrowserTarget(null);
+      } else {
+        // Edit modal mode
+        setFormData(prev => ({ ...prev, files_link: folderBrowserPath }));
+      }
+    }
     setFolderBrowserModal(false);
+  };
+
+  const openFolderBrowserForLead = async (leadId) => {
+    setFolderBrowserTarget(leadId);
+    setFolderBrowserModal(true);
+    setFolderBrowserLoading(true);
+    try {
+      const r = await fetch(API_BASE + '/browse-directory', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: '' })
+      });
+      const d = await r.json();
+      setFolderBrowserPath(d.current || ''); setFolderBrowserItems(d.items || []);
+    } catch (e) { console.error('Fail:', e); }
+    setFolderBrowserLoading(false);
   };
   const goUpDirectory = () => {
     if (!folderBrowserPath) { browseTo(''); return; }
@@ -1123,6 +1138,7 @@ export default function LeadDashboard() {
             showHidden={showHidden}
             setShowHidden={setShowHidden}
             openPointToFile={openPointToFile}
+            openFolderBrowserForLead={openFolderBrowserForLead}
             notionStatus={notionStatus}
             sendToNotion={sendToNotion}
           />
@@ -1838,6 +1854,30 @@ export default function LeadDashboard() {
                     </button>
                   </div>
                 </div>
+
+                <div className="pt-4 border-t border-gray-700">
+                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">AI Scanning</h3>
+                  <div className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
+                    <div>
+                      <span className="text-gray-200 font-medium block">Gemini Model</span>
+                      <span className="text-gray-500 text-xs">Used for AI/deep scans</span>
+                    </div>
+                    <select
+                      value={scraperSettings.gemini_model || 'gemini-2.5-flash'}
+                      onChange={(e) => {
+                        const newSettings = { ...scraperSettings, gemini_model: e.target.value };
+                        saveSettings(newSettings);
+                      }}
+                      className="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (fast, free tier)</option>
+                      <option value="gemini-2.5-pro-preview">Gemini 2.5 Pro Preview (best quality)</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
               <div className="p-4 border-t border-gray-700 bg-gray-900/30 flex justify-end">
@@ -1986,7 +2026,7 @@ const LeadTable = ({
   toggleLeadStyle, openEditModal, deleteLead, setCompanyPopup,
   setDescriptionPopup, API_BASE, sortConfig, setSortConfig,
   searchQuery, setSearchQuery, showHidden, setShowHidden, openPointToFile,
-  notionStatus, sendToNotion
+  openFolderBrowserForLead, notionStatus, sendToNotion
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedLeadId, setExpandedLeadId] = useState(null);
@@ -2177,7 +2217,7 @@ const LeadTable = ({
             <col className="w-[9%]" />
             <col className="w-[75px]" />
             <col className="w-[44px]" />
-            <col className="w-[160px]" />
+            <col className="w-[90px]" />
           </colgroup>
           <thead className="bg-slate-950/50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
             <tr>
@@ -2241,26 +2281,52 @@ const LeadTable = ({
                           className={`bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] ${getCommentColor(lead.highlight)} placeholder-slate-700 w-full focus:outline-none transition-colors`}
                         />
                       </div>
+                      {/* Quick-action row: AI Scan, Browse Files, Folder Select, Edit */}
+                      <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); triggerSingleScan(lead.id); }}
+                          disabled={scanningIds.has(lead.id)}
+                          className={`p-1 rounded transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${lead.takeoff_timestamp ? 'bg-violet-600/30 text-violet-300 hover:bg-violet-600 hover:text-white' : lead.knowledge_last_scanned ? 'bg-violet-900/40 text-violet-500 hover:bg-violet-600 hover:text-white' : 'bg-slate-700/70 text-slate-500 hover:bg-violet-600 hover:text-white'}`}
+                          title={lead.takeoff_timestamp ? 'Re-run deep scan' : lead.knowledge_last_scanned ? 'Re-run AI scan' : 'Run AI scan'}
+                        >
+                          {scanningIds.has(lead.id) ? <svg className="animate-spin h-2.5 w-2.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> : <Brain size={10} />}
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); openPointToFile(lead.id); }} className="p-1 bg-slate-700/70 hover:bg-orange-600 text-slate-500 hover:text-white rounded transition-colors" title="Browse project files"><FolderOpen size={10} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); openFolderBrowserForLead(lead.id); }} className="p-1 bg-slate-700/70 hover:bg-blue-500 text-slate-500 hover:text-white rounded transition-colors" title="Set folder path for this project"><Search size={10} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); openEditModal(lead); }} className="p-1 bg-slate-700/70 hover:bg-blue-600 text-slate-500 hover:text-white rounded transition-colors" title="Edit project"><Pencil size={10} /></button>
+                      </div>
                     </td>
                     {/* Tags column */}
                     <td className="px-2 py-2">
                       <div className="flex flex-wrap gap-1 items-start">
-                        {lead.has_budget && <span className="relative group/tag text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30 cursor-default">BUDGET<span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">Project has budget info</span></span>}
-                        {/* User-assigned predefined tags */}
-                        {lead.tags && lead.tags.map((tag, idx) => (
-                          <button
-                            key={idx}
-                            onClick={(e) => { e.stopPropagation(); toggleLeadTag(lead, tag.label); }}
-                            title={`${tag.hint || tag.label} — click to remove`}
-                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-opacity hover:opacity-70 ${tagColorClass(tag.color)}`}
-                          >{tag.label}</button>
-                        ))}
-                        {/* AI system tags — normalized to predefined set */}
+                        {lead.has_budget && (
+                          <span className="relative group/tag text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30 cursor-default">
+                            BUDGET
+                            <span className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 max-w-[200px] opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50 whitespace-normal">Project has budget / cost estimate info</span>
+                          </span>
+                        )}
+                        {/* User-assigned tags — CSS hover tooltip */}
+                        {lead.tags && lead.tags.map((tag, idx) => {
+                          const hoverText = getTagHoverText(tag.label, lead);
+                          return (
+                            <span key={idx} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-opacity hover:opacity-70 ${tagColorClass(tag.color)}`}
+                              onClick={(e) => { e.stopPropagation(); toggleLeadTag(lead, tag.label); }}>
+                              {tag.label}
+                              <span className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 max-w-[220px] opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50 whitespace-normal leading-relaxed">{hoverText}<br/><span className="text-slate-500 text-[9px]">click to remove</span></span>
+                            </span>
+                          );
+                        })}
+                        {/* AI system tags — CSS hover tooltip with live data */}
                         {getSystemTags(lead).map((tagId, idx) => {
                           const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
-                          return pt ? (
-                            <span key={`st-${idx}`} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tagColorClass(pt.color)}`} title={pt.hint}>{pt.label}</span>
-                          ) : null;
+                          if (!pt) return null;
+                          const hoverText = getTagHoverText(tagId, lead);
+                          return (
+                            <span key={`st-${idx}`} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tagColorClass(pt.color)}`}>
+                              {pt.label}
+                              <span className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 max-w-[220px] opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50 whitespace-normal leading-relaxed">{hoverText}</span>
+                            </span>
+                          );
                         })}
                         {/* Tag picker toggle */}
                         <button
@@ -2272,25 +2338,6 @@ const LeadTable = ({
                           className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-slate-700 text-slate-600 hover:border-slate-500 hover:text-slate-400 transition-all"
                           title="Add / remove tags"
                         >+</button>
-                        {/* Required Vendors */}
-                        {lead.knowledge_required_vendors?.length > 0 && (
-                          <div className="flex flex-wrap gap-0.5 mt-0.5 w-full">
-                            {lead.knowledge_required_vendors.slice(0, 3).map((v, i) => (
-                              <span key={i} className="text-[9px] px-1.5 py-0.5 rounded border bg-orange-500/15 text-orange-300 border-orange-500/25 cursor-default" title={`Required vendor: ${v}`}>V: {v}</span>
-                            ))}
-                          </div>
-                        )}
-                        {/* Required Manufacturers */}
-                        {lead.knowledge_required_manufacturers?.length > 0 && (
-                          <div className="flex flex-wrap gap-0.5 mt-0.5 w-full">
-                            {lead.knowledge_required_manufacturers.slice(0, 3).map((m, i) => (
-                              <span key={i} className="text-[9px] px-1.5 py-0.5 rounded border bg-amber-500/15 text-amber-300 border-amber-500/25 cursor-default" title={`Required manufacturer: ${m}`}>M: {m}</span>
-                            ))}
-                            {lead.knowledge_required_manufacturers.length > 3 && (
-                              <span className="text-[9px] text-slate-500">+{lead.knowledge_required_manufacturers.length - 3}</span>
-                            )}
-                          </div>
-                        )}
                       </div>
                     </td>
                     <td className="px-2 py-2">
@@ -2324,34 +2371,8 @@ const LeadTable = ({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-2 text-center">
+                    <td className="px-2 py-2 text-center">
                       <div className="flex justify-center gap-1">
-                        <button
-                          onClick={() => triggerSingleScan(lead.id)}
-                          disabled={scanningIds.has(lead.id)}
-                          className={`p-1.5 rounded transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${
-                            lead.takeoff_timestamp
-                              ? 'bg-violet-600/30 text-violet-300 border border-violet-500/30 hover:bg-violet-600 hover:text-white hover:border-transparent'
-                              : lead.knowledge_last_scanned
-                                ? 'bg-violet-900/40 text-violet-500 hover:bg-violet-600 hover:text-white'
-                                : 'bg-slate-700 text-slate-400 hover:bg-violet-600 hover:text-white'
-                          }`}
-                          title={
-                            lead.takeoff_timestamp
-                              ? `Deep scan: ${new Date(lead.takeoff_timestamp).toLocaleDateString()} — click to re-scan`
-                              : lead.knowledge_last_scanned
-                                ? `AI scan: ${new Date(lead.knowledge_last_scanned).toLocaleDateString()} — click to re-scan`
-                                : 'Run AI Scan'
-                          }
-                        >
-                          {scanningIds.has(lead.id) ? (
-                            <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                          ) : (
-                            <Brain size={12} />
-                          )}
-                        </button>
-                        <button onClick={() => openPointToFile(lead.id)} className="p-1.5 bg-slate-700 hover:bg-orange-600 text-slate-400 hover:text-white rounded transition-colors" title="Browse Files"><FolderOpen size={12} /></button>
-                        <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
                         <button onClick={() => toggleLeadStyle(lead, 'hidden', !lead.hidden)} className={`p-1.5 rounded transition-colors ${lead.hidden ? 'bg-slate-600 text-slate-300 hover:bg-slate-500' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title={lead.hidden ? "Unhide" : "Hide"}>
                           {lead.hidden ? <Eye size={12} /> : <EyeOff size={12} />}
                         </button>

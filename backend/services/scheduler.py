@@ -105,7 +105,8 @@ DEFAULT_SETTINGS = {
     "loydbuildsbetter": True,
     "buildingconnected": True,
     "isqft": True,
-    "use_gdrive": True
+    "use_gdrive": True,
+    "gemini_model": "gemini-2.5-flash"
 }
 
 def load_settings():

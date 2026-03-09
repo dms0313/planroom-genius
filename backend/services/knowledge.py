@@ -1102,6 +1102,8 @@ def _compute_badges(analysis):
         badges.append("REQ MFR")
     if analysis.get("manufacturer_compatible"):
         badges.append("COMP MFG")
+    if analysis.get("manufacturer_incompatible") and not analysis.get("manufacturer_compatible"):
+        badges.append("INCOMPAT MFG")
     if analysis.get("deal_breakers"):
         badges.append("DEAL BREAKER")
     # Scope signal badges
@@ -1957,9 +1959,12 @@ def run_deep_scan(lead_id):
     api_key = os.getenv("GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY_PLANROOM_GENIUS", "")
     analyzer = GeminiFireAlarmAnalyzer(api_key=api_key.strip() or None)
 
-    # Use the model from GEMINI_MODEL env var, or default to flash to avoid
-    # quota issues on pro free tier
-    preferred_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    # Use model from settings (user-configurable), then env var fallback
+    try:
+        from backend.services.scheduler import get_scraper_settings as _get_settings
+        preferred_model = _get_settings().get("gemini_model") or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    except Exception:
+        preferred_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     if preferred_model != analyzer.current_model:
         analyzer.update_model(preferred_model)
         logger.info(f"Deep scan: using model {preferred_model}")
