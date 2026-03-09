@@ -614,26 +614,12 @@ async def send_lead_to_notion(lead_id: str):
         if parsed_date:
             properties["Due Date"] = {"date": {"start": parsed_date.strftime("%Y-%m-%d")}}
 
-    # Project Address (place type) — geocode via Nominatim to get lat/lon
+    # Project Address — send as rich_text so the actual address string is visible
     address = lead.get("full_address") or lead.get("location") or ""
     if address and address not in ("N/A", ""):
-        try:
-            geo_resp = req.get(
-                "https://nominatim.openstreetmap.org/search",
-                params={"q": address, "format": "json", "limit": 1},
-                headers={"User-Agent": "planroom-genius/1.0 (contact@marmicfire.com)"},
-                timeout=5,
-            )
-            if geo_resp.status_code == 200:
-                results = geo_resp.json()
-                if results:
-                    lat = float(results[0]["lat"])
-                    lon = float(results[0]["lon"])
-                    properties["Project Address"] = {
-                        "place": {"lat": lat, "lon": lon, "query": address[:500]}
-                    }
-        except Exception as geo_err:
-            logger.warning(f"Geocoding failed for '{address}': {geo_err}")
+        properties["Project Address"] = {
+            "rich_text": [{"type": "text", "text": {"content": address[:2000]}}]
+        }
 
     # Company (relation)
     company_name = lead.get("company") or lead.get("gc") or ""
