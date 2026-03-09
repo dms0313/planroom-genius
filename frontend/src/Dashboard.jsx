@@ -359,6 +359,7 @@ export default function LeadDashboard() {
   const [folderBrowserItems, setFolderBrowserItems] = useState([]);
   const [folderBrowserLoading, setFolderBrowserLoading] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [notionStatus, setNotionStatus] = useState({}); // leadId -> 'loading'|'success'|'error'
 
 
   // Form state for add/edit
@@ -739,6 +740,27 @@ export default function LeadDashboard() {
       const res = await fetch(`${API_BASE}/leads/${lead.id}`, { method: 'DELETE' });
       if (res.ok) await fetchLeads();
     } catch (e) { alert("Failed to delete lead."); }
+  };
+
+  const sendToNotion = async (lead) => {
+    setNotionStatus(s => ({ ...s, [lead.id]: 'loading' }));
+    try {
+      const res = await fetch(`${API_BASE}/leads/${lead.id}/notion`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setNotionStatus(s => ({ ...s, [lead.id]: 'success' }));
+        if (data.notion_url) window.open(data.notion_url, '_blank', 'noopener');
+        setTimeout(() => setNotionStatus(s => ({ ...s, [lead.id]: null })), 4000);
+      } else {
+        setNotionStatus(s => ({ ...s, [lead.id]: 'error' }));
+        alert(`Notion error: ${data.detail || 'Unknown error'}`);
+        setTimeout(() => setNotionStatus(s => ({ ...s, [lead.id]: null })), 4000);
+      }
+    } catch (e) {
+      setNotionStatus(s => ({ ...s, [lead.id]: 'error' }));
+      alert('Failed to send to Notion.');
+      setTimeout(() => setNotionStatus(s => ({ ...s, [lead.id]: null })), 4000);
+    }
   };
 
   // Toggle highlight color or strikethrough for a lead
@@ -2109,8 +2131,8 @@ const LeadTable = ({
             <col className="w-[10%]" />
             <col className="w-[9%]" />
             <col className="w-[75px]" />
-            <col className="w-[60px]" />
-            <col className="w-[120px]" />
+            <col className="w-[44px]" />
+            <col className="w-[160px]" />
           </colgroup>
           <thead className="bg-slate-950/50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
             <tr>
@@ -2205,6 +2227,25 @@ const LeadTable = ({
                           className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-slate-700 text-slate-600 hover:border-slate-500 hover:text-slate-400 transition-all"
                           title="Add / remove tags"
                         >+</button>
+                        {/* Required Vendors */}
+                        {lead.knowledge_required_vendors?.length > 0 && (
+                          <div className="flex flex-wrap gap-0.5 mt-0.5 w-full">
+                            {lead.knowledge_required_vendors.slice(0, 3).map((v, i) => (
+                              <span key={i} className="text-[9px] px-1.5 py-0.5 rounded border bg-orange-500/15 text-orange-300 border-orange-500/25 cursor-default" title={`Required vendor: ${v}`}>V: {v}</span>
+                            ))}
+                          </div>
+                        )}
+                        {/* Required Manufacturers */}
+                        {lead.knowledge_required_manufacturers?.length > 0 && (
+                          <div className="flex flex-wrap gap-0.5 mt-0.5 w-full">
+                            {lead.knowledge_required_manufacturers.slice(0, 3).map((m, i) => (
+                              <span key={i} className="text-[9px] px-1.5 py-0.5 rounded border bg-amber-500/15 text-amber-300 border-amber-500/25 cursor-default" title={`Required manufacturer: ${m}`}>M: {m}</span>
+                            ))}
+                            {lead.knowledge_required_manufacturers.length > 3 && (
+                              <span className="text-[9px] text-slate-500">+{lead.knowledge_required_manufacturers.length - 3}</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="px-2 py-2">
@@ -2270,6 +2311,27 @@ const LeadTable = ({
                           {lead.hidden ? <Eye size={12} /> : <EyeOff size={12} />}
                         </button>
                         <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
+                        {/* Notion button */}
+                        {(() => {
+                          const ns = notionStatus[lead.id];
+                          return (
+                            <button
+                              onClick={() => sendToNotion(lead)}
+                              disabled={ns === 'loading'}
+                              title="Add to Notion (Open Quotes)"
+                              className={`flex items-center gap-0.5 px-1.5 py-1.5 rounded transition-colors text-[10px] font-medium disabled:opacity-70 ${ns === 'success' ? 'bg-green-700 text-green-200' : ns === 'error' ? 'bg-red-800 text-red-200' : 'bg-slate-700 hover:bg-slate-500 text-slate-300 hover:text-white'}`}
+                            >
+                              {ns === 'loading' ? (
+                                <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                              ) : ns === 'success' ? (
+                                <CheckCircle size={10} className="text-green-400" />
+                              ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4zm0 2h16v12H4V6zm2 2v2h2V8H6zm4 0v2h2V8h-2zm4 0v2h2V8h-2zm-8 4v2h2v-2H6zm4 0v2h2v-2h-2zm4 0v2h2v-2h-2z"/></svg>
+                              )}
+                              {ns === 'success' ? 'Sent' : ns === 'error' ? 'Err' : 'N'}
+                            </button>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>
@@ -2481,6 +2543,26 @@ const LeadTable = ({
                 <button onClick={() => toggleLeadStyle(lead, 'hidden', !lead.hidden)} className={`p-1.5 rounded transition-colors ${lead.hidden ? 'bg-slate-600 text-slate-300' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title={lead.hidden ? 'Unhide' : 'Hide'}>{lead.hidden ? <Eye size={12} /> : <EyeOff size={12} />}</button>
                 <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
                 <button onClick={() => setDescriptionPopup(lead)} className="flex items-center gap-1 px-2 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors text-[10px] font-medium"><Eye size={10} /> Details</button>
+                {(() => {
+                  const ns = notionStatus[lead.id];
+                  return (
+                    <button
+                      onClick={() => sendToNotion(lead)}
+                      disabled={ns === 'loading'}
+                      title="Add to Notion (Open Quotes)"
+                      className={`flex items-center gap-1 px-2 py-1.5 rounded transition-colors text-[10px] font-medium disabled:opacity-70 ${ns === 'success' ? 'bg-green-700 text-green-200' : ns === 'error' ? 'bg-red-800 text-red-200' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
+                    >
+                      {ns === 'loading' ? (
+                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                      ) : ns === 'success' ? (
+                        <CheckCircle size={10} className="text-green-400" />
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4zm0 2h16v12H4V6zm2 2v2h2V8H6zm4 0v2h2V8h-2zm4 0v2h2V8h-2zm-8 4v2h2v-2H6zm4 0v2h2v-2h-2zm4 0v2h2v-2h-2z"/></svg>
+                      )}
+                      {ns === 'success' ? 'Sent!' : ns === 'error' ? 'Failed' : 'Notion'}
+                    </button>
+                  );
+                })()}
               </div>
               {/* Expanded content */}
               {isCardExpanded && (

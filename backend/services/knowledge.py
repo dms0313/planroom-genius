@@ -1018,9 +1018,41 @@ def _heuristic_analysis(all_text):
     elif "modify" in t or "modification" in t or "retrofit" in t:
         system_type = "modification"
 
-    if "approved vendor" in t or "required vendor" in t:
+    if "approved vendor" in t or "required vendor" in t or "sole source" in t or "sole authorized" in t:
         vendors.append("specified (see specs)")
-    if "approved manufacturer" in t or "listed manufacturer" in t:
+
+    # Detect known manufacturer names in text
+    _known_mfrs = [
+        ("gamewell", "Gamewell-FCI"),
+        ("gamewell-fci", "Gamewell-FCI"),
+        ("firelite", "FireLite"),
+        ("fire-lite", "FireLite"),
+        ("silent knight", "Silent Knight"),
+        ("silentknight", "Silent Knight"),
+        ("notifier", "Notifier"),
+        ("simplex", "Simplex"),
+        ("edwards", "EST/Edwards"),
+        (" est ", "EST/Edwards"),
+        ("siemens", "Siemens"),
+        ("bosch", "Bosch"),
+        ("hochiki", "Hochiki"),
+        ("mircom", "Mircom"),
+        ("honeywell", "Honeywell"),
+        ("kidde", "Kidde"),
+        ("potter", "Potter"),
+        ("autocall", "AutoCall"),
+        ("tyco", "Tyco"),
+        ("johnson controls", "Johnson Controls"),
+        ("farenhyt", "Farenhyt"),
+        ("vigilant", "Vigilant"),
+    ]
+    detected_mfrs = []
+    for key, canonical in _known_mfrs:
+        if key in t and canonical not in detected_mfrs:
+            detected_mfrs.append(canonical)
+    if detected_mfrs:
+        manufacturers.extend(detected_mfrs)
+    elif "approved manufacturer" in t or "listed manufacturer" in t or "basis of design" in t:
         manufacturers.append("specified (see specs)")
     if "no fire alarm" in t or "fire alarm not required" in t:
         requires = False
@@ -1975,6 +2007,27 @@ def run_deep_scan(lead_id):
     # Also update basic knowledge fields for compatibility
     lead["knowledge_last_scanned"] = datetime.now().isoformat()
     lead["knowledge_notes"] = results.get("scope_summary") or "Deep scan complete"
+
+    # Merge APPROVED_MANUFACTURERS from deep scan specs into knowledge_required_manufacturers
+    specs = results.get("specifications") or {}
+    approved_mfrs = specs.get("APPROVED_MANUFACTURERS") or []
+    if isinstance(approved_mfrs, str):
+        approved_mfrs = [approved_mfrs]
+    if approved_mfrs:
+        existing_mfrs = list(lead.get("knowledge_required_manufacturers") or [])
+        merged = list(set(existing_mfrs + [str(m) for m in approved_mfrs if m]))
+        lead["knowledge_required_manufacturers"] = merged
+
+    # Merge required_vendors from high_impact_claims if present
+    high_impact = results.get("high_impact_claims") or {}
+    deep_vendors = high_impact.get("required_vendors") or []
+    deep_mfrs = high_impact.get("required_manufacturers") or []
+    if deep_vendors:
+        existing_vendors = list(lead.get("knowledge_required_vendors") or [])
+        lead["knowledge_required_vendors"] = list(set(existing_vendors + [str(v) for v in deep_vendors if v]))
+    if deep_mfrs:
+        existing_mfrs2 = list(lead.get("knowledge_required_manufacturers") or [])
+        lead["knowledge_required_manufacturers"] = list(set(existing_mfrs2 + [str(m) for m in deep_mfrs if m]))
 
     direct_save_leads(leads)
     logger.info(f"Deep scan complete for {lead.get('name', lead_id)}")

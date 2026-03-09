@@ -426,6 +426,326 @@ async def delete_lead(lead_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== Notion Integration ====================
+
+NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
+NOTION_DB_ID = os.getenv("NOTION_DB_ID", "22b30dfde2d780979c80c0e3e7af56f4")
+NOTION_COMPANY_DB_ID = os.getenv("NOTION_COMPANY_DB_ID", "23030dfde2d7800eb347e6aedcdff420")
+NOTION_API_BASE = "https://api.notion.com/v1"
+NOTION_VERSION = "2022-06-28"
+
+# Known Building Type options in the Notion database
+NOTION_BUILDING_TYPES = {
+    "industrial": "Industrial/Warehouse",
+    "warehouse": "Industrial/Warehouse",
+    "healthcare": "Healthcare",
+    "hospital": "Healthcare",
+    "clinic": "Healthcare",
+    "medical": "Healthcare",
+    "school": "School",
+    "education": "School",
+    "university": "School",
+    "college": "School",
+    "retail": "Retail",
+    "office": "Office",
+    "hotel": "Hotel",
+    "residential": "Residential",
+    "apartment": "Residential",
+    "multifamily": "Residential",
+}
+
+NOTION_PROJECT_TYPES = {
+    "installation": "Installation",
+    "install": "Installation",
+    "parts": "Parts & Smarts",
+    "smarts": "Parts & Smarts",
+    "parts & smarts": "Parts & Smarts",
+    "other": "Other",
+}
+
+NOTION_CONSTRUCTION_TYPES = [
+    ("tenant improvement", "Tenant Improvement/Renovation"),
+    ("tenant build", "Tenant Improvement/Renovation"),
+    ("ti ", "Tenant Improvement/Renovation"),
+    ("remodel", "Remodel / Renovation"),
+    ("renovation", "Remodel / Renovation"),
+    ("new construction", "New Construction"),
+    ("new fire panel", "New Fire Panel"),
+]
+
+NOTION_SPECIAL_REQUIREMENTS = [
+    ("tax exempt", "Tax Exempt"),
+    ("prevailing wage", "Prevailing Wage"),
+    ("bid bond", "Bid Bond"),
+    ("buy american", "Buy American Build American"),
+    ("baba", "Buy American Build American"),
+]
+
+
+def _notion_headers():
+    return {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Notion-Version": NOTION_VERSION,
+        "Content-Type": "application/json",
+    }
+
+
+def _match_building_type(text: str):
+    """Map free-text building type to a known Notion select option."""
+    if not text:
+        return None
+    lower = text.lower()
+    for key, val in NOTION_BUILDING_TYPES.items():
+        if key in lower:
+            return val
+    return None
+
+
+def _match_project_type(text: str):
+    """Map free-text project type to a known Notion select option."""
+    if not text:
+        return None
+    lower = text.lower()
+    for key, val in NOTION_PROJECT_TYPES.items():
+        if key in lower:
+            return val
+    return None
+
+
+def _match_construction_types(text: str):
+    """Map free-text construction type to known Notion multi_select options."""
+    if not text:
+        return []
+    lower = text.lower()
+    matched = []
+    for key, val in NOTION_CONSTRUCTION_TYPES:
+        if key in lower and val not in matched:
+            matched.append(val)
+    return matched
+
+
+def _match_special_requirements(lead: dict):
+    """Extract special requirements from lead tags and knowledge fields."""
+    matched = set()
+    # Check tags
+    tags = lead.get("tags") or []
+    tag_labels = " ".join(t.get("label", "").lower() for t in tags)
+    # Check knowledge deal breakers and description
+    extra_text = " ".join(filter(None, [
+        lead.get("description", ""),
+        lead.get("knowledge_notes", ""),
+        str(lead.get("knowledge_deal_breakers", "")),
+    ])).lower()
+    combined = tag_labels + " " + extra_text
+    for key, val in NOTION_SPECIAL_REQUIREMENTS:
+        if key in combined:
+            matched.add(val)
+    # Check if BABA tag is present
+    if any(t.get("label", "").upper() == "BABA" for t in tags):
+        matched.add("Buy American Build American")
+    return list(matched)
+
+
+def _search_company_in_notion(company_name: str):
+    """Search the Notion Companies database for a matching company by name."""
+    import requests as req
+    if not company_name or company_name in ("N/A", ""):
+        return None
+    try:
+        resp = req.post(
+            f"{NOTION_API_BASE}/databases/{NOTION_COMPANY_DB_ID}/query",
+            headers=_notion_headers(),
+            json={
+                "filter": {
+                    "property": "Company Name",
+                    "title": {"contains": company_name[:50]}
+                },
+                "page_size": 5,
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            results = resp.json().get("results", [])
+            if results:
+                return results[0]["id"]
+    except Exception as e:
+        logger.warning(f"Company search in Notion failed: {e}")
+    return None
+
+
+@app.post("/leads/{lead_id}/notion")
+async def send_lead_to_notion(lead_id: str):
+    """Send a lead to the Notion Open Quotes database."""
+    import requests as req
+    from backend.services.storage import load_leads
+
+    leads = load_leads()
+    lead = next((l for l in leads if l.get("id") == lead_id), None)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    # --- Build Notion properties ---
+    properties = {}
+
+    # Project Name (title)
+    project_name = lead.get("name") or "Untitled Project"
+    properties["Project Name"] = {
+        "title": [{"text": {"content": project_name[:2000]}}]
+    }
+
+    # Due Date
+    bid_date = lead.get("bid_date") or lead.get("due_date")
+    if bid_date and bid_date not in ("N/A", "TBD", ""):
+        from backend.config import DATE_FORMATS
+        from datetime import datetime as _dt
+        parsed_date = None
+        for fmt in DATE_FORMATS:
+            try:
+                parsed_date = _dt.strptime(bid_date.strip(), fmt)
+                break
+            except (ValueError, AttributeError):
+                continue
+        if parsed_date:
+            properties["Due Date"] = {"date": {"start": parsed_date.strftime("%Y-%m-%d")}}
+
+    # Project Address (place type) — requires lat/lon so we skip if no coordinates
+    # The address is included in the page title note instead via the project name
+    # (Notion's place property requires geocoded lat/lon which we don't have)
+
+    # Company (relation)
+    company_name = lead.get("company") or lead.get("gc") or ""
+    company_page_id = _search_company_in_notion(company_name)
+    if company_page_id:
+        properties["Company"] = {"relation": [{"id": company_page_id}]}
+
+    # Building Type (select) — from takeoff_snapshot or project_type field
+    snap = lead.get("takeoff_snapshot") or {}
+    pd = snap.get("project_details") or {}
+    building_type_raw = (
+        pd.get("building_type") or
+        pd.get("occupancy_type") or
+        lead.get("building_type") or ""
+    )
+    building_type_mapped = _match_building_type(building_type_raw)
+    if building_type_mapped:
+        properties["Building Type"] = {"select": {"name": building_type_mapped}}
+
+    # Project Type (select)
+    project_type_raw = (
+        pd.get("project_type") or
+        lead.get("project_type") or ""
+    )
+    project_type_mapped = _match_project_type(project_type_raw)
+    if project_type_mapped:
+        properties["Project Type"] = {"select": {"name": project_type_mapped}}
+
+    # Construction Type (multi_select)
+    construction_type_raw = (
+        pd.get("construction_type") or
+        lead.get("construction_type") or
+        project_type_raw or ""
+    )
+    construction_types = _match_construction_types(construction_type_raw)
+    if construction_types:
+        properties["Construction Type"] = {
+            "multi_select": [{"name": ct} for ct in construction_types]
+        }
+
+    # Special Requirements (multi_select)
+    special_reqs = _match_special_requirements(lead)
+    if special_reqs:
+        properties["Special Requirements"] = {
+            "multi_select": [{"name": sr} for sr in special_reqs]
+        }
+
+    # Status = "Active"
+    properties["Status"] = {"status": {"name": "Active"}}
+
+    # --- Build page body with contact/address info ---
+    def _txt_block(text: str):
+        return {
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {
+                "rich_text": [{"type": "text", "text": {"content": text[:2000]}}]
+            }
+        }
+
+    children = []
+    address = lead.get("full_address") or lead.get("location") or ""
+    contact_name = lead.get("contact_name") or ""
+    contact_phone = lead.get("contact_phone") or ""
+    contact_email = lead.get("contact_email") or ""
+    company = lead.get("company") or lead.get("gc") or ""
+
+    info_lines = []
+    if address and address not in ("N/A", ""):
+        info_lines.append(f"Address: {address}")
+    if company and company not in ("N/A", ""):
+        info_lines.append(f"Company: {company}")
+    if contact_name and contact_name not in ("N/A", ""):
+        info_lines.append(f"Contact: {contact_name}")
+    if contact_phone:
+        info_lines.append(f"Phone: {contact_phone}")
+    if contact_email:
+        info_lines.append(f"Email: {contact_email}")
+
+    if info_lines:
+        children.append({
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "rich_text": [{"type": "text", "text": {"content": "\n".join(info_lines)}}],
+                "icon": {"type": "emoji", "emoji": "📋"},
+                "color": "gray_background",
+            }
+        })
+
+    # Notes from lead description
+    notes = lead.get("knowledge_notes") or lead.get("description") or ""
+    if notes:
+        # Strip HTML tags simply
+        import re as _re
+        notes_clean = _re.sub(r'<[^>]+>', '', notes).strip()[:1900]
+        if notes_clean:
+            children.append(_txt_block(notes_clean))
+
+    # --- Create the Notion page ---
+    payload = {
+        "parent": {"database_id": NOTION_DB_ID},
+        "properties": properties,
+    }
+    if children:
+        payload["children"] = children
+
+    try:
+        resp = req.post(
+            f"{NOTION_API_BASE}/pages",
+            headers=_notion_headers(),
+            json=payload,
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            page = resp.json()
+            page_url = page.get("url", "")
+            logger.info(f"Created Notion page for lead {lead_id}: {page_url}")
+            return {
+                "status": "success",
+                "notion_url": page_url,
+                "notion_page_id": page.get("id"),
+            }
+        else:
+            error_body = resp.json()
+            msg = error_body.get("message", resp.text)
+            logger.error(f"Notion API error for lead {lead_id}: {resp.status_code} {msg}")
+            raise HTTPException(status_code=502, detail=f"Notion API error: {msg}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to send lead {lead_id} to Notion: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== Project Q&A Endpoint ====================
 
 @app.post("/leads/{lead_id}/ask")
