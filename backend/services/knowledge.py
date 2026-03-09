@@ -1021,34 +1021,52 @@ def _heuristic_analysis(all_text):
     if "approved vendor" in t or "required vendor" in t or "sole source" in t or "sole authorized" in t:
         vendors.append("specified (see specs)")
 
-    # Detect known manufacturer names in text
-    _known_mfrs = [
+    # Keywords that confirm a manufacturer mention is in a fire alarm context
+    _FA_CONTEXT_KEYWORDS = {
+        "fire alarm", "fire detection", "smoke detector", "smoke detection",
+        "pull station", "horn strobe", "annunciator", "facp", "fa panel",
+        "notification appliance", "addressable", "initiating device",
+        "alarm panel", "detection system", "nfpa 72", "fire panel",
+        "duct detector", "heat detector", "mass notification", "voice evac",
+        "alarm system", "fire control panel", "4100", "4010", "4005",
+    }
+    _has_fa_context = any(kw in t for kw in _FA_CONTEXT_KEYWORDS)
+
+    # Manufacturers that are unambiguous FA brands — flag regardless of context
+    _fa_specific_mfrs = [
         ("gamewell", "Gamewell-FCI"),
         ("gamewell-fci", "Gamewell-FCI"),
         ("firelite", "FireLite"),
         ("fire-lite", "FireLite"),
         ("silent knight", "Silent Knight"),
         ("silentknight", "Silent Knight"),
-        ("notifier", "Notifier"),
-        ("simplex", "Simplex"),
-        ("edwards", "EST/Edwards"),
-        (" est ", "EST/Edwards"),
-        ("siemens", "Siemens"),
-        ("bosch", "Bosch"),
         ("hochiki", "Hochiki"),
         ("mircom", "Mircom"),
-        ("honeywell", "Honeywell"),
-        ("kidde", "Kidde"),
-        ("potter", "Potter"),
         ("autocall", "AutoCall"),
-        ("tyco", "Tyco"),
-        ("johnson controls", "Johnson Controls"),
         ("farenhyt", "Farenhyt"),
-        ("vigilant", "Vigilant"),
     ]
+    # Ambiguous brands — only flag when fire alarm context is present in the same text
+    _context_sensitive_mfrs = [
+        ("simplex", "Simplex"),        # also used for locks, conduit, wiring methods
+        ("notifier", "Notifier"),      # generic English word (to notify)
+        ("edwards", "EST/Edwards"),    # common surname; EST/Edwards is FA-specific
+        (" est ", "EST/Edwards"),
+        ("siemens", "Siemens"),        # large conglomerate, not FA-specific
+        ("bosch", "Bosch"),            # large conglomerate
+        ("honeywell", "Honeywell"),    # large conglomerate
+        ("kidde", "Kidde"),            # also used for extinguishers
+        ("potter", "Potter"),          # common surname
+        ("tyco", "Tyco"),              # large conglomerate
+        ("johnson controls", "Johnson Controls"),
+        ("vigilant", "Vigilant"),      # common adjective
+    ]
+
     detected_mfrs = []
-    for key, canonical in _known_mfrs:
+    for key, canonical in _fa_specific_mfrs:
         if key in t and canonical not in detected_mfrs:
+            detected_mfrs.append(canonical)
+    for key, canonical in _context_sensitive_mfrs:
+        if key in t and _has_fa_context and canonical not in detected_mfrs:
             detected_mfrs.append(canonical)
     if detected_mfrs:
         manufacturers.extend(detected_mfrs)
@@ -2049,6 +2067,51 @@ def run_deep_scan(lead_id):
     lead["knowledge_last_scanned"] = datetime.now().isoformat()
     lead["knowledge_notes"] = results.get("scope_summary") or "Deep scan complete"
 
+    # Ambiguous brand names that require explicit FA context to be flagged.
+    # Key = lowercase match string, value = canonical display name.
+    _AMBIGUOUS_MFR_NAMES = {
+        "simplex": "Simplex",
+        "notifier": "Notifier",
+        "edwards": "EST/Edwards",
+        "siemens": "Siemens",
+        "bosch": "Bosch",
+        "honeywell": "Honeywell",
+        "kidde": "Kidde",
+        "potter": "Potter",
+        "tyco": "Tyco",
+        "johnson controls": "Johnson Controls",
+        "vigilant": "Vigilant",
+    }
+
+    def _mfr_has_fa_context(mfr_name: str, results: dict) -> bool:
+        """Return True if the manufacturer appears in an FA-specific context in scan results."""
+        name_lower = mfr_name.lower()
+        # Check if it appears in the FA briefing panel/system details
+        fab = results.get("takeoff_fa_briefing") or results.get("fire_alarm_details") or {}
+        fa_details = fab.get("fire_alarm_details") or {}
+        specs_inner = fab.get("specifications") or results.get("specifications") or {}
+        # If it's explicitly listed in APPROVED_MANUFACTURERS from spec section, always valid
+        approved = specs_inner.get("APPROVED_MANUFACTURERS") or []
+        if isinstance(approved, str):
+            approved = [approved]
+        if any(name_lower in str(a).lower() for a in approved):
+            return True
+        # Check panel model field — if Simplex 4100ES is the panel, it's definitely FA
+        panel = str(fa_details.get("panel_status") or fa_details.get("existing_system") or "").lower()
+        if name_lower in panel:
+            return True
+        # Check scope summary and FA notes for co-occurrence with FA terms
+        _fa_terms = {"fire alarm", "facp", "fa panel", "alarm panel", "detection", "nfpa 72",
+                     "smoke", "pull station", "4100", "4010", "4005", "notification"}
+        scope = str(results.get("scope_summary") or "").lower()
+        fa_notes = results.get("fire_alarm_notes") or []
+        combined_text = scope + " " + " ".join(
+            str(n.get("content") if isinstance(n, dict) else n) for n in fa_notes
+        )
+        if name_lower in combined_text:
+            return any(term in combined_text for term in _fa_terms)
+        return False
+
     # Merge APPROVED_MANUFACTURERS from deep scan specs into knowledge_required_manufacturers
     specs = results.get("specifications") or {}
     approved_mfrs = specs.get("APPROVED_MANUFACTURERS") or []
@@ -2056,7 +2119,18 @@ def run_deep_scan(lead_id):
         approved_mfrs = [approved_mfrs]
     if approved_mfrs:
         existing_mfrs = list(lead.get("knowledge_required_manufacturers") or [])
-        merged = list(set(existing_mfrs + [str(m) for m in approved_mfrs if m]))
+        filtered = []
+        for m in approved_mfrs:
+            m_str = str(m).strip()
+            if not m_str:
+                continue
+            # Filter ambiguous names unless FA context is confirmed
+            ambiguous_key = next((k for k in _AMBIGUOUS_MFR_NAMES if k in m_str.lower()), None)
+            if ambiguous_key and not _mfr_has_fa_context(m_str, results):
+                logger.info(f"Deep scan: skipping ambiguous manufacturer '{m_str}' — no FA context")
+                continue
+            filtered.append(m_str)
+        merged = list(set(existing_mfrs + filtered))
         lead["knowledge_required_manufacturers"] = merged
 
     # Merge required_vendors from high_impact_claims if present
@@ -2068,7 +2142,17 @@ def run_deep_scan(lead_id):
         lead["knowledge_required_vendors"] = list(set(existing_vendors + [str(v) for v in deep_vendors if v]))
     if deep_mfrs:
         existing_mfrs2 = list(lead.get("knowledge_required_manufacturers") or [])
-        lead["knowledge_required_manufacturers"] = list(set(existing_mfrs2 + [str(m) for m in deep_mfrs if m]))
+        filtered_deep = []
+        for m in deep_mfrs:
+            m_str = str(m).strip()
+            if not m_str:
+                continue
+            ambiguous_key = next((k for k in _AMBIGUOUS_MFR_NAMES if k in m_str.lower()), None)
+            if ambiguous_key and not _mfr_has_fa_context(m_str, results):
+                logger.info(f"Deep scan high_impact: skipping ambiguous manufacturer '{m_str}' — no FA context")
+                continue
+            filtered_deep.append(m_str)
+        lead["knowledge_required_manufacturers"] = list(set(existing_mfrs2 + filtered_deep))
 
     direct_save_leads(leads)
     logger.info(f"Deep scan complete for {lead.get('name', lead_id)}")
