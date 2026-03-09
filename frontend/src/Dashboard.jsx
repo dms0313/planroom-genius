@@ -2433,6 +2433,23 @@ const LeadTable = ({
                                   stripHtml(lead.description)
                                 ) : <span className="text-slate-500 italic">No summary available. Run AI scan for details.</span>}
                               </p>
+                              {/* Manufacturers & Vendors — always visible when present */}
+                              {((lead.knowledge_required_manufacturers?.length > 0) || (lead.knowledge_required_vendors?.length > 0)) && (
+                                <div className="mt-2 flex flex-col gap-1">
+                                  {lead.knowledge_required_manufacturers?.length > 0 && (
+                                    <div className="flex items-start gap-1.5 text-xs">
+                                      <span className="text-slate-500 shrink-0">Manufacturer(s):</span>
+                                      <span className="text-amber-300 font-medium">{lead.knowledge_required_manufacturers.join(', ')}</span>
+                                    </div>
+                                  )}
+                                  {lead.knowledge_required_vendors?.length > 0 && (
+                                    <div className="flex items-start gap-1.5 text-xs">
+                                      <span className="text-slate-500 shrink-0">Required Vendor(s):</span>
+                                      <span className="text-orange-300 font-medium">{lead.knowledge_required_vendors.join(', ')}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                               <div className="flex gap-2 mt-3 flex-wrap">
                                 {getSystemTags(lead).map((tagId, idx) => {
                                   const pt = PREDEFINED_TAGS.find(t => t.id === tagId);

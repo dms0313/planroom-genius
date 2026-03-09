@@ -1801,12 +1801,11 @@ def _apply_overrides(project_dir, plan_files, spec_files, other_files, overrides
 # ---------------------------------------------------------------------------
 
 _QA_PROMPT = """You are a fire alarm preconstruction expert reviewing project documents.
-Answer the following question based ONLY on the provided document pages.
-If the answer cannot be determined from the documents, say so clearly.
+Answer the following question using the provided document pages AND any prior scan data included below.
 Be specific and cite page references when possible.
 Keep your answer concise (2-4 sentences).
 
-Question: {question}"""
+{scan_context}Question: {question}"""
 
 
 def ask_project_question(lead_id, question):
@@ -1866,7 +1865,44 @@ def ask_project_question(lead_id, question):
 
     import requests as req
 
-    prompt_text = _QA_PROMPT.format(question=question)
+    # Build scan context from previously stored knowledge/takeoff data
+    scan_lines = []
+    if lead.get("knowledge_notes"):
+        scan_lines.append(f"AI Scan Notes: {lead['knowledge_notes']}")
+    if lead.get("knowledge_required_manufacturers"):
+        scan_lines.append(f"Required/Specified Manufacturers: {', '.join(lead['knowledge_required_manufacturers'])}")
+    if lead.get("knowledge_required_vendors"):
+        scan_lines.append(f"Required Vendors: {', '.join(lead['knowledge_required_vendors'])}")
+    if lead.get("knowledge_deal_breakers"):
+        scan_lines.append(f"Deal Breakers: {', '.join(lead['knowledge_deal_breakers'])}")
+    snap = lead.get("takeoff_snapshot") or {}
+    if snap.get("scope_summary"):
+        scan_lines.append(f"Scope Summary: {snap['scope_summary']}")
+    fab = lead.get("takeoff_fa_briefing") or {}
+    fa = fab.get("fire_alarm_details") or {}
+    specs = fab.get("specifications") or {}
+    for label, val in [
+        ("Panel Status", fa.get("panel_status") or fa.get("existing_system")),
+        ("Sprinkler", fa.get("sprinkler_status")),
+        ("Approved Manufacturers", specs.get("APPROVED_MANUFACTURERS")),
+        ("Control Panel", specs.get("CONTROL_PANEL")),
+        ("System Type", specs.get("SYSTEM_TYPE")),
+    ]:
+        if val:
+            if isinstance(val, list):
+                val = ", ".join(str(v) for v in val)
+            scan_lines.append(f"{label}: {val}")
+    pitfalls = lead.get("takeoff_pitfalls") or []
+    if pitfalls:
+        scan_lines.append("Pitfalls: " + "; ".join(
+            (p.get("content") if isinstance(p, dict) else str(p)) for p in pitfalls[:5]
+        ))
+
+    scan_context = ""
+    if scan_lines:
+        scan_context = "Prior scan data for this project:\n" + "\n".join(scan_lines) + "\n\n"
+
+    prompt_text = _QA_PROMPT.format(question=question, scan_context=scan_context)
     parts = [{"text": prompt_text}]
     for img in project_images:
         b64 = base64.b64encode(img["png_bytes"]).decode("utf-8")
