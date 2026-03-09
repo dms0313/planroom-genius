@@ -932,7 +932,7 @@ def _call_gemini(images, context="", thinking=False):
 
     # Try preferred model first, fall back to secondary if quota/availability issues
     models = [
-        "gemini-pro-latest",
+        "gemini-3.1-pro-preview",
         "gemini-2.5-flash",
     ]
     base_url = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -1375,10 +1375,12 @@ def _scan_project_folder(project_dir, cache, leads, folder_name=None, known_lead
             _status["skipped"] += 1
             return False
 
-    # Check cache for skip
+    # Check cache for skip — but always scan if the lead has never been analyzed
+    # (e.g. leads were cleared by refresh-leads and re-added without knowledge data)
+    never_scanned = matched_lead and not matched_lead.get("knowledge_last_scanned")
     signature = _hash_dir(project_dir)
     cache_entry = cache.get(folder_name, {})
-    if not force_rescan and cache_entry.get("signature") == signature:
+    if not force_rescan and not never_scanned and cache_entry.get("signature") == signature:
         _status["skipped"] += 1
         return False
 
@@ -1550,6 +1552,50 @@ def stop_scan():
         return True
     return False
 
+_KNOWLEDGE_FIELDS = frozenset({
+    "knowledge_last_scanned", "knowledge_score", "knowledge_badges",
+    "knowledge_requires_fire_alarm", "knowledge_system_type",
+    "knowledge_required_vendors", "knowledge_required_manufacturers",
+    "knowledge_required_codes", "knowledge_deal_breakers", "knowledge_evidence",
+    "knowledge_validation_warnings", "knowledge_notes", "knowledge_scope_signals",
+    "knowledge_bid_risk_flags", "knowledge_addendums", "knowledge_file_count",
+    "takeoff_snapshot", "takeoff_fa_briefing", "takeoff_mechanical",
+    "takeoff_pitfalls", "takeoff_estimating_notes", "takeoff_competitive_advantages",
+    "takeoff_project_tags", "takeoff_fa_notes", "takeoff_timestamp",
+    "qa_history",
+})
+
+
+def _merge_knowledge_into_db(scanned_leads):
+    """
+    Write knowledge-scan results back to the DB without clobbering concurrent changes.
+
+    Re-reads the current on-disk state so that leads added or updated by scrapers
+    running in parallel during a long scan are preserved.  Only knowledge_* / takeoff_*
+    fields are written back; all other fields come from the freshly-read DB copy.
+    """
+    current_leads = load_leads()
+
+    # Build lookup: id → index (primary), then name+site → index (fallback)
+    by_id = {l["id"]: i for i, l in enumerate(current_leads) if l.get("id")}
+    by_name_site = {(l.get("name"), l.get("site")): i for i, l in enumerate(current_leads)}
+
+    for lead in scanned_leads:
+        idx = None
+        if lead.get("id") and lead["id"] in by_id:
+            idx = by_id[lead["id"]]
+        elif (lead.get("name"), lead.get("site")) in by_name_site:
+            idx = by_name_site[(lead.get("name"), lead.get("site"))]
+
+        if idx is not None:
+            for key in _KNOWLEDGE_FIELDS:
+                if key in lead:
+                    current_leads[idx][key] = lead[key]
+        # Leads that disappeared from the DB while scan was running are simply dropped.
+
+    direct_save_leads(current_leads)
+
+
 def scan_local_downloads(lead_id=None, force_rescan=False, thinking=False):
     """
     Scan downloaded project files and analyze them with AI.
@@ -1643,7 +1689,7 @@ def scan_local_downloads(lead_id=None, force_rescan=False, thinking=False):
                     target_lead["knowledge_notes"] = "No project files found. Use the files link field to point to a local folder, or download files first."
                     target_lead["knowledge_score"] = 0
                     target_lead["knowledge_badges"] = []
-                    direct_save_leads(leads)
+                    _merge_knowledge_into_db(leads)
                     _status["running"] = False
                     _status["current_project"] = None
                     _status["last_run"] = datetime.now().isoformat()
@@ -1671,8 +1717,9 @@ def scan_local_downloads(lead_id=None, force_rescan=False, thinking=False):
                 is_single_scan=bool(lead_id),
             )
 
-        # Save everything
-        direct_save_leads(leads)
+        # Merge knowledge results back into the live DB to avoid overwriting
+        # leads that scrapers may have added or modified during the scan.
+        _merge_knowledge_into_db(leads)
         _save_cache(cache)
         _status["last_run"] = datetime.now().isoformat()
         _status["current_project"] = None
