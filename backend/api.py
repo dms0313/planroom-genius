@@ -710,14 +710,145 @@ async def send_lead_to_notion(lead_id: str):
             }
         })
 
-    # Notes from lead description
-    notes = lead.get("knowledge_notes") or lead.get("description") or ""
-    if notes:
-        # Strip HTML tags simply
-        import re as _re
-        notes_clean = _re.sub(r'<[^>]+>', '', notes).strip()[:1900]
-        if notes_clean:
-            children.append(_txt_block(notes_clean))
+    import re as _re
+
+    def _heading(text, level=2):
+        htype = f"heading_{level}"
+        return {"object": "block", "type": htype, htype: {"rich_text": [{"type": "text", "text": {"content": text[:2000]}}]}}
+
+    def _bullet(text):
+        t = str(text).strip()[:2000]
+        return {"object": "block", "type": "bulleted_list_item", "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": t}}]}}
+
+    def _divider():
+        return {"object": "block", "type": "divider", "divider": {}}
+
+    # Deep scan results (takeoff data)
+    takeoff_ts = lead.get("takeoff_timestamp")
+    snap = lead.get("takeoff_snapshot") or {}
+    fa_briefing = lead.get("takeoff_fa_briefing") or {}
+    mechanical = lead.get("takeoff_mechanical") or {}
+    pitfalls = lead.get("takeoff_pitfalls") or []
+    est_notes = lead.get("takeoff_estimating_notes") or []
+    advantages = lead.get("takeoff_competitive_advantages") or []
+    fa_notes = lead.get("takeoff_fa_notes") or []
+
+    if takeoff_ts:
+        scan_date = takeoff_ts[:10]
+        children.append(_divider())
+        children.append(_heading(f"🔬 Deep Scan Results — {scan_date}", level=2))
+
+        # Project Snapshot
+        scope = snap.get("scope_summary") or ""
+        if scope:
+            children.append(_heading("Project Scope", level=3))
+            children.append(_txt_block(scope[:2000]))
+
+        pd = snap.get("project_details") or {}
+        detail_lines = []
+        for label, key in [
+            ("Project Type", "project_type"), ("Building Type", "building_type"),
+            ("Occupancy", "occupancy_classification"), ("Codes", "applicable_codes"),
+        ]:
+            val = pd.get(key)
+            if val:
+                if isinstance(val, list):
+                    val = ", ".join(str(v) for v in val)
+                detail_lines.append(f"{label}: {val}")
+        if detail_lines:
+            children.append(_txt_block("\n".join(detail_lines)))
+
+        # Fire Alarm Briefing
+        fa = fa_briefing.get("fire_alarm_details") or {}
+        specs = fa_briefing.get("specifications") or {}
+        fa_lines = []
+        for label, key in [
+            ("Panel Status", "panel_status"), ("Existing System", "existing_system"),
+            ("Sprinkler", "sprinkler_status"), ("Voice Evac", "voice_evac"),
+            ("CO Detection", "co_detection"),
+        ]:
+            val = fa.get(key)
+            if val and str(val).lower() not in ("unknown", "none", ""):
+                fa_lines.append(f"{label}: {val}")
+        spec_lines = []
+        for label, key in [
+            ("Control Panel", "CONTROL_PANEL"), ("System Type", "SYSTEM_TYPE"),
+            ("Wiring Class", "WIRING_CLASS"), ("Monitoring", "MONITORING"),
+            ("Audio", "AUDIO_SYSTEM"), ("Approved Manufacturers", "APPROVED_MANUFACTURERS"),
+        ]:
+            val = specs.get(key)
+            if val and str(val).lower() not in ("unknown", "none", "", "addressable"):
+                if isinstance(val, list):
+                    val = ", ".join(str(v) for v in val)
+                spec_lines.append(f"{label}: {val}")
+        if fa_lines or spec_lines:
+            children.append(_heading("Fire Alarm Details", level=3))
+            if fa_lines:
+                children.append(_txt_block("\n".join(fa_lines)))
+            if spec_lines:
+                children.append(_txt_block("\n".join(spec_lines)))
+
+        # Required Vendors / Manufacturers
+        req_mfrs = lead.get("knowledge_required_manufacturers") or []
+        req_vendors = lead.get("knowledge_required_vendors") or []
+        if req_mfrs or req_vendors:
+            children.append(_heading("Required Vendors & Manufacturers", level=3))
+            for m in req_mfrs:
+                children.append(_bullet(f"Manufacturer: {m}"))
+            for v in req_vendors:
+                children.append(_bullet(f"Vendor: {v}"))
+
+        # Mechanical Coordination
+        mech_lines = []
+        for label, key in [
+            ("Duct Detectors/RTU", "duct_detectors_per_rtu"), ("Dampers", "dampers"),
+            ("Access Doors", "access_control_doors"),
+        ]:
+            val = mechanical.get(key) or mechanical.get(key.split("/")[0].lower().replace(" ", "_"))
+            if val:
+                mech_lines.append(f"{label}: {val}")
+        mech_equip = mechanical.get("equipment") or []
+        if mech_lines or mech_equip:
+            children.append(_heading("Mechanical Coordination", level=3))
+            for line in mech_lines:
+                children.append(_bullet(line))
+            for eq in mech_equip:
+                name = eq.get("name") or eq.get("type") or "Unit"
+                cfm = eq.get("cfm", "")
+                children.append(_bullet(f"{name}{f' ({cfm} CFM)' if cfm else ''}"))
+
+        # FA Notes
+        if fa_notes:
+            children.append(_heading("Fire Alarm Notes", level=3))
+            for n in fa_notes[:20]:
+                page = n.get("page", "") if isinstance(n, dict) else ""
+                content = n.get("content", str(n)) if isinstance(n, dict) else str(n)
+                children.append(_bullet(f"[p{page}] {content}" if page else content))
+
+        # Pitfalls & Estimating Notes
+        if pitfalls or est_notes:
+            children.append(_heading("Pitfalls & Estimating Notes", level=3))
+            for p in pitfalls[:15]:
+                text = p.get("content", str(p)) if isinstance(p, dict) else str(p)
+                children.append(_bullet(f"⚠️ {text}"))
+            for n in est_notes[:15]:
+                text = n.get("content", str(n)) if isinstance(n, dict) else str(n)
+                children.append(_bullet(text))
+
+        # Competitive Advantages
+        if advantages:
+            children.append(_heading("Competitive Advantages", level=3))
+            for a in advantages[:10]:
+                text = a.get("content", str(a)) if isinstance(a, dict) else str(a)
+                children.append(_bullet(f"✅ {text}"))
+
+    else:
+        # No deep scan — fall back to knowledge notes / description
+        notes = lead.get("knowledge_notes") or lead.get("description") or ""
+        if notes:
+            notes_clean = _re.sub(r'<[^>]+>', '', notes).strip()[:1900]
+            if notes_clean:
+                children.append(_txt_block(notes_clean))
 
     # --- Create the Notion page ---
     payload = {
