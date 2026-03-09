@@ -629,9 +629,13 @@ async def send_lead_to_notion(lead_id: str):
                 if results:
                     lat = float(results[0]["lat"])
                     lon = float(results[0]["lon"])
-                    # query is the human-readable address shown in Notion
+                    # Use Nominatim display_name as query — it's a clean formatted
+                    # address string (e.g. "123 Main St, Boston, MA, USA") that
+                    # Notion shows as the label for the place field
+                    display_name = results[0].get("display_name") or address
+                    logger.info(f"Notion place: query='{display_name[:80]}' lat={lat} lon={lon}")
                     properties["Project Address"] = {
-                        "place": {"lat": lat, "lon": lon, "query": address[:500]}
+                        "place": {"lat": lat, "lon": lon, "query": display_name[:500]}
                     }
         except Exception as geo_err:
             logger.warning(f"Geocoding failed for '{address}': {geo_err}")
