@@ -1047,6 +1047,20 @@ export default function LeadDashboard() {
                 <ChevronDown size={14} className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
                 Advanced
               </button>
+              <div className="flex items-center gap-1 bg-slate-800 rounded-lg px-2 py-1" title="AI model for scanning">
+                <Brain size={14} className="text-violet-400 flex-shrink-0" />
+                <select
+                  value={scraperSettings.gemini_model || 'gemini-2.5-flash'}
+                  onChange={(e) => saveSettings({ ...scraperSettings, gemini_model: e.target.value })}
+                  className="bg-transparent text-slate-300 text-xs focus:outline-none cursor-pointer"
+                >
+                  <option value="gemini-2.5-flash">2.5 Flash</option>
+                  <option value="gemini-2.5-pro-preview">2.5 Pro</option>
+                  <option value="gemini-2.0-flash">2.0 Flash</option>
+                  <option value="gemini-1.5-pro">1.5 Pro</option>
+                  <option value="gemini-1.5-flash">1.5 Flash</option>
+                </select>
+              </div>
               <div className="relative">
                 <button onClick={() => setShowUtilityMenu(!showUtilityMenu)} className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition" title="More options"><Settings size={18} /></button>
                 {showUtilityMenu && (
