@@ -2000,7 +2000,7 @@ def run_deep_scan(lead_id):
         from backend.services.scheduler import get_scraper_settings as _get_settings
         preferred_model = _get_settings().get("gemini_model") or os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
     except Exception:
-        preferred_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        preferred_model = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
     if preferred_model != analyzer.current_model:
         analyzer.update_model(preferred_model)
         logger.info(f"Deep scan: using model {preferred_model}")
