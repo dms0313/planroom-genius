@@ -1080,6 +1080,8 @@ export default function LeadDashboard() {
             showHidden={showHidden}
             setShowHidden={setShowHidden}
             openPointToFile={openPointToFile}
+            notionStatus={notionStatus}
+            sendToNotion={sendToNotion}
           />
         </div>
 
@@ -1940,7 +1942,8 @@ const LeadTable = ({
   triggerKnowledgeScan, knowledgeScanning, triggerSingleScan, scanningIds,
   toggleLeadStyle, openEditModal, deleteLead, setCompanyPopup,
   setDescriptionPopup, API_BASE, sortConfig, setSortConfig,
-  searchQuery, setSearchQuery, showHidden, setShowHidden, openPointToFile
+  searchQuery, setSearchQuery, showHidden, setShowHidden, openPointToFile,
+  notionStatus, sendToNotion
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedLeadId, setExpandedLeadId] = useState(null);
