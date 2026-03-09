@@ -350,7 +350,7 @@ export default function LeadDashboard() {
     loydbuildsbetter: true,
     buildingconnected: true,
     use_gdrive: true,
-    gemini_model: 'gemini-2.5-flash'
+    gemini_model: 'gemini-3.1-pro-preview'
   });
 
   // Console monitor state
@@ -1054,11 +1054,9 @@ export default function LeadDashboard() {
                   onChange={(e) => saveSettings({ ...scraperSettings, gemini_model: e.target.value })}
                   className="bg-transparent text-slate-300 text-xs focus:outline-none cursor-pointer"
                 >
-                  <option value="gemini-2.5-flash">2.5 Flash</option>
-                  <option value="gemini-2.5-pro-preview">2.5 Pro</option>
-                  <option value="gemini-2.0-flash">2.0 Flash</option>
-                  <option value="gemini-1.5-pro">1.5 Pro</option>
-                  <option value="gemini-1.5-flash">1.5 Flash</option>
+                  <option value="gemini-3.1-pro-preview">3.1 Pro Preview</option>
+                  <option value="gemini-3-flash-preview">3 Flash Preview</option>
+                  <option value="gemini-pro-latest">Pro Latest</option>
                 </select>
               </div>
               <div className="relative">
@@ -1877,18 +1875,16 @@ export default function LeadDashboard() {
                       <span className="text-gray-500 text-xs">Used for AI/deep scans</span>
                     </div>
                     <select
-                      value={scraperSettings.gemini_model || 'gemini-2.5-flash'}
+                      value={scraperSettings.gemini_model || 'gemini-3.1-pro-preview'}
                       onChange={(e) => {
                         const newSettings = { ...scraperSettings, gemini_model: e.target.value };
                         saveSettings(newSettings);
                       }}
                       className="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (fast, free tier)</option>
-                      <option value="gemini-2.5-pro-preview">Gemini 2.5 Pro Preview (best quality)</option>
-                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                      <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
+                      <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
+                      <option value="gemini-pro-latest">Gemini Pro Latest</option>
                     </select>
                   </div>
                 </div>

@@ -106,7 +106,7 @@ DEFAULT_SETTINGS = {
     "buildingconnected": True,
     "isqft": True,
     "use_gdrive": True,
-    "gemini_model": "gemini-2.5-flash"
+    "gemini_model": "gemini-3.1-pro-preview"
 }
 
 def load_settings():
