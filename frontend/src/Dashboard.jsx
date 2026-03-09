@@ -185,35 +185,56 @@ const badgeHover = (badge, lead) => {
   return badge;
 };
 
-// Predefined project tags — fixed set manually assigned by user
+// Predefined project tags — fixed set. Users may only assign tags from this list.
 const PREDEFINED_TAGS = [
-  // Condition / compliance / scope tags
-  { id: 'MODIFY',       label: 'MODIFY',       color: 'yellow',   hint: 'Existing system to remain',                                    group: 'tags' },
-  { id: 'NO SPRNK',     label: 'NO SPRNK',     color: 'red',      hint: 'No sprinkler per code definitions page',                       group: 'tags' },
-  { id: 'DEAL BREAKER', label: 'DEAL BREAKER', color: 'red',      hint: 'Deal breaker — review before bidding',                         group: 'tags' },
-  { id: 'NEW SYSTEM',   label: 'NEW SYSTEM',   color: 'green',    hint: 'New fire alarm system installation',                           group: 'tags' },
-  { id: 'BABA',         label: 'BABA',         color: 'orange',   hint: 'Buy American Build American required',                         group: 'tags' },
-  { id: 'DAVIS BACON',  label: 'DAVIS BACON',  color: 'orange',   hint: 'Prevailing wage / Davis-Bacon required',                      group: 'tags' },
-  { id: 'BDA ERRC',     label: 'BDA ERRC',     color: 'orange',   hint: 'BDA / ERRC system required',                                  group: 'tags' },
-  { id: 'PHASED',       label: 'PHASED',       color: 'yellow',   hint: 'Phased construction schedule',                                group: 'tags' },
-  { id: 'DISCREPENCY',  label: 'DISCREPENCY',  color: 'red',      hint: 'Plan discrepancy found — needs clarification',                group: 'tags' },
-  { id: 'VOICE',        label: 'VOICE',        color: 'yellow',   hint: 'Voice evacuation / mass notification required',               group: 'tags' },
-  { id: 'NICET',        label: 'NICET',        color: 'yellow',   hint: 'NICET certification required',                                group: 'tags' },
-  { id: 'NETWORK',      label: 'NETWORK',      color: 'yellow',   hint: 'System to be connected to a network',                        group: 'tags' },
-  { id: 'NO FA',        label: 'NO FA',        color: 'red',      hint: 'No fire alarm scope in this project',                        group: 'tags' },
-  { id: 'HIGH LABOR',   label: 'HIGH LABOR',   color: 'red',      hint: 'High labor content',                                         group: 'tags' },
-  { id: 'DESIGN BUILD', label: 'DESIGN BUILD', color: 'yellow',   hint: 'Design-build delivery method',                               group: 'tags' },
-  { id: 'COMP MFG',     label: 'COMP MFG',     color: 'green',    hint: 'Compatible manufacturer (Gamewell-FCI, FireLite, Silent Knight)', group: 'tags' },
-  { id: 'REQ MFR',      label: 'REQ MFR',      color: 'red',      hint: 'Required manufacturer specified in specs',                   group: 'tags' },
-  { id: 'REQ VENDOR',   label: 'REQ VENDOR',   color: 'glow-red', hint: 'Required vendor specified in specs',                         group: 'tags' },
-  // Location / building type tags
-  { id: 'WAREHOUSE',    label: 'WAREHOUSE',    color: 'location', hint: 'Warehouse / distribution facility',                          group: 'location' },
-  { id: 'EDUCATION',    label: 'EDUCATION',    color: 'location', hint: 'School / university / educational facility',                 group: 'location' },
-  { id: 'HOTEL',        label: 'HOTEL',        color: 'location', hint: 'Hotel / hospitality',                                        group: 'location' },
-  { id: 'APARTMENTS',   label: 'APARTMENTS',   color: 'location', hint: 'Residential apartments / multi-family',                      group: 'location' },
-  { id: 'HOSPITAL',     label: 'HOSPITAL',     color: 'location', hint: 'Hospital / medical center',                                  group: 'location' },
-  { id: 'CLINIC',       label: 'CLINIC',       color: 'location', hint: 'Medical or dental clinic',                                   group: 'location' },
-  { id: 'OFFICE',       label: 'OFFICE',       color: 'location', hint: 'Office building',                                            group: 'location' },
+  // ── SCOPE ──────────────────────────────────────────────────────────────────
+  { id: 'NEW SYSTEM',    label: 'NEW SYSTEM',    color: 'green',    hint: 'New fire alarm system installation',                              group: 'scope' },
+  { id: 'MODIFY',        label: 'MODIFY',        color: 'yellow',   hint: 'Existing system to remain / modify',                             group: 'scope' },
+  { id: 'NO FA',         label: 'NO FA',         color: 'red',      hint: 'No fire alarm scope in this project',                            group: 'scope' },
+  { id: 'VOICE',         label: 'VOICE',         color: 'yellow',   hint: 'Voice evacuation / mass notification required',                  group: 'scope' },
+  { id: 'BDA ERRC',      label: 'BDA ERRC',      color: 'orange',   hint: 'BDA / ERRC system required',                                     group: 'scope' },
+  { id: 'NO SPRNK',      label: 'NO SPRNK',      color: 'red',      hint: 'No sprinkler per code definitions page',                         group: 'scope' },
+  { id: 'NETWORK',       label: 'NETWORK',       color: 'yellow',   hint: 'System to be connected to a network',                            group: 'scope' },
+  { id: 'COMP MFG',      label: 'COMP MFG',      color: 'green',    hint: 'Compatible manufacturer on file (Gamewell-FCI / FireLite / SK)', group: 'scope' },
+  { id: 'REQ MFR',       label: 'REQ MFR',       color: 'red',      hint: 'Required manufacturer specified in specs',                       group: 'scope' },
+  { id: 'REQ VENDOR',    label: 'REQ VENDOR',    color: 'glow-red', hint: 'Required vendor / sole-source specified in specs',               group: 'scope' },
+  // ── FLAGS ──────────────────────────────────────────────────────────────────
+  { id: 'DEAL BREAKER',  label: 'DEAL BREAKER',  color: 'red',      hint: 'Deal breaker — review before bidding',                           group: 'flags' },
+  { id: 'DISCREPENCY',   label: 'DISCREPENCY',   color: 'red',      hint: 'Plan discrepancy found — needs clarification',                   group: 'flags' },
+  { id: 'HIGH LABOR',    label: 'HIGH LABOR',    color: 'red',      hint: 'High labor content / difficult install',                         group: 'flags' },
+  { id: 'NEED DOCS',     label: 'NEED DOCS',     color: 'red',      hint: 'Waiting for plans or bid documents',                             group: 'flags' },
+  { id: 'BABA',          label: 'BABA',          color: 'orange',   hint: 'Buy American Build American required',                           group: 'flags' },
+  { id: 'DAVIS BACON',   label: 'DAVIS BACON',   color: 'orange',   hint: 'Prevailing wage / Davis-Bacon required',                         group: 'flags' },
+  { id: 'BID BOND',      label: 'BID BOND',      color: 'orange',   hint: 'Bid bond required',                                              group: 'flags' },
+  { id: 'NICET',         label: 'NICET',         color: 'orange',   hint: 'NICET certification required',                                   group: 'flags' },
+  { id: 'TAX EXEMPT',    label: 'TAX EXEMPT',    color: 'yellow',   hint: 'Tax exempt project',                                             group: 'flags' },
+  { id: 'PHASED',        label: 'PHASED',        color: 'yellow',   hint: 'Phased construction schedule',                                   group: 'flags' },
+  { id: 'DESIGN BUILD',  label: 'DESIGN BUILD',  color: 'yellow',   hint: 'Design-build / delegated design delivery',                       group: 'flags' },
+  // ── CONSTRUCTION TYPE ──────────────────────────────────────────────────────
+  { id: 'NEW CONST',     label: 'NEW CONST',     color: 'green',    hint: 'New construction build',                                         group: 'construction' },
+  { id: 'TI',            label: 'TI',            color: 'yellow',   hint: 'Tenant improvement / renovation',                                group: 'construction' },
+  { id: 'REMODEL',       label: 'REMODEL',       color: 'yellow',   hint: 'Remodel or renovation of existing space',                        group: 'construction' },
+  { id: 'NEW PANEL',     label: 'NEW PANEL',     color: 'orange',   hint: 'New fire panel only — parts & smarts',                           group: 'construction' },
+  // ── PROJECT TYPE ──────────────────────────────────────────────────────────
+  { id: 'INSTALL',       label: 'INSTALL',       color: 'green',    hint: 'Full labor & material installation',                             group: 'projtype' },
+  { id: 'PARTS SMARTS',  label: 'PARTS & SMARTS',color: 'yellow',   hint: 'Parts & smarts — supply only, no install labor',                group: 'projtype' },
+  // ── BUILDING TYPE ─────────────────────────────────────────────────────────
+  { id: 'WAREHOUSE',     label: 'WAREHOUSE',     color: 'location', hint: 'Warehouse / distribution facility',                              group: 'location' },
+  { id: 'INDUSTRIAL',    label: 'INDUSTRIAL',    color: 'location', hint: 'Industrial / manufacturing facility',                            group: 'location' },
+  { id: 'EDUCATION',     label: 'EDUCATION',     color: 'location', hint: 'School / university / educational facility',                     group: 'location' },
+  { id: 'HOTEL',         label: 'HOTEL',         color: 'location', hint: 'Hotel / hospitality',                                            group: 'location' },
+  { id: 'APARTMENTS',    label: 'APARTMENTS',    color: 'location', hint: 'Residential apartments / multi-family',                          group: 'location' },
+  { id: 'ASST LIVING',   label: 'ASST LIVING',   color: 'location', hint: 'Assisted living / senior care facility',                         group: 'location' },
+  { id: 'HOSPITAL',      label: 'HOSPITAL',      color: 'location', hint: 'Hospital / medical center',                                      group: 'location' },
+  { id: 'CLINIC',        label: 'CLINIC',        color: 'location', hint: 'Medical or dental clinic',                                       group: 'location' },
+  { id: 'OFFICE',        label: 'OFFICE',        color: 'location', hint: 'Office building',                                                group: 'location' },
+  { id: 'RETAIL',        label: 'RETAIL',        color: 'location', hint: 'Retail store / shopping center',                                 group: 'location' },
+  { id: 'GOVT',          label: 'GOVT',          color: 'location', hint: 'Government / municipal / public building',                       group: 'location' },
+  { id: 'CHURCH',        label: 'CHURCH',        color: 'location', hint: 'Church / religious facility',                                    group: 'location' },
+  // ── WORKFLOW ──────────────────────────────────────────────────────────────
+  { id: 'QUOTING',       label: 'QUOTING',       color: 'green',    hint: 'Currently being priced / quoted',                                group: 'workflow' },
+  { id: 'FOLLOW UP',     label: 'FOLLOW UP',     color: 'yellow',   hint: 'Needs follow-up with GC or owner',                               group: 'workflow' },
+  { id: 'PASS',          label: 'PASS',          color: 'red',      hint: 'Decided to pass — not bidding',                                  group: 'workflow' },
 ];
 
 const tagColorClass = (color) => {
@@ -226,13 +247,27 @@ const tagColorClass = (color) => {
   return 'bg-slate-700/50 text-slate-300 border-slate-600';
 };
 
-// Normalize old knowledge badge names → predefined tag IDs
+// Normalize AI-generated badge names → predefined tag IDs (null = discard)
 const normalizeBadge = (badge) => {
   const b = badge.toUpperCase().trim();
+  // Scope
   if (b === 'MOD' || b === 'MODIFICATION' || b === 'EXISTING' || b === 'EXISTING SYSTEM') return 'MODIFY';
-  if (b === 'COMPAT MFR' || b === 'COMPATIBLE MFR') return 'COMP MFG';
-  if (b === 'NO SPRINK' || b === 'NON-SPRINKLED' || b === 'NO SPRNK') return 'NO SPRNK';
+  if (b === 'NEW SYSTEM' || b === 'NEW FA' || b === 'NEW FIRE ALARM') return 'NEW SYSTEM';
+  if (b === 'NO SPRINK' || b === 'NON-SPRINKLED' || b === 'NO SPRNK' || b === 'NOT SPRINKLERED') return 'NO SPRNK';
+  if (b === 'COMPAT MFR' || b === 'COMPATIBLE MFR' || b === 'COMP MFG') return 'COMP MFG';
+  if (b === 'REQ MFR' || b === 'REQUIRED MFR' || b === 'REQUIRED MANUFACTURER') return 'REQ MFR';
+  if (b === 'REQ VENDOR' || b === 'REQUIRED VENDOR' || b === 'SOLE SOURCE') return 'REQ VENDOR';
+  if (b === 'BDA' || b === 'ERRC' || b === 'BDA/ERRC') return 'BDA ERRC';
+  // Flags
   if (b === 'INCOMPAT MFR' || b === 'INCOMPATIBLE MFR' || b === 'MONITORING' || b === 'ACCESS CTRL') return null;
+  if (b === 'DEAL-BREAKER' || b === 'DEALBREAKER') return 'DEAL BREAKER';
+  if (b === 'DESIGN-BUILD' || b === 'DELEGATED DESIGN') return 'DESIGN BUILD';
+  if (b === 'PREVAILING WAGE' || b === 'DAVIS-BACON') return 'DAVIS BACON';
+  // Construction type
+  if (b === 'NEW CONSTRUCTION' || b === 'GROUND UP' || b === 'NEW BUILD') return 'NEW CONST';
+  if (b === 'TENANT IMPROVEMENT' || b === 'TENANT IMPROVEMENTS' || b === 'T.I.' || b === 'T.I') return 'TI';
+  if (b === 'RENOVATION' || b === 'RENO') return 'REMODEL';
+  if (b === 'NEW FIRE PANEL' || b === 'PANEL REPLACEMENT' || b === 'PANEL ONLY') return 'NEW PANEL';
   const valid = PREDEFINED_TAGS.find(t => t.id === b);
   return valid ? valid.id : null;
 };
@@ -244,6 +279,8 @@ const mapRiskFlagToTag = (flag) => {
   if (/buy.?american|baba\b|build.?america|\bais\b/.test(f)) return 'BABA';
   if (/\bbda\b|\berrc\b/.test(f)) return 'BDA ERRC';
   if (/nicet/.test(f)) return 'NICET';
+  if (/bid.?bond/.test(f)) return 'BID BOND';
+  if (/tax.?exempt/.test(f)) return 'TAX EXEMPT';
   if (/design.?build|delegated.?design/.test(f)) return 'DESIGN BUILD';
   if (/discrepan/.test(f)) return 'DISCREPENCY';
   if (/high.?labor/.test(f)) return 'HIGH LABOR';
@@ -251,6 +288,12 @@ const mapRiskFlagToTag = (flag) => {
   if (/voice.?evac/.test(f)) return 'VOICE';
   if (/\bnetwork\b/.test(f)) return 'NETWORK';
   if (/no.?fa\b|no fire alarm/.test(f)) return 'NO FA';
+  if (/sole.?source|required.?vendor/.test(f)) return 'REQ VENDOR';
+  if (/required.?mfr|required.?manufacturer|sole.?brand/.test(f)) return 'REQ MFR';
+  if (/new.?const|ground.?up|new.?build/.test(f)) return 'NEW CONST';
+  if (/tenant.?improv|\bT\.?I\b/.test(f)) return 'TI';
+  if (/remodel|renovati/.test(f)) return 'REMODEL';
+  if (/need.?doc|missing.?plan|no.?plan/.test(f)) return 'NEED DOCS';
   return null;
 };
 
@@ -2097,25 +2140,24 @@ const LeadTable = ({
           </div>
         )}
         {/* Tag filter bar */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0 font-semibold">Tags:</span>
-          {PREDEFINED_TAGS.filter(t => t.group === 'tags').map(tag => (
-            <button
-              key={tag.id}
-              onClick={() => setActiveTagFilters(prev => prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id])}
-              title={tag.hint}
-              className={`text-[10px] px-2 py-0.5 rounded border transition-all ${activeTagFilters.includes(tag.id) ? tagColorClass(tag.color) : 'bg-transparent text-slate-600 border-slate-700/50 hover:border-slate-500 hover:text-slate-400'}`}
-            >{tag.label}</button>
-          ))}
-          <span className="text-[10px] text-slate-600 px-1">|</span>
-          {PREDEFINED_TAGS.filter(t => t.group === 'location').map(tag => (
-            <button
-              key={tag.id}
-              onClick={() => setActiveTagFilters(prev => prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id])}
-              title={tag.hint}
-              className={`text-[10px] px-2 py-0.5 rounded border transition-all ${activeTagFilters.includes(tag.id) ? tagColorClass(tag.color) : 'bg-transparent text-slate-600 border-slate-700/50 hover:border-slate-500 hover:text-slate-400'}`}
-            >{tag.label}</button>
-          ))}
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0 font-semibold mr-0.5">Filter:</span>
+          {['scope','flags','construction','projtype','location','workflow'].map((grp, gi) => {
+            const tags = PREDEFINED_TAGS.filter(t => t.group === grp);
+            return (
+              <React.Fragment key={grp}>
+                {gi > 0 && <span className="text-[10px] text-slate-700 px-0.5">|</span>}
+                {tags.map(tag => (
+                  <button
+                    key={tag.id}
+                    onClick={() => setActiveTagFilters(prev => prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id])}
+                    title={tag.hint}
+                    className={`text-[10px] px-2 py-0.5 rounded border transition-all ${activeTagFilters.includes(tag.id) ? tagColorClass(tag.color) : 'bg-transparent text-slate-600 border-slate-700/50 hover:border-slate-500 hover:text-slate-400'}`}
+                  >{tag.label}</button>
+                ))}
+              </React.Fragment>
+            );
+          })}
           {activeTagFilters.length > 0 && (
             <button onClick={() => setActiveTagFilters([])} className="text-[10px] px-1.5 py-0.5 text-slate-500 hover:text-red-400 transition-colors ml-1">× clear</button>
           )}
@@ -2608,44 +2650,44 @@ const LeadTable = ({
     {tagPicker && (() => {
       const pickerLead = visibleData.find(l => l.id === tagPicker.leadId) || data.find(l => l.id === tagPicker.leadId);
       if (!pickerLead) return null;
+      const TagGroup = ({ label, group }) => {
+        const tags = PREDEFINED_TAGS.filter(t => t.group === group);
+        if (!tags.length) return null;
+        return (
+          <div className="mb-2.5">
+            <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">{label}</div>
+            <div className="flex flex-wrap gap-1">
+              {tags.map(tag => {
+                const active = pickerLead.tags?.some(t => t.label === tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    onClick={async () => { await toggleLeadTag(pickerLead, tag.id); }}
+                    title={tag.hint}
+                    className={`text-[10px] px-2 py-0.5 rounded border transition-all ${active ? tagColorClass(tag.color) + ' font-semibold' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-200'}`}
+                  >{active ? '✓ ' : ''}{tag.label}</button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      };
       return (
         <div
           style={{ position: 'fixed', top: tagPicker.top, left: tagPicker.left, zIndex: 9999 }}
-          className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 w-72"
+          className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 w-80 max-h-[80vh] overflow-y-auto"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Assign Tags</span>
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-[11px] text-slate-300 font-semibold">Assign Tags</span>
             <button onClick={() => setTagPicker(null)} className="text-slate-600 hover:text-slate-300 transition-colors"><X size={12} /></button>
           </div>
-          <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1.5 font-semibold">Project</div>
-          <div className="flex flex-wrap gap-1 mb-3">
-            {PREDEFINED_TAGS.filter(t => t.group === 'tags').map(tag => {
-              const active = pickerLead.tags?.some(t => t.label === tag.id);
-              return (
-                <button
-                  key={tag.id}
-                  onClick={async () => { await toggleLeadTag(pickerLead, tag.id); }}
-                  title={tag.hint}
-                  className={`text-[10px] px-2 py-0.5 rounded border transition-all ${active ? tagColorClass(tag.color) + ' font-semibold' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-200'}`}
-                >{active ? '✓ ' : ''}{tag.label}</button>
-              );
-            })}
-          </div>
-          <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1.5 font-semibold">Location</div>
-          <div className="flex flex-wrap gap-1">
-            {PREDEFINED_TAGS.filter(t => t.group === 'location').map(tag => {
-              const active = pickerLead.tags?.some(t => t.label === tag.id);
-              return (
-                <button
-                  key={tag.id}
-                  onClick={async () => { await toggleLeadTag(pickerLead, tag.id); }}
-                  title={tag.hint}
-                  className={`text-[10px] px-2 py-0.5 rounded border transition-all ${active ? tagColorClass(tag.color) + ' font-semibold' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-200'}`}
-                >{active ? '✓ ' : ''}{tag.label}</button>
-              );
-            })}
-          </div>
+          <TagGroup label="Scope" group="scope" />
+          <TagGroup label="Flags / Requirements" group="flags" />
+          <TagGroup label="Construction Type" group="construction" />
+          <TagGroup label="Project Type" group="projtype" />
+          <TagGroup label="Building Type" group="location" />
+          <TagGroup label="Workflow" group="workflow" />
         </div>
       );
     })()}
