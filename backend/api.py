@@ -546,12 +546,13 @@ def _match_special_requirements(lead: dict):
     return list(matched)
 
 
-def _search_company_in_notion(company_name: str):
-    """Search the Notion Companies database for a matching company by name."""
+def _get_or_create_company_in_notion(company_name: str) -> str | None:
+    """Find company in Notion Companies DB, creating it if not found."""
     import requests as req
     if not company_name or company_name in ("N/A", ""):
         return None
     try:
+        # Search first
         resp = req.post(
             f"{NOTION_API_BASE}/databases/{NOTION_COMPANY_DB_ID}/query",
             headers=_notion_headers(),
@@ -568,8 +569,26 @@ def _search_company_in_notion(company_name: str):
             results = resp.json().get("results", [])
             if results:
                 return results[0]["id"]
+        # Not found — create it
+        create_resp = req.post(
+            f"{NOTION_API_BASE}/pages",
+            headers=_notion_headers(),
+            json={
+                "parent": {"database_id": NOTION_COMPANY_DB_ID},
+                "properties": {
+                    "Company Name": {"title": [{"text": {"content": company_name[:2000]}}]}
+                },
+            },
+            timeout=10,
+        )
+        if create_resp.status_code in (200, 201):
+            page_id = create_resp.json().get("id")
+            logger.info(f"Created Notion company: {company_name} → {page_id}")
+            return page_id
+        else:
+            logger.warning(f"Failed to create company in Notion: {create_resp.text[:200]}")
     except Exception as e:
-        logger.warning(f"Company search in Notion failed: {e}")
+        logger.warning(f"Company lookup/create in Notion failed: {e}")
     return None
 
 
@@ -621,11 +640,28 @@ async def send_lead_to_notion(lead_id: str):
             "rich_text": [{"type": "text", "text": {"content": address[:2000]}}]
         }
 
-    # Company (relation)
+    # Company (relation — find or auto-create)
     company_name = lead.get("company") or lead.get("gc") or ""
-    company_page_id = _search_company_in_notion(company_name)
+    company_page_id = _get_or_create_company_in_notion(company_name)
     if company_page_id:
         properties["Company"] = {"relation": [{"id": company_page_id}]}
+
+    # Contact fields — send as direct properties
+    contact_name = lead.get("contact_name") or ""
+    contact_phone = lead.get("contact_phone") or ""
+    contact_email = lead.get("contact_email") or ""
+    if contact_name and contact_name not in ("N/A", ""):
+        properties["Contact Name"] = {
+            "rich_text": [{"type": "text", "text": {"content": contact_name[:2000]}}]
+        }
+    if contact_phone and contact_phone not in ("N/A", ""):
+        properties["Phone"] = {
+            "phone_number": contact_phone[:100]
+        }
+    if contact_email and contact_email not in ("N/A", ""):
+        properties["Email"] = {
+            "email": contact_email[:500]
+        }
 
     # Building Type (select) — from takeoff_snapshot or project_type field
     snap = lead.get("takeoff_snapshot") or {}
