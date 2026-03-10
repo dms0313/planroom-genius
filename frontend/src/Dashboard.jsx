@@ -388,6 +388,13 @@ export default function LeadDashboard() {
   const [folderBrowserTarget, setFolderBrowserTarget] = useState(null); // null = edit modal mode, leadId = quick-assign mode
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [notionStatus, setNotionStatus] = useState({}); // leadId -> 'loading'|'success'|'error'
+  const [toasts, setToasts] = useState([]); // {id, message, type: 'info'|'success'|'error'}
+
+  const showToast = (message, type = 'info', duration = 4000) => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
+  };
 
 
   // Form state for add/edit
@@ -589,12 +596,15 @@ export default function LeadDashboard() {
   };
 
   const triggerSingleScan = async (leadId, thinking = false) => {
+    const lead = leads.find(l => l.id === leadId);
+    const leadName = lead?.name || `Project #${leadId}`;
     setScanningIds(prev => new Set(prev).add(leadId));
     try {
       const url = thinking
         ? `${API_BASE}/knowledge/scan/${leadId}?thinking=true`
         : `${API_BASE}/knowledge/scan/${leadId}`;
       await fetch(url, { method: 'POST' });
+      showToast(`Deep scan started: ${leadName}`, 'info');
       // Poll — thinking scans take longer
       const pollDelay = thinking ? 20000 : 5000;
       const doneDelay = thinking ? 90000 : 12000;
@@ -606,6 +616,7 @@ export default function LeadDashboard() {
           next.delete(leadId);
           return next;
         });
+        showToast(`Deep scan complete: ${leadName}`, 'success');
       }, doneDelay);
     } catch (e) {
       console.error("Failed to trigger single scan", e);
@@ -614,6 +625,7 @@ export default function LeadDashboard() {
         next.delete(leadId);
         return next;
       });
+      showToast(`Scan failed: ${leadName}`, 'error');
     }
   };
 
@@ -1019,6 +1031,23 @@ export default function LeadDashboard() {
 
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-4 md:p-8 font-sans ${showConsole && !consoleMinimized ? 'pb-96' : ''}`}>
+      {/* Toast notifications */}
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium animate-in slide-in-from-right-4 duration-300 pointer-events-auto
+              ${toast.type === 'success' ? 'bg-green-800 border border-green-600 text-green-100' :
+                toast.type === 'error' ? 'bg-red-900 border border-red-700 text-red-100' :
+                'bg-slate-800 border border-violet-600 text-slate-100'}`}
+          >
+            {toast.type === 'success' ? <CheckCircle size={15} className="text-green-400 shrink-0" /> :
+             toast.type === 'error' ? <AlertCircle size={15} className="text-red-400 shrink-0" /> :
+             <Brain size={15} className="text-violet-400 shrink-0" />}
+            {toast.message}
+          </div>
+        ))}
+      </div>
       <div className="max-w-[95vw] mx-auto">
         {/* Header */}
         <div className="mb-4 md:mb-6 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between bg-slate-900 border border-slate-800 rounded-2xl p-3">
