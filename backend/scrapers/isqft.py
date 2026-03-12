@@ -68,6 +68,7 @@ class IsqftAPIClient:
     def __init__(self, config: IsqftConfig):
         self.config = config
         self._token: str | None = None
+        self._cookies: dict = {}
         self._client: httpx.AsyncClient | None = None
 
     # -- lifecycle -----------------------------------------------------------
@@ -142,17 +143,20 @@ class IsqftAPIClient:
                 token = data.get("token", "")
                 if not token:
                     return None
+                cached_cookies = data.get("cookies", {})
                 exp = self._decode_exp(token)
                 if exp is None:
                     # Session token (e.g. ccstate) has no exp claim — use stored expires_at
                     expires_at = data.get("expires_at", 0)
                     now = datetime.now().timestamp()
                     if isinstance(expires_at, (int, float)) and expires_at > now + 300:
+                        self._cookies = cached_cookies
                         log_status("Loaded valid cached session token from disk")
                         return token
                     log_status("Cached session token has expired")
                     return None
                 if self._is_token_valid(token):
+                    self._cookies = cached_cookies
                     log_status("Loaded valid cached auth token from disk")
                     return token
                 log_status("Cached auth token has expired or is near expiry")
@@ -160,7 +164,7 @@ class IsqftAPIClient:
                 log_status(f"Could not read token file: {e}")
         return None
 
-    def _save_token(self, token: str):
+    def _save_token(self, token: str, cookies: dict | None = None):
         try:
             exp = self._decode_exp(token)
             # For session tokens without exp claim, default to 1 hour from now
@@ -170,6 +174,7 @@ class IsqftAPIClient:
                     "token": token,
                     "saved_at": datetime.now().isoformat(),
                     "expires_at": expires_at,
+                    "cookies": cookies or {},
                 }, f, indent=2)
             log_status("Saved auth token to disk")
         except Exception as e:
@@ -191,6 +196,7 @@ class IsqftAPIClient:
             return None
 
         captured_token = None
+        captured_cookies: dict = {}
 
         try:
             from playwright.async_api import async_playwright
@@ -369,8 +375,23 @@ class IsqftAPIClient:
                                         break
                         except Exception as e:
                             log_status(f"ccstate cookie extraction failed: {e}")
+
                 except Exception as e:
                     log_status(f"Login form interaction failed: {e}")
+
+            # Always capture session cookies regardless of how token was obtained
+            try:
+                all_cookies = await ctx.cookies()
+                for cookie in all_cookies:
+                    domain = cookie.get("domain", "")
+                    if "constructconnect.com" in domain or "isqft.com" in domain:
+                        captured_cookies[cookie["name"]] = cookie["value"]
+                if captured_cookies:
+                    log_status(f"Captured {len(captured_cookies)} session cookies")
+                else:
+                    log_status("Warning: no session cookies captured from browser")
+            except Exception as e:
+                log_status(f"Cookie capture failed: {e}")
 
             # Close browser
             try:
@@ -387,12 +408,12 @@ class IsqftAPIClient:
             else:
                 log_status("Failed to capture auth token from browser")
 
-            return captured_token
+            return captured_token, captured_cookies
 
         except Exception as e:
             log_status(f"Browser token capture failed: {e}")
             traceback.print_exc()
-            return None
+            return None, {}
 
     def _find_chrome_executable(self):
         """Find Chrome executable on the system."""
@@ -423,6 +444,19 @@ class IsqftAPIClient:
                 return path
         return None
 
+    def _apply_cookies(self):
+        """Push stored session cookies into the httpx client's cookie jar."""
+        if self._client and self._cookies:
+            self._client.cookies.update(self._cookies)
+            log_status(f"Applied {len(self._cookies)} session cookies to HTTP client")
+
+    def _commit_token(self, token: str, cookies: dict) -> None:
+        """Store token + cookies in memory, persist to disk, and apply to HTTP client."""
+        self._token = token
+        self._cookies = cookies
+        self._save_token(token, cookies)
+        self._apply_cookies()
+
     async def ensure_auth(self) -> bool:
         """
         Make sure we have a valid auth token.
@@ -432,13 +466,13 @@ class IsqftAPIClient:
         token = self._load_cached_token()
         if token:
             self._token = token
+            self._apply_cookies()
             return True
 
         # Obtain via browser
-        token = await self._obtain_token_via_browser()
+        token, cookies = await self._obtain_token_via_browser()
         if token:
-            self._token = token
-            self._save_token(token)
+            self._commit_token(token, cookies)
             return True
 
         log_status("Could not obtain valid auth token")
@@ -446,26 +480,54 @@ class IsqftAPIClient:
 
     # -- HTTP helpers --------------------------------------------------------
 
+    def _is_auth_redirect(self, response) -> bool:
+        """Return True if the response URL indicates we were bounced to login/logout."""
+        url = response.url
+        host = str(url.host)
+        path = str(url.path)
+        return (
+            "login.io.constructconnect.com" in host
+            or "login?sso" in str(url)
+            or path.startswith("/login")
+            or path == "/logout"
+        )
+
+    async def _reauthenticate(self) -> bool:
+        """Invalidate cached token and obtain a fresh one via browser."""
+        log_status("Session expired — invalidating cached token and re-authenticating...")
+        # Delete stale token file so _load_cached_token won't pick it up again
+        if os.path.exists(self.config.TOKEN_FILE):
+            try:
+                os.remove(self.config.TOKEN_FILE)
+            except OSError:
+                pass
+        token, cookies = await self._obtain_token_via_browser()
+        if token:
+            self._commit_token(token, cookies)
+            return True
+        log_status("Re-authentication failed")
+        return False
+
     async def _request(self, method, url, **kwargs):
         """
         Make an HTTP request with retry logic and automatic token refresh.
         Retries up to 3 times with exponential backoff.
-        Re-authenticates on 401.
+        Re-authenticates on 401 or redirect-to-login (server-side session expiry).
         Respects Retry-After header on 429.
         """
+        reauthed = False
         for attempt in range(3):
             try:
                 r = await self._client.request(
                     method, url, headers=self._headers(), **kwargs
                 )
 
-                # Token expired mid-run
-                if r.status_code == 401 and attempt < 2:
-                    log_status("Got 401 — refreshing auth token...")
-                    token = await self._obtain_token_via_browser()
-                    if token:
-                        self._token = token
-                        self._save_token(token)
+                # Re-authenticate on redirect-to-login or explicit 401
+                if not reauthed and (self._is_auth_redirect(r) or r.status_code == 401):
+                    reason = f"redirect to {r.url}" if self._is_auth_redirect(r) else "401"
+                    log_status(f"Auth failure ({reason}) — re-authenticating...")
+                    if await self._reauthenticate():
+                        reauthed = True
                         continue
                     return None
 
@@ -482,6 +544,12 @@ class IsqftAPIClient:
                     if attempt < 2:
                         await asyncio.sleep(2 ** attempt)
                         continue
+                    return None
+
+                content_type = r.headers.get("content-type", "")
+                if "json" not in content_type:
+                    body_preview = r.text[:200] if r.text else "(empty)"
+                    log_status(f"Non-JSON response ({content_type}) for {method} {url}: {body_preview}")
                     return None
 
                 return r.json()

@@ -14,9 +14,13 @@ cd "$SCRIPT_DIR"
 echo -e "${BLUE}=========================================${NC}"
 echo -e "${BLUE}     Planroom Genius - Manual Login      ${NC}"
 echo -e "${BLUE}=========================================${NC}"
-echo -e "${YELLOW}This will open a browser window.${NC}"
-echo -e "${YELLOW}Please Login to BuildingConnected and PlanHub.${NC}"
-echo -e "${YELLOW}Press Enter in this terminal when finished.${NC}"
+echo ""
+echo -e "${YELLOW}Select login mode:${NC}"
+echo "  1) All planrooms (BuildingConnected, PlanHub, Bidplanroom, Loyd)"
+echo "  2) iSqFt (captures JWT token)"
+echo "  3) Both"
+echo ""
+read -rp "Enter choice [1-3]: " CHOICE
 echo ""
 
 # Define backend directory relative to this script
@@ -31,7 +35,23 @@ fi
 cd "$BACKEND_DIR"
 source venv/bin/activate
 
-# Run the python script (HEADLESS=False is enforced by the script itself)
-python3 manual_login.py
+# Run the python script(s) based on choice
+case "$CHOICE" in
+    1)
+        python3 manual_login.py
+        ;;
+    2)
+        python3 manual_login.py --isqft
+        ;;
+    3)
+        python3 manual_login.py
+        echo ""
+        python3 manual_login.py --isqft
+        ;;
+    *)
+        echo -e "${YELLOW}Invalid choice. Running all planrooms by default.${NC}"
+        python3 manual_login.py
+        ;;
+esac
 
 echo -e "${GREEN}Session saved! You can now run ./start_pi.sh${NC}"

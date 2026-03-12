@@ -1876,6 +1876,12 @@ def ask_project_question(lead_id, question):
     if not project_images:
         return None, "Could not extract any relevant pages from project files."
 
+    # Cap pages to avoid unbounded Gemini payload cost
+    _QA_MAX_PAGES = 15
+    if len(project_images) > _QA_MAX_PAGES:
+        logger.info(f"Q&A: capping {len(project_images)} pages to {_QA_MAX_PAGES}")
+        project_images = project_images[:_QA_MAX_PAGES]
+
     # Call Gemini with Q&A prompt
     api_key = os.getenv("GEMINI_API_KEY_PLANROOM_GENIUS", "").strip()
     if not api_key:
@@ -1932,41 +1938,54 @@ def ask_project_question(lead_id, question):
         "generationConfig": {"temperature": 0.1},
     }
 
-    models = ["gemini-3-pro-preview", "gemini-2.5-flash"]
+    models = ["gemini-3.1-pro-preview", "gemini-2.5-flash"]
     base_url = "https://generativelanguage.googleapis.com/v1beta/models"
+    max_retries = 3
+    base_delay = 2.0
 
     for model in models:
         url = f"{base_url}/{model}:generateContent"
-        try:
-            res = req.post(url, params={"key": api_key}, json=payload, timeout=120)
-            res.raise_for_status()
-            data = res.json()
-            if "candidates" in data and data["candidates"]:
-                answer = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                logger.info(f"Q&A answered using {model} for lead {lead_id}")
+        for attempt in range(max_retries):
+            try:
+                res = req.post(url, params={"key": api_key}, json=payload, timeout=180)
+                res.raise_for_status()
+                data = res.json()
+                if "candidates" in data and data["candidates"]:
+                    answer = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    logger.info(f"Q&A answered using {model} for lead {lead_id}")
 
-                # Save to lead's qa_history
-                qa_entry = {
-                    "question": question,
-                    "answer": answer,
-                    "timestamp": datetime.now().isoformat(),
-                }
-                if "qa_history" not in lead or not isinstance(lead.get("qa_history"), list):
-                    lead["qa_history"] = []
-                lead["qa_history"].insert(0, qa_entry)
-                direct_save_leads(leads)
+                    # Save to lead's qa_history (cap at 50 entries)
+                    qa_entry = {
+                        "question": question,
+                        "answer": answer,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    if "qa_history" not in lead or not isinstance(lead.get("qa_history"), list):
+                        lead["qa_history"] = []
+                    lead["qa_history"].insert(0, qa_entry)
+                    lead["qa_history"] = lead["qa_history"][:50]
+                    direct_save_leads(leads)
 
-                return answer, None
-        except req.exceptions.HTTPError as e:
-            status_code = e.response.status_code if e.response is not None else 0
-            if status_code in (429, 404):
-                logger.warning(f"Q&A: {model} returned {status_code}, trying next model")
+                    return answer, None
+            except req.exceptions.HTTPError as e:
+                status_code = e.response.status_code if e.response is not None else 0
+                if status_code == 429:
+                    response_text = e.response.text[:200] if e.response is not None else ""
+                    if "quota" in response_text.lower():
+                        logger.warning(f"Q&A: {model} quota exhausted, trying next model")
+                        break
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"Q&A: {model} 429, retrying in {delay:.1f}s... (attempt {attempt+1}/{max_retries})")
+                    time.sleep(delay)
+                    continue
+                elif status_code == 404:
+                    logger.warning(f"Q&A: {model} not available (404), trying next model")
+                    break
+                logger.error(f"Q&A Gemini HTTP error: {e}")
+                return None, f"AI service error (HTTP {status_code})"
+            except Exception as e:
+                logger.error(f"Q&A Gemini call failed ({model}): {e}")
                 continue
-            logger.error(f"Q&A Gemini HTTP error: {e}")
-            return None, f"AI service error (HTTP {status_code})"
-        except Exception as e:
-            logger.error(f"Q&A Gemini call failed ({model}): {e}")
-            continue
 
     return None, "AI service unavailable. Please try again later."
 
