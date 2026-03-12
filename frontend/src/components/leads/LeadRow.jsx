@@ -126,7 +126,6 @@ const LeadRow = ({
 }) => {
   const expired = isExpired(lead.bid_date);
   const highlightClass = getHighlightBg(lead.highlight);
-  const strikeClass = lead.strikethrough ? 'opacity-50' : '';
   const hiddenClass = lead.hidden ? 'opacity-30 grayscale' : '';
 
   // Bid date colour
@@ -153,11 +152,43 @@ const LeadRow = ({
 
   const ns = notionStatus?.[lead.id];
 
+  // ── Compact row for strikethrough (already sent) ─────────────────────────
+  if (lead.strikethrough) {
+    return (
+      <React.Fragment>
+        <tr className="transition group opacity-35 hover:opacity-60">
+          {/* Status dots */}
+          <td className="px-2 py-0.5">
+            <div className="flex gap-0.5">
+              <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700 hover:bg-green-600'}`} title="Green"><Circle size={6} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
+              <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'yellow' ? null : 'yellow')} className={`p-1 rounded ${lead.highlight === 'yellow' ? 'bg-yellow-600' : 'bg-slate-700 hover:bg-yellow-600'}`} title="Yellow"><Circle size={6} className="text-yellow-400" fill={lead.highlight === 'yellow' ? 'currentColor' : 'none'} /></button>
+              <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'red' ? null : 'red')} className={`p-1 rounded ${lead.highlight === 'red' ? 'bg-red-600' : 'bg-slate-700 hover:bg-red-600'}`} title="Red"><Circle size={6} className="text-red-400" fill={lead.highlight === 'red' ? 'currentColor' : 'none'} /></button>
+              <button onClick={() => toggleLeadStyle(lead, 'strikethrough', false)} className="p-1 rounded bg-slate-500 hover:bg-slate-600" title="Unmark"><Minus size={6} className="text-slate-300" /></button>
+            </div>
+          </td>
+          {/* Name (strikethrough) */}
+          <td className="px-4 py-0.5" colSpan={6}>
+            <span className="text-xs text-slate-600 line-through">{lead.name}</span>
+            {lead.company && <span className="text-xs text-slate-700 ml-2">— {lead.company}</span>}
+          </td>
+          {/* Bid date */}
+          <td className="px-4 py-0.5 text-xs text-slate-700 text-right whitespace-nowrap">
+            {lead.bid_date && lead.bid_date !== 'N/A' ? formatDate(lead.bid_date) : ''}
+          </td>
+          {/* Delete */}
+          <td className="px-2 py-0.5 text-right">
+            <button onClick={() => deleteLead(lead)} className="p-1 text-slate-700 hover:text-red-500 opacity-0 group-hover:opacity-100 transition rounded"><Trash2 size={12} /></button>
+          </td>
+        </tr>
+      </React.Fragment>
+    );
+  }
+
   // ── Desktop table row ────────────────────────────────────────────────────
   return (
     <React.Fragment>
       <tr
-        className={`hover:bg-slate-800/30 transition group cursor-pointer ${expired ? 'opacity-40' : ''} ${hiddenClass} ${highlightClass} ${strikeClass}`}
+        className={`hover:bg-slate-800/30 transition group cursor-pointer ${expired ? 'opacity-40' : ''} ${hiddenClass} ${highlightClass}`}
         onClick={(e) => {
           if (e.target.closest('button, input, a, select, textarea')) return;
           onToggleExpand();

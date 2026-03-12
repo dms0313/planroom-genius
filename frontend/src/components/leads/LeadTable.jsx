@@ -70,6 +70,8 @@ const LeadTable = ({
   setSearchQuery,
   showHidden,
   setShowHidden,
+  showExpired,
+  setShowExpired,
   knowledgeScanning,
   triggerKnowledgeScan,
   scanningIds,
@@ -242,17 +244,31 @@ const LeadTable = ({
                   className="bg-slate-800 text-slate-200 pl-9 pr-4 py-1.5 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-slate-600 w-full sm:w-52"
                 />
               </div>
-              {/* Show/hide hidden */}
+              {/* Show/hide expired */}
               <button
-                onClick={() => setShowHidden(!showHidden)}
-                className={`p-1.5 rounded-lg transition ${
-                  showHidden
-                    ? 'bg-slate-700 text-white'
+                onClick={() => setShowExpired(!showExpired)}
+                className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition ${
+                  showExpired
+                    ? 'bg-slate-700 text-slate-200'
                     : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
                 }`}
-                title={showHidden ? 'Hide Hidden' : 'Show Hidden'}
+                title={showExpired ? 'Hide expired' : 'Show expired'}
               >
-                {showHidden ? <Eye size={16} /> : <EyeOff size={16} />}
+                <Eye size={13} />
+                Expired
+              </button>
+              {/* Show/hide manually hidden */}
+              <button
+                onClick={() => setShowHidden(!showHidden)}
+                className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition ${
+                  showHidden
+                    ? 'bg-slate-700 text-slate-200'
+                    : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+                }`}
+                title={showHidden ? 'Hide hidden' : 'Show hidden'}
+              >
+                <Eye size={13} />
+                Hidden
               </button>
               {/* AI Scan All */}
               <button
