@@ -1,2772 +1,384 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Download, Mail, ChevronLeft, ChevronRight, FileText, ExternalLink, Building2, User, MapPin, Calendar, AlertCircle, Plus, Pencil, Trash2, X, Settings, FileText as Description, Terminal, Minimize2, Maximize2, Cloud, CloudOff, Brain, ArrowUpDown, RefreshCw, Eye, EyeOff, ChevronDown, ChevronUp, Search, Zap, Shield, AlertTriangle, CheckCircle2, Circle, Minus, FolderOpen, ClipboardCopy, CheckCircle } from 'lucide-react';
-import TakeoffPanel from './TakeoffPanel';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
+import { X, FolderOpen, ChevronLeft } from 'lucide-react';
 
-// Build HTML from takeoff data for rich-text clipboard copy (Notion paste)
-const buildTakeoffHtml = (lead) => {
-  const h = [];
-  const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  const li = (label, val) => `<li><strong>${esc(label)}:</strong> ${esc(val)}</li>`;
-  const bullet = (text) => `<li>${esc(text)}</li>`;
+import { useLeads } from './hooks/useLeads';
+import { useScanner } from './hooks/useScanner';
+import { useStats } from './hooks/useStats';
 
-  h.push(`<h1>${esc(lead.name || 'Project')} — FA Takeoff</h1>`);
+import TopNav from './components/layout/TopNav';
+import StatsRow from './components/layout/StatsRow';
 
-  // Project Snapshot
-  const snap = lead.takeoff_snapshot;
-  if (snap) {
-    h.push('<h2>Project Snapshot</h2>');
-    if (snap.scope_summary) h.push(`<p>${esc(snap.scope_summary)}</p>`);
-    const pd = snap.project_details || {};
-    const fields = [
-      ['Project', pd.project_name], ['Address', pd.project_address || pd.project_location],
-      ['Type', pd.project_type], ['Building', pd.building_type || pd.occupancy_type],
-      ['Codes', Array.isArray(pd.applicable_codes) ? pd.applicable_codes.join(', ') : pd.applicable_codes],
-      ['Occupancy', pd.occupancy_classification],
-    ].filter(([, v]) => v);
-    if (fields.length) h.push('<ul>' + fields.map(([k, v]) => li(k, v)).join('') + '</ul>');
-  }
+import LeadTable from './components/leads/LeadTable';
+import ContactPopup from './components/leads/ContactPopup';
 
-  // FA Briefing
-  const fab = lead.takeoff_fa_briefing;
-  if (fab) {
-    h.push('<h2>Fire Alarm Briefing</h2>');
-    const fa = fab.fire_alarm_details || {};
-    const items = [
-      ['Panel Status', fa.panel_status || fa.existing_system], ['Sprinkler', fa.sprinkler_status],
-      ['Voice Evac', fa.voice_evac || fa.voice_required], ['CO Detection', fa.co_detection],
-    ].filter(([, v]) => v);
-    if (items.length) h.push('<ul>' + items.map(([k, v]) => li(k, v)).join('') + '</ul>');
-    const sp = fab.specifications || {};
-    const specItems = [
-      ['Control Panel', sp.CONTROL_PANEL], ['System Type', sp.SYSTEM_TYPE],
-      ['Wiring', sp.WIRING_CLASS], ['Monitoring', sp.MONITORING],
-      ['Audio', sp.AUDIO_SYSTEM],
-      ['Approved Mfrs', Array.isArray(sp.APPROVED_MANUFACTURERS) ? sp.APPROVED_MANUFACTURERS.join(', ') : sp.APPROVED_MANUFACTURERS],
-    ].filter(([, v]) => v && v !== 'unknown' && String(v).toLowerCase() !== 'addressable');
-    if (specItems.length) {
-      h.push('<p><strong>Key Specs</strong></p>');
-      h.push('<ul>' + specItems.map(([k, v]) => li(k, v)).join('') + '</ul>');
-    }
-  }
+import AddLeadModal from './components/modals/AddLeadModal';
+import ProjectDetailModal from './components/modals/ProjectDetailModal';
+import FileBrowserModal from './components/modals/FileBrowserModal';
 
-  // Mechanical Coordination
-  const mech = lead.takeoff_mechanical;
-  if (mech && Object.keys(mech).length) {
-    h.push('<h2>Mechanical Coordination</h2>');
-    const items = [
-      ['Duct Detectors/RTU', mech.duct_detectors_per_rtu || mech.duct_detectors],
-      ['Dampers', mech.dampers || mech.fire_smoke_dampers],
-      ['Access Doors', mech.access_control_doors || mech.access_doors],
-    ].filter(([, v]) => v);
-    const eqItems = Array.isArray(mech.equipment) ? mech.equipment.map(eq => {
-      const name = eq.name || eq.type || 'Unit';
-      return `${name}${eq.cfm ? ` (${eq.cfm} CFM)` : ''}`;
-    }) : [];
-    if (items.length || eqItems.length) {
-      h.push('<ul>' + items.map(([k, v]) => li(k, v)).join('') + eqItems.map(t => bullet(t)).join('') + '</ul>');
-    }
-  }
+import SettingsPanel from './components/settings/SettingsPanel';
 
-  // Fire Alarm Notes
-  const notes = lead.takeoff_fa_notes;
-  if (notes && notes.length) {
-    h.push('<h2>Fire Alarm Notes</h2><ul>');
-    notes.forEach(n => {
-      const page = n.page ? `[p${n.page}] ` : '';
-      const content = n.content || (typeof n === 'string' ? n : JSON.stringify(n));
-      h.push(bullet(page + content));
-    });
-    h.push('</ul>');
-  }
-
-  // Pitfalls + Estimating Notes
-  const pitfalls = lead.takeoff_pitfalls;
-  const estNotes = lead.takeoff_estimating_notes;
-  if ((pitfalls && pitfalls.length) || (estNotes && estNotes.length)) {
-    h.push('<h2>Conflicts, Pitfalls &amp; Advice</h2><ul>');
-    (pitfalls || []).forEach(p => h.push(bullet(typeof p === 'string' ? p : p.content || JSON.stringify(p))));
-    (estNotes || []).forEach(n => h.push(bullet(typeof n === 'string' ? n : n.content || JSON.stringify(n))));
-    h.push('</ul>');
-  }
-
-  // Competitive Advantages
-  const adv = lead.takeoff_competitive_advantages;
-  if (adv && adv.length) {
-    h.push('<h2>Competitive Advantages</h2><ul>');
-    adv.forEach(a => h.push(bullet(typeof a === 'string' ? a : a.content || JSON.stringify(a))));
-    h.push('</ul>');
-  }
-
-  // Project Tags
-  const tags = lead.takeoff_project_tags;
-  if (tags && tags.length) {
-    h.push(`<p><strong>Tags:</strong> ${esc(tags.map(t => t.label).join(', '))}</p>`);
-  }
-
-  h.push(`<p><em>Deep Scan: ${new Date(lead.takeoff_timestamp).toLocaleDateString()}</em></p>`);
-  return h.join('');
-};
-
-// Copy rich HTML to clipboard via hidden element + selection (works on all browsers)
-const copyRichHtml = (html) => {
-  const el = document.createElement('div');
-  el.innerHTML = html;
-  el.style.position = 'fixed';
-  el.style.left = '-9999px';
-  el.style.top = '0';
-  el.style.opacity = '0';
-  document.body.appendChild(el);
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-  document.execCommand('copy');
-  sel.removeAllRanges();
-  document.body.removeChild(el);
-};
-
-// Utility functions moved outside to prevent re-creation
-const isExpired = (bidDate) => {
-  if (!bidDate || bidDate === 'N/A' || bidDate === 'TBD') return false;
-  try { const d = new Date(bidDate); const t = new Date(); t.setHours(0, 0, 0, 0); return d < t; } catch { return false; }
-};
-
-const badgeColor = (badge) => {
-  if (badge === 'NO FA') return 'bg-red-500/20 text-red-400 border-red-500/30';
-  if (badge === 'DEAL BREAKER') return 'bg-red-600/20 text-red-300 border-red-600/30';
-  if (badge === 'COMPATIBLE MFR' || badge === 'COMPAT MFR') return 'bg-green-500/20 text-green-400 border-green-500/30';
-  if (badge === 'INCOMPATIBLE MFR' || badge === 'INCOMPAT MFR') return 'bg-red-500/20 text-red-400 border-red-500/30';
-  if (badge === 'EXISTING') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-  if (badge === 'NEW SYSTEM') return 'bg-green-500/20 text-green-400 border-green-500/30';
-  if (badge === 'MODIFICATION' || badge === 'MOD') return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-  if (badge === 'VOICE') return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-  if (badge === 'MONITORING') return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
-  if (badge === 'ACCESS CTRL') return 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30';
-  if (badge === 'NON-SPRINKLED') return 'bg-amber-600/20 text-amber-400 border-amber-600/30';
-  if (badge.includes('REQ')) return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-  return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
-};
-
-// Returns rich hover text for any tag ID, using live lead data for mfr/vendor tags
-const getTagHoverText = (tagId, lead) => {
-  const mfrs = lead?.knowledge_required_manufacturers;
-  const vendors = lead?.knowledge_required_vendors;
-  const mfrList = mfrs?.length ? mfrs.join(', ') : null;
-  const vendorList = vendors?.length ? vendors.join(', ') : null;
-  if (tagId === 'REQ MFR')      return mfrList ? `Required manufacturer: ${mfrList}` : 'Manufacturer specified in specs';
-  if (tagId === 'COMP MFG')     return mfrList ? `Compatible: ${mfrList}` : 'Compatible manufacturer on file';
-  if (tagId === 'INCOMPAT MFG') return mfrList ? `NOT compatible: ${mfrList}` : 'Incompatible manufacturer — cannot service';
-  if (tagId === 'REQ VENDOR')   return vendorList ? `Required vendor: ${vendorList}` : 'Sole-source vendor specified in specs';
-  if (tagId === 'DEAL BREAKER') {
-    const reasons = lead?.knowledge_deal_breakers;
-    return reasons?.length ? reasons.join(' · ') : 'Deal breaker identified — review details';
-  }
-  const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
-  return pt?.hint || tagId;
-};
-
-// Predefined project tags — fixed set. Users may only assign tags from this list.
-const PREDEFINED_TAGS = [
-  // ── SCOPE ──────────────────────────────────────────────────────────────────
-  { id: 'NEW SYSTEM',    label: 'NEW SYSTEM',    color: 'green',    hint: 'New fire alarm system installation',                              group: 'scope' },
-  { id: 'MODIFY',        label: 'MODIFY',        color: 'yellow',   hint: 'Existing system to remain / modify',                             group: 'scope' },
-  { id: 'NO FA',         label: 'NO FA',         color: 'red',      hint: 'No fire alarm scope in this project',                            group: 'scope' },
-  { id: 'VOICE',         label: 'VOICE',         color: 'yellow',   hint: 'Voice evacuation / mass notification required',                  group: 'scope' },
-  { id: 'BDA ERRC',      label: 'BDA ERRC',      color: 'orange',   hint: 'BDA / ERRC system required',                                     group: 'scope' },
-  { id: 'NO SPRNK',      label: 'NO SPRNK',      color: 'red',      hint: 'No sprinkler per code definitions page',                         group: 'scope' },
-  { id: 'NETWORK',       label: 'NETWORK',       color: 'yellow',   hint: 'System to be connected to a network',                            group: 'scope' },
-  { id: 'COMP MFG',      label: 'COMP MFG',      color: 'green',    hint: 'Compatible manufacturer on file (Gamewell-FCI / FireLite / SK)', group: 'scope' },
-  { id: 'INCOMPAT MFG',  label: 'INCOMPAT MFG',  color: 'glow-red', hint: 'Incompatible manufacturer — existing system we cannot service',   group: 'scope' },
-  { id: 'REQ MFR',       label: 'REQ MFR',       color: 'red',      hint: 'Required manufacturer specified in specs',                       group: 'scope' },
-  { id: 'REQ VENDOR',    label: 'REQ VENDOR',    color: 'glow-red', hint: 'Required vendor / sole-source specified in specs',               group: 'scope' },
-  // ── FLAGS ──────────────────────────────────────────────────────────────────
-  { id: 'DEAL BREAKER',  label: 'DEAL BREAKER',  color: 'red',      hint: 'Deal breaker — review before bidding',                           group: 'flags' },
-  { id: 'DISCREPENCY',   label: 'DISCREPENCY',   color: 'red',      hint: 'Plan discrepancy found — needs clarification',                   group: 'flags' },
-  { id: 'HIGH LABOR',    label: 'HIGH LABOR',    color: 'red',      hint: 'High labor content / difficult install',                         group: 'flags' },
-  { id: 'NEED DOCS',     label: 'NEED DOCS',     color: 'red',      hint: 'Waiting for plans or bid documents',                             group: 'flags' },
-  { id: 'BABA',          label: 'BABA',          color: 'orange',   hint: 'Buy American Build American required',                           group: 'flags' },
-  { id: 'DAVIS BACON',   label: 'DAVIS BACON',   color: 'orange',   hint: 'Prevailing wage / Davis-Bacon required',                         group: 'flags' },
-  { id: 'BID BOND',      label: 'BID BOND',      color: 'orange',   hint: 'Bid bond required',                                              group: 'flags' },
-  { id: 'NICET',         label: 'NICET',         color: 'orange',   hint: 'NICET certification required',                                   group: 'flags' },
-  { id: 'TAX EXEMPT',    label: 'TAX EXEMPT',    color: 'yellow',   hint: 'Tax exempt project',                                             group: 'flags' },
-  { id: 'PHASED',        label: 'PHASED',        color: 'yellow',   hint: 'Phased construction schedule',                                   group: 'flags' },
-  { id: 'DESIGN BUILD',  label: 'DESIGN BUILD',  color: 'yellow',   hint: 'Design-build / delegated design delivery',                       group: 'flags' },
-  // ── CONSTRUCTION TYPE ──────────────────────────────────────────────────────
-  { id: 'NEW CONST',     label: 'NEW CONST',     color: 'green',    hint: 'New construction build',                                         group: 'construction' },
-  { id: 'TI',            label: 'TI',            color: 'yellow',   hint: 'Tenant improvement / renovation',                                group: 'construction' },
-  { id: 'REMODEL',       label: 'REMODEL',       color: 'yellow',   hint: 'Remodel or renovation of existing space',                        group: 'construction' },
-  { id: 'NEW PANEL',     label: 'NEW PANEL',     color: 'orange',   hint: 'New fire panel only — parts & smarts',                           group: 'construction' },
-  // ── PROJECT TYPE ──────────────────────────────────────────────────────────
-  { id: 'INSTALL',       label: 'INSTALL',       color: 'green',    hint: 'Full labor & material installation',                             group: 'projtype' },
-  { id: 'PARTS SMARTS',  label: 'PARTS & SMARTS',color: 'yellow',   hint: 'Parts & smarts — supply only, no install labor',                group: 'projtype' },
-  // ── BUILDING TYPE ─────────────────────────────────────────────────────────
-  { id: 'WAREHOUSE',     label: 'WAREHOUSE',     color: 'location', hint: 'Warehouse / distribution facility',                              group: 'location' },
-  { id: 'INDUSTRIAL',    label: 'INDUSTRIAL',    color: 'location', hint: 'Industrial / manufacturing facility',                            group: 'location' },
-  { id: 'EDUCATION',     label: 'EDUCATION',     color: 'location', hint: 'School / university / educational facility',                     group: 'location' },
-  { id: 'HOTEL',         label: 'HOTEL',         color: 'location', hint: 'Hotel / hospitality',                                            group: 'location' },
-  { id: 'APARTMENTS',    label: 'APARTMENTS',    color: 'location', hint: 'Residential apartments / multi-family',                          group: 'location' },
-  { id: 'ASST LIVING',   label: 'ASST LIVING',   color: 'location', hint: 'Assisted living / senior care facility',                         group: 'location' },
-  { id: 'HOSPITAL',      label: 'HOSPITAL',      color: 'location', hint: 'Hospital / medical center',                                      group: 'location' },
-  { id: 'CLINIC',        label: 'CLINIC',        color: 'location', hint: 'Medical or dental clinic',                                       group: 'location' },
-  { id: 'OFFICE',        label: 'OFFICE',        color: 'location', hint: 'Office building',                                                group: 'location' },
-  { id: 'RETAIL',        label: 'RETAIL',        color: 'location', hint: 'Retail store / shopping center',                                 group: 'location' },
-  { id: 'GOVT',          label: 'GOVT',          color: 'location', hint: 'Government / municipal / public building',                       group: 'location' },
-  { id: 'CHURCH',        label: 'CHURCH',        color: 'location', hint: 'Church / religious facility',                                    group: 'location' },
-  // ── WORKFLOW ──────────────────────────────────────────────────────────────
-  { id: 'QUOTING',       label: 'QUOTING',       color: 'green',    hint: 'Currently being priced / quoted',                                group: 'workflow' },
-  { id: 'FOLLOW UP',     label: 'FOLLOW UP',     color: 'yellow',   hint: 'Needs follow-up with GC or owner',                               group: 'workflow' },
-  { id: 'PASS',          label: 'PASS',          color: 'red',      hint: 'Decided to pass — not bidding',                                  group: 'workflow' },
-];
-
-const tagColorClass = (color) => {
-  if (color === 'red')      return 'bg-red-500/10 text-red-400 border-red-500/20';
-  if (color === 'green')    return 'bg-green-500/10 text-green-400 border-green-500/20';
-  if (color === 'orange')   return 'bg-orange-500/10 text-orange-400 border-orange-500/20';
-  if (color === 'yellow')   return 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
-  if (color === 'location') return 'bg-sky-500/10 text-sky-400 border-sky-500/20';
-  if (color === 'glow-red') return 'bg-red-500/15 text-red-400 border-red-500/50 shadow-[0_0_6px_2px_rgba(239,68,68,0.35)]';
-  return 'bg-slate-700/50 text-slate-300 border-slate-600';
-};
-
-// Normalize AI-generated badge names → predefined tag IDs (null = discard)
-const normalizeBadge = (badge) => {
-  const b = badge.toUpperCase().trim();
-  // Scope
-  if (b === 'MOD' || b === 'MODIFICATION' || b === 'EXISTING' || b === 'EXISTING SYSTEM') return 'MODIFY';
-  if (b === 'NEW SYSTEM' || b === 'NEW FA' || b === 'NEW FIRE ALARM') return 'NEW SYSTEM';
-  if (b === 'NO SPRINK' || b === 'NON-SPRINKLED' || b === 'NO SPRNK' || b === 'NOT SPRINKLERED') return 'NO SPRNK';
-  if (b === 'COMPAT MFR' || b === 'COMPATIBLE MFR' || b === 'COMP MFG') return 'COMP MFG';
-  if (b === 'INCOMPAT MFR' || b === 'INCOMPATIBLE MFR' || b === 'INCOMPAT MFG') return 'INCOMPAT MFG';
-  if (b === 'REQ MFR' || b === 'REQUIRED MFR' || b === 'REQUIRED MANUFACTURER') return 'REQ MFR';
-  if (b === 'REQ VENDOR' || b === 'REQUIRED VENDOR' || b === 'SOLE SOURCE') return 'REQ VENDOR';
-  if (b === 'BDA' || b === 'ERRC' || b === 'BDA/ERRC') return 'BDA ERRC';
-  // Flags
-  if (b === 'INCOMPAT MFR' || b === 'INCOMPATIBLE MFR' || b === 'MONITORING' || b === 'ACCESS CTRL') return null;
-  if (b === 'DEAL-BREAKER' || b === 'DEALBREAKER') return 'DEAL BREAKER';
-  if (b === 'DESIGN-BUILD' || b === 'DELEGATED DESIGN') return 'DESIGN BUILD';
-  if (b === 'PREVAILING WAGE' || b === 'DAVIS-BACON') return 'DAVIS BACON';
-  // Construction type
-  if (b === 'NEW CONSTRUCTION' || b === 'GROUND UP' || b === 'NEW BUILD') return 'NEW CONST';
-  if (b === 'TENANT IMPROVEMENT' || b === 'TENANT IMPROVEMENTS' || b === 'T.I.' || b === 'T.I') return 'TI';
-  if (b === 'RENOVATION' || b === 'RENO') return 'REMODEL';
-  if (b === 'NEW FIRE PANEL' || b === 'PANEL REPLACEMENT' || b === 'PANEL ONLY') return 'NEW PANEL';
-  const valid = PREDEFINED_TAGS.find(t => t.id === b);
-  return valid ? valid.id : null;
-};
-
-// Map a free-text bid_risk_flag string → predefined tag ID (or null)
-const mapRiskFlagToTag = (flag) => {
-  const f = flag.toLowerCase();
-  if (/davis.?bacon|prevailing.?wage/.test(f)) return 'DAVIS BACON';
-  if (/buy.?american|baba\b|build.?america|\bais\b/.test(f)) return 'BABA';
-  if (/\bbda\b|\berrc\b/.test(f)) return 'BDA ERRC';
-  if (/nicet/.test(f)) return 'NICET';
-  if (/bid.?bond/.test(f)) return 'BID BOND';
-  if (/tax.?exempt/.test(f)) return 'TAX EXEMPT';
-  if (/design.?build|delegated.?design/.test(f)) return 'DESIGN BUILD';
-  if (/discrepan/.test(f)) return 'DISCREPENCY';
-  if (/high.?labor/.test(f)) return 'HIGH LABOR';
-  if (/phased/.test(f)) return 'PHASED';
-  if (/voice.?evac/.test(f)) return 'VOICE';
-  if (/\bnetwork\b/.test(f)) return 'NETWORK';
-  if (/no.?fa\b|no fire alarm/.test(f)) return 'NO FA';
-  if (/sole.?source|required.?vendor/.test(f)) return 'REQ VENDOR';
-  if (/required.?mfr|required.?manufacturer|sole.?brand/.test(f)) return 'REQ MFR';
-  if (/new.?const|ground.?up|new.?build/.test(f)) return 'NEW CONST';
-  if (/tenant.?improv|\bT\.?I\b/.test(f)) return 'TI';
-  if (/remodel|renovati/.test(f)) return 'REMODEL';
-  if (/need.?doc|missing.?plan|no.?plan/.test(f)) return 'NEED DOCS';
-  return null;
-};
-
-// All normalized AI/system-derived tags for a lead (deduplicated, predefined only)
-const getSystemTags = (lead) => {
-  const seen = new Set();
-  const add = (id) => { if (id && PREDEFINED_TAGS.some(t => t.id === id)) seen.add(id); };
-  (lead.knowledge_badges || []).forEach(b => add(normalizeBadge(b)));
-  (lead.knowledge_bid_risk_flags || []).forEach(f => add(mapRiskFlagToTag(f)));
-  return [...seen];
-};
-
-const classColor = (cls) => {
-  if (cls === 'plan') return 'bg-blue-500/20 text-blue-400 border-blue-500/40';
-  if (cls === 'spec') return 'bg-green-500/20 text-green-400 border-green-500/40';
-  if (cls === 'ignore') return 'bg-red-500/20 text-red-400 border-red-500/40';
-  return 'bg-slate-500/20 text-slate-400 border-slate-500/40';
-};
-
-const getHighlightBg = (highlight) => {
-  if (highlight === 'green') return 'bg-green-500/10 border-l-2 border-green-500';
-  if (highlight === 'yellow') return 'bg-yellow-500/10 border-l-2 border-yellow-500';
-  if (highlight === 'red') return 'bg-red-500/10 border-l-2 border-red-500';
-  return '';
-};
-
-const getCommentColor = (highlight) => {
-  if (highlight === 'green') return 'text-green-400 focus:text-green-400';
-  if (highlight === 'yellow') return 'text-yellow-400 focus:text-yellow-400';
-  if (highlight === 'red') return 'text-red-400 focus:text-red-400';
-  return 'text-purple-400 focus:text-purple-400';
-};
-
-const formatDate = (dateStr) => {
-  if (!dateStr || dateStr === 'N/A' || dateStr === 'TBD') return dateStr || 'N/A';
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  } catch { return dateStr; }
-};
-
-const stripHtml = (html) => {
-  if (!html || typeof html !== 'string') return html || '';
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(?:div|p|li|tr|h[1-6])>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-};
+const API_BASE = `http://${window.location.hostname}:8000`;
 
 export default function LeadDashboard() {
-  const [leads, setLeads] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [clearing, setClearing] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [deduplicating, setDeduplicating] = useState(false);
+  // ── UI state ──────────────────────────────────────────────────────────────
   const [companyPopup, setCompanyPopup] = useState(null);
   const [descriptionPopup, setDescriptionPopup] = useState(null);
-  const [editModal, setEditModal] = useState(null);
   const [addModal, setAddModal] = useState(false);
-  const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [scraperSettings, setScraperSettings] = useState({
-    planhub: true,
-    bidplanroom: true,
-    loydbuildsbetter: true,
-    buildingconnected: true,
-    use_gdrive: true,
-    gemini_model: 'gemini-3.1-pro-preview'
-  });
 
-  // Console monitor state
-  const [showConsole, setShowConsole] = useState(false);
-  const [consoleLogs, setConsoleLogs] = useState([]);
-  const [scraperStatus, setScraperStatus] = useState(null);
-  const [consoleMinimized, setConsoleMinimized] = useState(false);
-  const consoleEndRef = useRef(null);
-
-  // Google Drive state
-  const [gdriveStatus, setGdriveStatus] = useState(null);
-  const [connectingGdrive, setConnectingGdrive] = useState(false);
-  const [activeTab, setActiveTab] = useState('bid');
+  // ── LeadTable filter / sort / search state ────────────────────────────────
   const [siteFilter, setSiteFilter] = useState('all');
-
-  // Knowledge scan state
-  const [knowledgeStatus, setKnowledgeStatus] = useState(null);
-  const [knowledgeScanning, setKnowledgeScanning] = useState(false);
-  const [knowledgeFilter, setKnowledgeFilter] = useState('all'); // all, scanned, unscanned
-  const [showHidden, setShowHidden] = useState(false);
   const [sortConfig, setSortConfig] = useState({ key: 'bid_date', direction: 'asc' });
   const [searchQuery, setSearchQuery] = useState('');
-  const [pointToFileModal, setPointToFileModal] = useState(null); // {lead_id, files}
-  const [pointToFileLoading, setPointToFileLoading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null); // rel_path of selected file
-  const [viewerPage, setViewerPage] = useState(0);
-  const [viewerPageCount, setViewerPageCount] = useState(0);
-  const [viewerImageUrl, setViewerImageUrl] = useState(null);
-  const [viewerLoading, setViewerLoading] = useState(false);
-  const [scanningIds, setScanningIds] = useState(new Set());
+  const [showHidden, setShowHidden] = useState(false);
+
+  // File browser modal (local knowledge files)
+  const [pointToFileModal, setPointToFileModal] = useState(null);
+
+  // Folder browser (GDrive folder path assignment)
   const [folderBrowserModal, setFolderBrowserModal] = useState(false);
   const [folderBrowserPath, setFolderBrowserPath] = useState('');
   const [folderBrowserItems, setFolderBrowserItems] = useState([]);
   const [folderBrowserLoading, setFolderBrowserLoading] = useState(false);
-  const [folderBrowserTarget, setFolderBrowserTarget] = useState(null); // null = edit modal mode, leadId = quick-assign mode
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [notionStatus, setNotionStatus] = useState({}); // leadId -> 'loading'|'success'|'error'
-  const [toasts, setToasts] = useState([]); // {id, message, type: 'info'|'success'|'error'}
+  const [folderBrowserTarget, setFolderBrowserTarget] = useState(null);
 
-  const showToast = (message, type = 'info', duration = 4000) => {
-    const id = Date.now() + Math.random();
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
-  };
+  // External files link to inject into AddLeadModal
+  const [externalFilesLink, setExternalFilesLink] = useState('');
 
+  // ── Circular-dep ref for onScraperComplete ───────────────────────────────
+  const onScraperCompleteRef = useRef(null);
 
-  // Form state for add/edit
-  const emptyForm = {
-    name: '',
-    company: '',
-    gc: '',
-    contact_name: '',
-    contact_email: '',
-    contact_phone: '',
-    location: '',
-    full_address: '',
-    bid_date: '',
-    description: '',
-    files_link: '',
-    download_link: '',
-    site: 'Manual Entry',
-    sprinklered: false,
-    has_budget: false
-  };
-  const [formData, setFormData] = useState(emptyForm);
+  // ── Hooks ─────────────────────────────────────────────────────────────────
+  const {
+    leads, loading, fetchLeads, addLead, updateLead, deleteLead,
+    toggleLeadStyle, sendToNotion, notionStatus,
+    deduplicateLeads, clearAllLeads, refreshAllLeads,
+    deduplicating, clearing, refreshing,
+    showToast, toasts,
+  } = useLeads();
 
-  // Filter and search logic
-  const uniqueSites = useMemo(() => {
-    const sites = leads.map(l => l.site).filter(Boolean);
-    return [...new Set(sites)].sort();
-  }, [leads]);
+  const {
+    syncing, scraperSettings, fetchSettings, saveSettings, toggleSetting,
+    triggerScan, triggerSingleScraper, triggerDeepScan, triggerQuickScan,
+    stopScan, scanningIds, consoleLogs, scraperStatus, fetchConsoleLogs,
+    clearConsoleLogs, gdriveStatus, connectingGdrive, connectGdrive,
+    knowledgeStatus, knowledgeScanning, triggerKnowledgeScan,
+    autoScanAfterScrape, setAutoScanAfterScrape,
+  } = useScanner({
+    onScraperComplete: (ids) => onScraperCompleteRef.current?.(ids),
+    showToast,
+    leads,
+  });
 
+  // Wire up the ref now that triggerQuickScan is available
+  onScraperCompleteRef.current = useCallback((newLeadIds) => {
+    if (!newLeadIds?.length) return;
+    newLeadIds.forEach(id => triggerQuickScan(id));
+  }, [triggerQuickScan]);
+
+  const { activeLeads, verifiedManufacturer, dueToday, dueIn3Days } = useStats(leads);
+
+  // ── Derived filter data ───────────────────────────────────────────────────
+  const uniqueSites = useMemo(
+    () => [...new Set(leads.map((l) => l.site).filter(Boolean))].sort(),
+    [leads]
+  );
+
+  // ── Filter + sort leads before passing to LeadTable ───────────────────────
   const filteredLeads = useMemo(() => {
-    let result = leads;
-
-    // Knowledge filter
-    if (knowledgeFilter === 'scanned') result = result.filter(l => l.knowledge_last_scanned != null);
-    else if (knowledgeFilter === 'unscanned') result = result.filter(l => l.knowledge_last_scanned == null);
-
-    // Site filter
-    if (siteFilter !== 'all') result = result.filter(l => l.site === siteFilter);
-
-    // Hidden filter
-    if (!showHidden) result = result.filter(l => !l.hidden);
-
-    // Search query
+    let data = leads;
+    if (!showHidden) data = data.filter((l) => !l.hidden);
+    if (siteFilter !== 'all') data = data.filter((l) => l.site === siteFilter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(l =>
-        l.name?.toLowerCase().includes(q) ||
-        l.company?.toLowerCase().includes(q) ||
-        l.gc?.toLowerCase().includes(q) ||
-        l.description?.toLowerCase().includes(q) ||
-        l.tags?.some(t => t.label.toLowerCase().includes(q))
+      data = data.filter(
+        (l) =>
+          l.name?.toLowerCase().includes(q) ||
+          l.company?.toLowerCase().includes(q) ||
+          l.location?.toLowerCase().includes(q) ||
+          l.description?.toLowerCase().includes(q)
       );
     }
-
-    // Sorting
-    result.sort((a, b) => {
-      // Strikethrough leads always sink to the bottom
-      if (a.strikethrough !== b.strikethrough) return a.strikethrough ? 1 : -1;
-
-      let aVal = a[sortConfig.key];
-      let bVal = b[sortConfig.key];
-
-      // Handle nulls
-      if (aVal === null || aVal === undefined) aVal = '';
-      if (bVal === null || bVal === undefined) bVal = '';
-
-      // Special handling for dates
-      if (sortConfig.key === 'bid_date') {
-        const da = new Date(aVal === 'TBD' || aVal === 'N/A' || !aVal ? '2099-12-31' : aVal);
-        const db = new Date(bVal === 'TBD' || bVal === 'N/A' || !bVal ? '2099-12-31' : bVal);
-        return sortConfig.direction === 'asc' ? da - db : db - da;
-      }
-
-      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    return result;
-  }, [leads, knowledgeFilter, siteFilter, searchQuery, showHidden, sortConfig]);
-
-  const API_BASE = `http://${window.location.hostname}:8000`;
-
-  useEffect(() => {
-    fetchLeads();
-    fetchGdriveStatus();
-    fetchKnowledgeStatus();
-    fetchSettings();
-
-    // Poll for updates every 10 seconds
-    const interval = setInterval(() => {
-      fetchLeads(true);
-      fetchKnowledgeStatus(); // Also poll knowledge status
-      // Check scraper status to keep syncing state accurate
-      fetchScraperStatus().then(status => {
-        if (status?.running) setSyncing(true);
-        else if (syncing) setSyncing(false); // Auto-turn off if finished
+    if (sortConfig?.key) {
+      const { key, direction } = sortConfig;
+      data = [...data].sort((a, b) => {
+        const av = a[key] ?? '';
+        const bv = b[key] ?? '';
+        const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true });
+        return direction === 'asc' ? cmp : -cmp;
       });
-    }, 10000);
-
-    // Initial check
-    fetchScraperStatus().then(status => {
-      if (status?.running) setSyncing(true);
-    });
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Fetch Google Drive status
-  const fetchGdriveStatus = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/gdrive/status`);
-      const data = await res.json();
-      setGdriveStatus(data);
-    } catch (e) {
-      console.error("Failed to fetch Google Drive status", e);
-      setGdriveStatus({ status: 'error', message: 'Failed to check status' });
     }
-  };
+    return data;
+  }, [leads, showHidden, siteFilter, searchQuery, sortConfig]);
 
-  const connectGdrive = async () => {
-    setConnectingGdrive(true);
-    try {
-      const res = await fetch(`${API_BASE}/gdrive/connect`, { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        alert('Google Drive connected successfully!');
-        fetchGdriveStatus();
-      } else {
-        alert(`Connection failed: ${data.detail || data.message}`);
-      }
-    } catch (e) {
-      alert("Failed to connect to Google Drive.");
-    }
-    setConnectingGdrive(false);
-  };
-
-  const fetchSettings = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/settings/scrapers`);
-      if (res.ok) {
-        const data = await res.json();
-        setScraperSettings(data);
-      }
-    } catch (e) {
-      console.error("Failed to fetch settings", e);
-    }
-  };
-
-  const saveSettings = async (newSettings) => {
-    try {
-      await fetch(`${API_BASE}/settings/scrapers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSettings)
-      });
-      setScraperSettings(newSettings);
-    } catch (e) {
-      console.error("Failed to save settings", e);
-      alert("Failed to save settings");
-    }
-  };
-
-  const toggleSetting = (key) => {
-    const newSettings = { ...scraperSettings, [key]: !scraperSettings[key] };
-    saveSettings(newSettings);
-  };
-
-  const fetchKnowledgeStatus = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/knowledge/status`);
-      const data = await res.json();
-      setKnowledgeStatus(data);
-    } catch (e) {
-      console.error("Failed to fetch knowledge status", e);
-    }
-  };
-
-  const triggerKnowledgeScan = async () => {
-    setKnowledgeScanning(true);
-    try {
-      const res = await fetch(`${API_BASE}/knowledge/scan`, { method: 'POST' });
-      if (!res.ok) {
-        const data = await res.json();
-        alert(data.detail || 'Failed to start Knowledge scan');
-      }
-      // Start polling for status
-      const poll = setInterval(async () => {
-        const s = await fetchKnowledgeStatus();
-        await fetchLeads();
-        if (!knowledgeStatus?.running) {
-          clearInterval(poll);
-          setKnowledgeScanning(false);
-        }
-      }, 3000);
-    } catch (e) {
-      console.error("Failed to start knowledge scan", e);
-      setKnowledgeScanning(false);
-    }
-  };
-
-  const triggerSingleScan = async (leadId, thinking = false) => {
-    const lead = leads.find(l => l.id === leadId);
-    const leadName = lead?.name || `Project #${leadId}`;
-    setScanningIds(prev => new Set(prev).add(leadId));
-    try {
-      const url = thinking
-        ? `${API_BASE}/knowledge/scan/${leadId}?thinking=true`
-        : `${API_BASE}/knowledge/scan/${leadId}`;
-      await fetch(url, { method: 'POST' });
-      showToast(`Deep scan started: ${leadName}`, 'info');
-      // Poll — thinking scans take longer
-      const pollDelay = thinking ? 20000 : 5000;
-      const doneDelay = thinking ? 90000 : 12000;
-      setTimeout(() => fetchLeads(), pollDelay);
-      setTimeout(() => {
-        fetchLeads();
-        setScanningIds(prev => {
-          const next = new Set(prev);
-          next.delete(leadId);
-          return next;
-        });
-        showToast(`Deep scan complete: ${leadName}`, 'success');
-      }, doneDelay);
-    } catch (e) {
-      console.error("Failed to trigger single scan", e);
-      setScanningIds(prev => {
-        const next = new Set(prev);
-        next.delete(leadId);
-        return next;
-      });
-      showToast(`Scan failed: ${leadName}`, 'error');
-    }
-  };
-
-  const fetchLeads = async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/leads`);
-      const data = await res.json();
-      setLeads(data.leads || []);
-    } catch (e) {
-      console.error("Failed to fetch leads", e);
-    }
-    if (!silent) setLoading(false);
-  };
-
-  const stopScan = async () => {
-    if (!window.confirm("Are you sure you want to STOP the current scan?")) return;
-    try {
-      const res = await fetch(`${API_BASE}/stop-scan`, { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        alert(data.message);
-        setSyncing(false);
-      } else {
-        alert("Failed to stop scan: " + data.message);
-      }
-    } catch (e) {
-      console.error("Stop scan failed", e);
-      alert("Failed to send stop request");
-    }
-  };
-
-  const triggerScan = async (e) => {
-    if (e) e.preventDefault();
-    setSyncing(true);
-    try {
-      await fetch(`${API_BASE}/sync-leads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(scraperSettings)
-      });
-      let elapsed = 0;
-      const pollInterval = setInterval(() => {
-        fetchLeads();
-        elapsed += 5000;
-        if (elapsed >= 180000) { clearInterval(pollInterval); setSyncing(false); }
-      }, 5000);
-    } catch (e) {
-      console.error("Agent trigger failed", e);
-      setSyncing(false);
-    }
-  };
-
-  const triggerSingleScraper = async (scraperName) => {
-    setSyncing(true);
-    setShowConsole(true);
-    clearConsoleLogs();
-    const singleSettings = {
-      planhub: false,
-      bidplanroom: false,
-      loydbuildsbetter: false,
-      buildingconnected: false,
-      isqft: false,
-      use_gdrive: scraperSettings.use_gdrive,
-      [scraperName]: true,
-    };
-    try {
-      await fetch(`${API_BASE}/sync-leads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(singleSettings),
-      });
-      let elapsed = 0;
-      const pollInterval = setInterval(() => {
-        fetchLeads();
-        elapsed += 5000;
-        if (elapsed >= 180000) { clearInterval(pollInterval); setSyncing(false); }
-      }, 5000);
-    } catch (e) {
-      console.error("Single scraper trigger failed", e);
-      setSyncing(false);
-    }
-  };
-
-  const clearAllLeads = async () => {
-    if (!window.confirm('Are you sure you want to clear ALL leads? This will create a backup first.')) return;
-    setClearing(true);
-    try {
-      const res = await fetch(`${API_BASE}/clear-leads`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-      const data = await res.json();
-      await fetchLeads();
-      alert(`Successfully cleared ${data.count} leads (backup created)`);
-    } catch (e) {
-      alert("Failed to clear leads.");
-    }
-    setClearing(false);
-  };
-
-  const refreshAllLeads = async () => {
-    if (!window.confirm('Clear all existing leads and start a fresh scan?')) return;
-    setRefreshing(true);
-    try {
-      const res = await fetch(`${API_BASE}/refresh-leads`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-      const data = await res.json();
-      setLeads([]);
-      let elapsed = 0;
-      const pollInterval = setInterval(() => {
-        fetchLeads();
-        elapsed += 5000;
-        if (elapsed >= 180000) { clearInterval(pollInterval); setRefreshing(false); }
-      }, 5000);
-      alert(`Cleared ${data.cleared_count} leads. Fresh scan started!`);
-    } catch (e) {
-      alert("Failed to refresh.");
-      setRefreshing(false);
-    }
-  };
-
-  const deduplicateLeads = async () => {
-    if (!window.confirm('Remove duplicate leads by merging their information?')) return;
-    setDeduplicating(true);
-    try {
-      const res = await fetch(`${API_BASE}/deduplicate-leads`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-      const data = await res.json();
-      await fetchLeads();
-      alert(`Removed ${data.removed_count} duplicate leads!\nBefore: ${data.original_count} | After: ${data.deduplicated_count}`);
-    } catch (e) {
-      alert("Failed to deduplicate.");
-    }
-    setDeduplicating(false);
-  };
-
-  const addLead = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/leads`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
-      if (res.ok) { await fetchLeads(); setAddModal(false); setFormData(emptyForm); }
-      else alert('Failed to add lead');
-    } catch (e) { alert("Failed to add lead."); }
-  };
-
-  const updateLead = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/leads/${editModal.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formData) });
-      if (res.ok) { await fetchLeads(); setEditModal(null); setFormData(emptyForm); }
-      else alert('Failed to update lead');
-    } catch (e) { alert("Failed to update lead."); }
-  };
-
-  const deleteLead = async (lead) => {
-    if (!window.confirm(`Delete "${lead.name}"?`)) return;
-    try {
-      const res = await fetch(`${API_BASE}/leads/${lead.id}`, { method: 'DELETE' });
-      if (res.ok) await fetchLeads();
-    } catch (e) { alert("Failed to delete lead."); }
-  };
-
-  const sendToNotion = async (lead) => {
-    setNotionStatus(s => ({ ...s, [lead.id]: 'loading' }));
-    try {
-      const res = await fetch(`${API_BASE}/leads/${lead.id}/notion`, { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        setNotionStatus(s => ({ ...s, [lead.id]: 'success' }));
-        setTimeout(() => setNotionStatus(s => ({ ...s, [lead.id]: null })), 4000);
-      } else {
-        setNotionStatus(s => ({ ...s, [lead.id]: 'error' }));
-        alert(`Notion error: ${data.detail || 'Unknown error'}`);
-        setTimeout(() => setNotionStatus(s => ({ ...s, [lead.id]: null })), 4000);
-      }
-    } catch (e) {
-      setNotionStatus(s => ({ ...s, [lead.id]: 'error' }));
-      alert('Failed to send to Notion.');
-      setTimeout(() => setNotionStatus(s => ({ ...s, [lead.id]: null })), 4000);
-    }
-  };
-
-  // Toggle highlight color or strikethrough for a lead
-  const toggleLeadStyle = async (lead, field, value) => {
-    try {
-      const res = await fetch(`${API_BASE}/leads/${lead.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value })
-      });
-      if (res.ok) fetchLeads(true);
-    } catch (e) { console.error(`Failed to toggle ${field}:`, e); }
-  };
-
-  // Get highlight background class
-  const getHighlightBg = (highlight) => {
-    switch (highlight) {
-      case 'green': return 'bg-green-900/40 border-l-4 border-l-green-500';
-      case 'yellow': return 'bg-yellow-900/40 border-l-4 border-l-yellow-500';
-      case 'red': return 'bg-red-900/40 border-l-4 border-l-red-500';
-      default: return '';
-    }
-  };
-
-  const openEditModal = (lead) => {
-    setFormData({
-      name: lead.name || '', company: lead.company || '', gc: lead.gc || '',
-      contact_name: lead.contact_name || '', contact_email: lead.contact_email || '',
-      contact_phone: lead.contact_phone || '', location: lead.location || '',
-      full_address: lead.full_address || '', bid_date: lead.bid_date || '',
-      description: lead.description || '', files_link: lead.files_link || '',
-      download_link: lead.download_link || '', site: lead.site || 'Manual Entry',
-      sprinklered: lead.sprinklered || false, has_budget: lead.has_budget || false
-    });
-    setEditModal(lead);
-  };
-
-  const openAddModal = () => { setFormData(emptyForm); setAddModal(true); };
-
-  // Console
-  const fetchConsoleLogs = async () => {
-    try { const res = await fetch(`${API_BASE}/console-logs?lines=200`); const data = await res.json(); setConsoleLogs(data.logs || []); } catch (e) { }
-  };
-  const fetchScraperStatus = async () => {
-    try { const res = await fetch(`${API_BASE}/scraper-status`); const data = await res.json(); setScraperStatus(data); return data; } catch (e) { return null; }
-  };
-  const clearConsoleLogs = async () => {
-    try { await fetch(`${API_BASE}/console-logs`, { method: 'DELETE' }); setConsoleLogs([]); } catch (e) { }
-  };
-
-  // Point-to-File / File Browser
-  const openPointToFile = async (leadId) => {
-    setPointToFileLoading(true);
-    setSelectedFile(null);
-    setViewerPage(0);
-    setViewerPageCount(0);
-    setViewerImageUrl(null);
+  // ── File browser (knowledge files) ───────────────────────────────────────
+  // LeadRow calls openPointToFile(lead.id) — receives the ID string directly.
+  const handleFilesClick = useCallback(async (leadId) => {
     try {
       const res = await fetch(`${API_BASE}/knowledge/files/${leadId}`);
       const data = await res.json();
-      setPointToFileModal({ lead_id: leadId, files: data.files || [], error: data.error });
+      setPointToFileModal({ lead_id: leadId, files: data.files });
     } catch (e) {
+      console.error('Failed to fetch files', e);
       setPointToFileModal({ lead_id: leadId, files: [], error: 'Failed to load files' });
     }
-    setPointToFileLoading(false);
-  };
+  }, []);
 
-  const selectFileForViewing = async (leadId, relPath) => {
-    setSelectedFile(relPath);
-    setViewerPage(0);
-    setViewerLoading(true);
-    setViewerImageUrl(null);
-    try {
-      const pcRes = await fetch(`${API_BASE}/knowledge/files/${leadId}/pagecount/${encodeURIComponent(relPath)}`);
-      const pcData = await pcRes.json();
-      setViewerPageCount(pcData.pages || 0);
-    } catch { setViewerPageCount(0); }
-    setViewerImageUrl(`${API_BASE}/knowledge/files/${leadId}/view/${encodeURIComponent(relPath)}?page=0&dpi=150`);
-    setViewerLoading(false);
-  };
-
-  const navigateViewerPage = (leadId, relPath, newPage) => {
-    if (newPage < 0 || newPage >= viewerPageCount) return;
-    setViewerPage(newPage);
-    setViewerImageUrl(`${API_BASE}/knowledge/files/${leadId}/view/${encodeURIComponent(relPath)}?page=${newPage}&dpi=150`);
-  };
-
-  const setFileClassification = async (leadId, relPath, classification) => {
-    try {
-      await fetch(`${API_BASE}/knowledge/files/${leadId}/override`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rel_path: relPath, classification })
-      });
-      // Refresh the file list
-      openPointToFile(leadId);
-    } catch (e) {
-      alert('Failed to set classification');
-    }
-  };
-
-  const setBatchClassification = async (leadId, classification) => {
-    try {
-      const files = pointToFileModal?.files || [];
-      if (files.length === 0) return;
-      const overrides = {};
-      files.forEach(f => { overrides[f.rel_path] = classification; });
-      await fetch(`${API_BASE}/knowledge/files/${leadId}/override-batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ overrides })
-      });
-      openPointToFile(leadId);
-    } catch (e) {
-      alert('Failed to batch classify');
-    }
-  };
-
-  const triggerFolderPicker = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/system/pick-folder`, { method: 'POST' });
-      const data = await res.json();
-      if (data.path) {
-        setFormData(prev => ({ ...prev, files_link: data.path }));
-      }
-    } catch (e) {
-      console.error("Failed to pick folder", e);
-    }
-  };
-
-  const openFolderBrowser = async () => {
-    setFolderBrowserModal(true); setFolderBrowserLoading(true);
-    try {
-      const r = await fetch(API_BASE + '/browse-directory', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: '' })
-      });
-      const d = await r.json();
-      setFolderBrowserPath(d.current || ''); setFolderBrowserItems(d.items || []);
-    } catch (e) { console.error('Fail:', e); }
-    setFolderBrowserLoading(false);
-  };
-  const browseTo = async (p) => {
+  // ── Folder browser (GDrive) ───────────────────────────────────────────────
+  const browseTo = useCallback(async (path) => {
     setFolderBrowserLoading(true);
     try {
-      const r = await fetch(API_BASE + '/browse-directory', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: p })
-      });
-      const d = await r.json();
-      setFolderBrowserPath(d.current || ''); setFolderBrowserItems(d.items || []);
-    } catch (e) { console.error('Fail:', e); alert('Access denied'); }
+      const res = await fetch(`${API_BASE}/gdrive/browse?path=${encodeURIComponent(path)}`);
+      const data = await res.json();
+      setFolderBrowserPath(data.current ?? path);
+      setFolderBrowserItems(data.items || []);
+    } catch (e) {
+      console.error('Folder browse failed', e);
+      showToast('Failed to browse folder', 'error');
+    }
     setFolderBrowserLoading(false);
-  };
-  const selectFolder = async () => {
+  }, [showToast]);
+
+  // LeadRow calls openFolderBrowserForLead(lead.id) — receives the ID string directly.
+  const handleFolderBrowserOpen = useCallback(async (leadId) => {
+    setFolderBrowserTarget(leadId);
+    setFolderBrowserPath('');
+    setFolderBrowserModal(true);
+    await browseTo('');
+  }, [browseTo]);
+
+  const handleGoUp = useCallback(() => {
+    if (!folderBrowserPath) { browseTo(''); return; }
+    const parts = folderBrowserPath.split(/[/\\]/).filter(Boolean);
+    if (parts.length <= 1) {
+      browseTo('');
+    } else {
+      parts.pop();
+      const isWin = folderBrowserPath.includes('\\');
+      browseTo(parts.join(isWin ? '\\' : '/') || '/');
+    }
+  }, [folderBrowserPath, browseTo]);
+
+  const handleSelectFolder = useCallback(async () => {
     if (folderBrowserPath) {
       if (folderBrowserTarget) {
-        // Quick-assign mode: save directly to the lead
+        // Quick-assign mode: save directly to lead
         try {
-          await fetch(`${API_BASE}/leads/${folderBrowserTarget}`, {
-            method: 'PUT',
+          await fetch(`${API_BASE}/leads/${folderBrowserTarget}/files-link`, {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ files_link: folderBrowserPath })
+            body: JSON.stringify({ files_link: folderBrowserPath }),
           });
           fetchLeads(true);
-        } catch (e) { console.error('Failed to save folder:', e); }
+        } catch (e) {
+          console.error('Failed to save folder:', e);
+          showToast('Failed to assign folder', 'error');
+        }
         setFolderBrowserTarget(null);
       } else {
-        // Edit modal mode
-        setFormData(prev => ({ ...prev, files_link: folderBrowserPath }));
+        // Add-lead modal mode: inject via externalFilesLink
+        setExternalFilesLink(folderBrowserPath);
       }
     }
     setFolderBrowserModal(false);
-  };
+  }, [folderBrowserPath, folderBrowserTarget, fetchLeads, showToast]);
 
-  const openFolderBrowserForLead = async (leadId) => {
-    setFolderBrowserTarget(leadId);
-    setFolderBrowserModal(true);
-    setFolderBrowserLoading(true);
-    try {
-      const r = await fetch(API_BASE + '/browse-directory', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: '' })
-      });
-      const d = await r.json();
-      setFolderBrowserPath(d.current || ''); setFolderBrowserItems(d.items || []);
-    } catch (e) { console.error('Fail:', e); }
-    setFolderBrowserLoading(false);
-  };
-  const goUpDirectory = () => {
-    if (!folderBrowserPath) { browseTo(''); return; }
-    const ps = folderBrowserPath.split(/[\\\/]/).filter(Boolean);
-    if (ps.length <= 1) browseTo('');
-    else { ps.pop(); const isWin = folderBrowserPath.includes(String.fromCharCode(92)); browseTo(ps.join(isWin ? String.fromCharCode(92) : '/') || '/'); }
-  };
-  // Poll logs
-  useEffect(() => {
-    let interval;
-    if (showConsole || syncing) {
-      fetchConsoleLogs(); fetchScraperStatus();
-      interval = setInterval(() => { fetchConsoleLogs(); fetchScraperStatus(); }, 2000);
-    }
-    return () => { if (interval) clearInterval(interval); };
-  }, [showConsole, syncing]);
-
-  useEffect(() => {
-    if (consoleEndRef.current && !consoleMinimized) consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [consoleLogs, consoleMinimized]);
-
-  // Poll knowledge status while scanning
-  useEffect(() => {
-    let interval;
-    if (knowledgeScanning) {
-      interval = setInterval(async () => {
-        await fetchKnowledgeStatus();
-        await fetchLeads();
-      }, 3000);
-    }
-    return () => { if (interval) clearInterval(interval); };
-  }, [knowledgeScanning]);
-
-  // Check if scanning stopped
-  useEffect(() => {
-    if (knowledgeStatus && !knowledgeStatus.running && knowledgeScanning) {
-      setKnowledgeScanning(false);
-    }
-  }, [knowledgeStatus]);
-
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className={`min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-4 md:p-8 font-sans ${showConsole && !consoleMinimized ? 'pb-96' : ''}`}>
+    <div className="min-h-screen bg-[#0e1117] text-white">
+      <TopNav
+        onAddLead={() => setAddModal(true)}
+        onSettings={() => setShowSettings(true)}
+      />
+
+      <div className="max-w-screen-2xl mx-auto px-4 py-4 space-y-4">
+        <StatsRow
+          activeLeads={activeLeads}
+          verifiedManufacturer={verifiedManufacturer}
+          dueToday={dueToday}
+          dueIn3Days={dueIn3Days}
+        />
+
+        <LeadTable
+          leads={filteredLeads}
+          uniqueSites={uniqueSites}
+          siteFilter={siteFilter}
+          setSiteFilter={setSiteFilter}
+          sortConfig={sortConfig}
+          setSortConfig={setSortConfig}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          showHidden={showHidden}
+          setShowHidden={setShowHidden}
+          knowledgeScanning={knowledgeScanning}
+          triggerKnowledgeScan={triggerKnowledgeScan}
+          scanningIds={scanningIds}
+          toggleLeadStyle={toggleLeadStyle}
+          deleteLead={deleteLead}
+          setContactPopup={setCompanyPopup}
+          setDescriptionPopup={setDescriptionPopup}
+          openPointToFile={handleFilesClick}
+          openFolderBrowserForLead={handleFolderBrowserOpen}
+          notionStatus={notionStatus}
+          sendToNotion={sendToNotion}
+          triggerDeepScan={triggerDeepScan}
+          triggerQuickScan={triggerQuickScan}
+          API_BASE={API_BASE}
+        />
+      </div>
+
+      {/* Contact popup */}
+      <ContactPopup lead={companyPopup} onClose={() => setCompanyPopup(null)} />
+
+      {/* Project detail modal */}
+      {descriptionPopup && (
+        <ProjectDetailModal
+          lead={descriptionPopup}
+          onClose={() => setDescriptionPopup(null)}
+          triggerDeepScan={triggerDeepScan}
+          scanningIds={scanningIds}
+        />
+      )}
+
+      {/* Knowledge file browser modal */}
+      <FileBrowserModal
+        modal={pointToFileModal}
+        onClose={() => setPointToFileModal(null)}
+        onRescan={(leadId) => triggerKnowledgeScan(leadId)}
+        API_BASE={API_BASE}
+      />
+
+      {/* Add lead modal */}
+      <AddLeadModal
+        open={addModal}
+        onClose={() => { setAddModal(false); setExternalFilesLink(''); }}
+        onAdd={async (formData) => {
+          const ok = await addLead(formData);
+          if (ok) setAddModal(false);
+          return ok;
+        }}
+        externalFilesLink={externalFilesLink}
+        onBrowseFolderServer={() => {
+          setFolderBrowserTarget(null);
+          setFolderBrowserPath('');
+          setFolderBrowserModal(true);
+          browseTo('');
+        }}
+      />
+
+      {/* Settings panel */}
+      <SettingsPanel
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        scraperSettings={scraperSettings}
+        toggleSetting={toggleSetting}
+        saveSettings={saveSettings}
+        triggerSingleScraper={triggerSingleScraper}
+        triggerScan={triggerScan}
+        syncing={syncing}
+        stopScan={stopScan}
+        autoScanAfterScrape={autoScanAfterScrape}
+        setAutoScanAfterScrape={setAutoScanAfterScrape}
+        consoleLogs={consoleLogs}
+        scraperStatus={scraperStatus}
+        clearConsoleLogs={clearConsoleLogs}
+        gdriveStatus={gdriveStatus}
+        connectGdrive={connectGdrive}
+        connectingGdrive={connectingGdrive}
+        deduplicateLeads={deduplicateLeads}
+        clearAllLeads={clearAllLeads}
+        refreshAllLeads={refreshAllLeads}
+        deduplicating={deduplicating}
+        clearing={clearing}
+        refreshing={refreshing}
+        fetchLeads={fetchLeads}
+        loading={loading}
+      />
+
+      {/* Folder browser modal (GDrive path assignment) */}
+      {folderBrowserModal && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={() => setFolderBrowserModal(false)}
+        >
+          <div
+            className="bg-slate-800 rounded-xl shadow-2xl w-full max-w-lg p-6 space-y-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-white font-bold text-lg flex items-center gap-2">
+                <FolderOpen size={20} className="text-blue-400" />
+                Select Folder
+              </h2>
+              <button onClick={() => setFolderBrowserModal(false)} className="text-slate-400 hover:text-white">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleGoUp}
+                disabled={!folderBrowserPath}
+                className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white px-3 py-1 rounded transition-colors flex items-center gap-1"
+              >
+                <ChevronLeft size={16} /> Up
+              </button>
+              <span className="text-slate-300 text-sm truncate flex-1 bg-slate-700/50 rounded px-3 py-1">
+                {folderBrowserPath || '(Root)'}
+              </span>
+            </div>
+
+            <div className="bg-slate-900 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+              {folderBrowserLoading ? (
+                <p className="text-slate-400 text-sm p-4 text-center">Loading…</p>
+              ) : folderBrowserItems.length === 0 ? (
+                <p className="text-slate-500 text-sm p-4 text-center">No folders found</p>
+              ) : (
+                folderBrowserItems.map((item, i) => (
+                  <button
+                    key={i}
+                    onClick={() => browseTo(item.path)}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-700 text-left text-white transition-colors border-b border-slate-700 last:border-0"
+                  >
+                    <FolderOpen size={16} className="text-yellow-400 shrink-0" />
+                    <span className="truncate">{item.name}</span>
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setFolderBrowserModal(false)}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSelectFolder}
+                disabled={!folderBrowserPath}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-2 rounded-lg transition-colors"
+              >
+                Select This Folder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast notifications */}
-      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 items-end">
         {toasts.map(toast => (
           <div
             key={toast.id}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium animate-in slide-in-from-right-4 duration-300 pointer-events-auto
-              ${toast.type === 'success' ? 'bg-green-800 border border-green-600 text-green-100' :
-                toast.type === 'error' ? 'bg-red-900 border border-red-700 text-red-100' :
-                'bg-slate-800 border border-violet-600 text-slate-100'}`}
+            className={`px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium max-w-sm
+              ${toast.type === 'success' ? 'bg-green-600' :
+                toast.type === 'error' ? 'bg-red-600' : 'bg-slate-600'}`}
           >
-            {toast.type === 'success' ? <CheckCircle size={15} className="text-green-400 shrink-0" /> :
-             toast.type === 'error' ? <AlertCircle size={15} className="text-red-400 shrink-0" /> :
-             <Brain size={15} className="text-violet-400 shrink-0" />}
             {toast.message}
           </div>
         ))}
       </div>
-      <div className="max-w-[95vw] mx-auto">
-        {/* Header */}
-        <div className="mb-4 md:mb-6 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between bg-slate-900 border border-slate-800 rounded-2xl p-3">
-          <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Marmic Fire & Safety" className="h-10 sm:h-14 w-auto" />
-            <h1 className="text-sm font-bold tracking-widest text-slate-500 uppercase">
-              Planroom<span className="text-[#ed2028]">Genius</span> v2.0
-            </h1>
-          </div>
-          <div className="flex flex-col sm:items-end gap-2">
-            <div className="flex flex-wrap gap-2 items-center">
-              <button onClick={openAddModal} className="px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-500 transition flex items-center gap-1.5"><Plus size={16} />Add Lead</button>
-              <button onClick={() => { triggerScan(); setShowConsole(true); clearConsoleLogs(); }} disabled={syncing} className={`bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-5 rounded-lg transition-all shadow-lg shadow-blue-900/20 flex items-center gap-2 text-sm ${syncing ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                {syncing ? (<><svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Scanning...</>) : "Scan"}
-              </button>
-              {syncing && (
-                <button onClick={stopScan} className="bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-3 rounded-lg transition-all shadow-lg shadow-red-900/20 text-sm flex items-center gap-1" title="Stop Scan">
-                  <X size={16} />Stop
-                </button>
-              )}
-              <button
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                disabled={syncing}
-                className="px-3 py-2 rounded-lg bg-slate-800 text-slate-400 text-sm hover:bg-slate-700 transition flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ChevronDown size={14} className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
-                Advanced
-              </button>
-              <div className="flex items-center gap-1 bg-slate-800 rounded-lg px-2 py-1" title="AI model for scanning">
-                <Brain size={14} className="text-violet-400 flex-shrink-0" />
-                <select
-                  value={scraperSettings.gemini_model || 'gemini-2.5-flash'}
-                  onChange={(e) => saveSettings({ ...scraperSettings, gemini_model: e.target.value })}
-                  className="bg-transparent text-slate-300 text-xs focus:outline-none cursor-pointer"
-                >
-                  <option value="gemini-3.1-pro-preview">3.1 Pro Preview</option>
-                  <option value="gemini-3-flash-preview">3 Flash Preview</option>
-                  <option value="gemini-pro-latest">Pro Latest</option>
-                </select>
-              </div>
-              <div className="relative">
-                <button onClick={() => setShowUtilityMenu(!showUtilityMenu)} className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition" title="More options"><Settings size={18} /></button>
-                {showUtilityMenu && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowUtilityMenu(false)} />
-                    <div className="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 overflow-hidden">
-                      <div className="px-4 py-2.5 border-b border-slate-700">
-                        <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
-                          {gdriveStatus?.status === 'connected' ? <Cloud size={14} className="text-green-400" /> : <CloudOff size={14} className="text-slate-500" />}
-                          Google Drive
-                        </div>
-                        {gdriveStatus?.status === 'connected' ? (
-                          <span className="text-xs text-green-400">Connected</span>
-                        ) : gdriveStatus?.status === 'not_authenticated' ? (
-                          <button onClick={connectGdrive} disabled={connectingGdrive} className="text-xs text-blue-400 hover:text-blue-300 transition">{connectingGdrive ? 'Connecting...' : 'Click to connect'}</button>
-                        ) : (
-                          <span className="text-xs text-slate-500">{gdriveStatus?.message || 'Not configured'}</span>
-                        )}
-                      </div>
-                      <button onClick={() => { setShowConsole(!showConsole); if (!showConsole) fetchConsoleLogs(); setShowUtilityMenu(false); }} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-700 transition flex items-center gap-2">
-                        <Terminal size={14} />{showConsole ? 'Hide Console' : 'Show Console'}{syncing && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>}
-                      </button>
-                      <button onClick={() => { fetchLeads(); setShowUtilityMenu(false); }} disabled={loading} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-700 transition disabled:opacity-50">{loading ? 'Refreshing...' : 'Refresh Leads'}</button>
-                      <button onClick={() => { deduplicateLeads(); setShowUtilityMenu(false); }} disabled={deduplicating} className="w-full px-4 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-700 transition disabled:opacity-50">{deduplicating ? 'Cleaning...' : 'Remove Duplicates'}</button>
-                      <button onClick={() => { refreshAllLeads(); setShowUtilityMenu(false); }} disabled={refreshing} className="w-full px-4 py-2.5 text-left text-sm text-purple-300 hover:bg-slate-700 transition disabled:opacity-50">{refreshing ? 'Refreshing...' : 'Clear & Rescan'}</button>
-                      <button onClick={() => { clearAllLeads(); setShowUtilityMenu(false); }} disabled={clearing} className="w-full px-4 py-2.5 text-left text-sm text-yellow-300 hover:bg-slate-700 transition disabled:opacity-50">{clearing ? 'Clearing...' : 'Clear All Leads'}</button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-            {showAdvanced && (
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                <span className="text-xs text-slate-500">Run individually:</span>
-                {[
-                  { key: 'planhub', label: 'PlanHub', bg: 'bg-blue-600/20', bgHover: 'hover:bg-blue-600/30', text: 'text-blue-400' },
-                  { key: 'bidplanroom', label: 'Bidplanroom', bg: 'bg-emerald-600/20', bgHover: 'hover:bg-emerald-600/30', text: 'text-emerald-400' },
-                  { key: 'loydbuildsbetter', label: 'Loyd Builds Better', bg: 'bg-amber-600/20', bgHover: 'hover:bg-amber-600/30', text: 'text-amber-400' },
-                  { key: 'buildingconnected', label: 'BuildingConnected', bg: 'bg-purple-600/20', bgHover: 'hover:bg-purple-600/30', text: 'text-purple-400' },
-                  { key: 'isqft', label: 'iSqFt', bg: 'bg-orange-600/20', bgHover: 'hover:bg-orange-600/30', text: 'text-orange-400' },
-                ].map(s => (
-                  <button
-                    key={s.key}
-                    onClick={() => triggerSingleScraper(s.key)}
-                    disabled={syncing}
-                    className={`px-3 py-1.5 rounded-lg ${s.bg} ${s.text} ${s.bgHover} text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="mb-6 flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-2xl p-2">
-          <button onClick={() => setActiveTab('bid')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${activeTab === 'bid' ? 'bg-[#ed2028] text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
-            <Building2 size={16} />Bid Board
-          </button>
-          <button onClick={() => setActiveTab('takeoff')} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${activeTab === 'takeoff' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}>
-            <Zap size={16} />Takeoff
-          </button>
-        </div>
-
-        {/* =================== BID BOARD TAB =================== */}
-        <div className={activeTab === 'bid' ? '' : 'hidden'}>
-          <LeadTable
-            title="All Active Opportunities"
-            data={filteredLeads}
-            showSiteFilter={true}
-            uniqueSites={uniqueSites}
-            siteFilter={siteFilter}
-            setSiteFilter={setSiteFilter}
-            sortConfig={sortConfig}
-            setSortConfig={setSortConfig}
-            triggerKnowledgeScan={triggerKnowledgeScan}
-            knowledgeScanning={knowledgeScanning}
-            triggerSingleScan={triggerSingleScan}
-            scanningIds={scanningIds}
-            toggleLeadStyle={toggleLeadStyle}
-            openEditModal={openEditModal}
-            deleteLead={deleteLead}
-            setCompanyPopup={setCompanyPopup}
-            setDescriptionPopup={setDescriptionPopup}
-            API_BASE={API_BASE}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            showHidden={showHidden}
-            setShowHidden={setShowHidden}
-            openPointToFile={openPointToFile}
-            openFolderBrowserForLead={openFolderBrowserForLead}
-            notionStatus={notionStatus}
-            sendToNotion={sendToNotion}
-          />
-        </div>
-
-        {/* =================== TAKEOFF TAB =================== */}
-        <div className={activeTab === 'takeoff' ? '' : 'hidden'}>
-          {activeTab === 'takeoff' && <TakeoffPanel />}
-        </div>
-
-        {/* =================== FILE BROWSER MODAL =================== */}
-        {pointToFileModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => { setPointToFileModal(null); setSelectedFile(null); }}>
-            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-6 max-w-7xl w-full mx-4 shadow-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-              {/* Header */}
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h3 className="text-xl font-bold text-white flex items-center gap-2"><FolderOpen className="text-blue-400" size={20} />File Browser</h3>
-                  <p className="text-xs text-slate-500 mt-1">Click a file to preview. Use classification buttons to tag files.</p>
-                </div>
-                <button onClick={() => { setPointToFileModal(null); setSelectedFile(null); }} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
-              </div>
-
-              {pointToFileModal.error && <div className="text-red-400 text-sm mb-3">{pointToFileModal.error}</div>}
-
-              {/* Two-panel layout */}
-              <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0 overflow-hidden">
-                {/* Left panel - File list */}
-                <div className="w-full md:w-80 flex-shrink-0 overflow-y-auto border border-slate-700 rounded-xl bg-slate-800/50 p-3 max-h-52 md:max-h-none">
-                  {pointToFileModal.files?.length === 0 ? (
-                    <div className="text-center py-12 text-slate-600 italic text-sm">No PDF files found. Make sure files have been downloaded.</div>
-                  ) : (
-                    <>
-                      {/* Batch action bar */}
-                      <div className="flex gap-1 mb-3 pb-2 border-b border-slate-700/50">
-                        <span className="text-[9px] text-slate-500 font-medium self-center mr-1">All:</span>
-                        {[['plan', 'Plans'], ['spec', 'Specs'], ['other', 'Other'], ['ignore', 'Ignore']].map(([cls, label]) => (
-                          <button
-                            key={cls}
-                            onClick={() => setBatchClassification(pointToFileModal.lead_id, cls)}
-                            className={`px-2 py-1 rounded text-[9px] font-semibold border transition ${classColor(cls)} hover:brightness-125`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                      {['plan', 'spec', 'other', 'ignore'].map(group => {
-                        const groupFiles = pointToFileModal.files?.filter(f => f.classification === group) || [];
-                        if (groupFiles.length === 0) return null;
-                        return (
-                          <div key={group} className="mb-4">
-                            <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 px-1 ${group === 'plan' ? 'text-blue-400' : group === 'spec' ? 'text-green-400' : group === 'ignore' ? 'text-red-400' : 'text-slate-400'}`}>
-                              {group === 'plan' ? 'Plans' : group === 'spec' ? 'Specs' : group === 'ignore' ? 'Ignored' : 'Other'} ({groupFiles.length})
-                            </div>
-                            {groupFiles.map((file, idx) => (
-                              <div
-                                key={`${group}-${idx}`}
-                                onClick={() => selectFileForViewing(pointToFileModal.lead_id, file.rel_path)}
-                                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer mb-1 transition-all ${file.classification === 'ignore' ? 'opacity-50' : ''} ${selectedFile === file.rel_path ? 'bg-blue-600/20 border border-blue-500/40 ring-1 ring-blue-500/30' : 'hover:bg-slate-700/50 border border-transparent'}`}
-                              >
-                                <div className="w-8 h-10 bg-slate-950 rounded flex-shrink-0 flex items-center justify-center">
-                                  <FileText size={14} className={`${file.classification === 'plan' ? 'text-blue-500' : file.classification === 'spec' ? 'text-green-500' : file.classification === 'ignore' ? 'text-red-500' : 'text-slate-600'}`} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className={`text-[11px] font-medium truncate ${file.classification === 'ignore' ? 'text-slate-500 line-through' : 'text-white'}`} title={file.filename}>{file.filename}</div>
-                                  <div className="text-[10px] text-slate-500">{file.size_kb > 1024 ? `${(file.size_kb / 1024).toFixed(1)} MB` : `${file.size_kb} KB`}</div>
-                                  {/* Classification buttons */}
-                                  <div className="flex gap-1 mt-1">
-                                    {['plan', 'spec', 'other', 'ignore'].map(cls => (
-                                      <button
-                                        key={cls}
-                                        onClick={(e) => { e.stopPropagation(); setFileClassification(pointToFileModal.lead_id, file.rel_path, cls); }}
-                                        className={`px-1.5 py-0.5 rounded text-[9px] font-semibold border transition ${file.classification === cls ? classColor(cls) + ' ring-1 ring-white/20' : 'bg-slate-700/50 text-slate-600 border-slate-600/50 hover:text-white hover:bg-slate-600'}`}
-                                      >
-                                        {cls === 'ignore' ? 'Ign' : cls.charAt(0).toUpperCase() + cls.slice(1)}
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </>
-                  )}
-                </div>
-
-                {/* Right panel - Page viewer */}
-                <div className="flex-1 min-h-48 md:min-h-0 min-w-0 flex flex-col border border-slate-700 rounded-xl bg-slate-950/50 overflow-hidden">
-                  {selectedFile ? (
-                    <>
-                      {/* Page navigation */}
-                      <div className="flex items-center justify-between px-4 py-2 bg-slate-800/80 border-b border-slate-700">
-                        <button
-                          onClick={() => navigateViewerPage(pointToFileModal.lead_id, selectedFile, viewerPage - 1)}
-                          disabled={viewerPage <= 0}
-                          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded text-xs font-medium transition-colors flex items-center gap-1"
-                        >
-                          <ChevronLeft size={14} /> Prev
-                        </button>
-                        <span className="text-xs text-slate-300 font-medium">
-                          Page {viewerPage + 1} of {viewerPageCount || '?'}
-                        </span>
-                        <button
-                          onClick={() => navigateViewerPage(pointToFileModal.lead_id, selectedFile, viewerPage + 1)}
-                          disabled={viewerPage >= viewerPageCount - 1}
-                          className="px-3 py-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded text-xs font-medium transition-colors flex items-center gap-1"
-                        >
-                          Next <ChevronRight size={14} />
-                        </button>
-                      </div>
-                      {/* Page image */}
-                      <div className="flex-1 overflow-auto flex items-start justify-center p-2">
-                        {viewerImageUrl ? (
-                          <img
-                            src={viewerImageUrl}
-                            alt={`Page ${viewerPage + 1}`}
-                            className="max-w-full h-auto"
-                            onLoad={() => setViewerLoading(false)}
-                            onError={() => setViewerLoading(false)}
-                          />
-                        ) : (
-                          <div className="text-slate-600 text-sm mt-20">Loading...</div>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center text-slate-600">
-                      <div className="text-center">
-                        <FileText size={48} className="mx-auto mb-3 opacity-30" />
-                        <p className="text-sm">Select a file to preview</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Bottom bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4 pt-3 border-t border-slate-700/50">
-                <div className="text-[11px] text-slate-500">
-                  {(() => {
-                    const files = pointToFileModal.files || [];
-                    const plans = files.filter(f => f.classification === 'plan').length;
-                    const specs = files.filter(f => f.classification === 'spec').length;
-                    const other = files.filter(f => f.classification === 'other').length;
-                    const ignored = files.filter(f => f.classification === 'ignore').length;
-                    return `${plans} Plan${plans !== 1 ? 's' : ''}, ${specs} Spec${specs !== 1 ? 's' : ''}, ${other} Other${ignored ? `, ${ignored} Ignored` : ''}`;
-                  })()}
-                </div>
-                <div className="flex gap-3">
-                  <button onClick={() => { setPointToFileModal(null); setSelectedFile(null); }} className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg transition-colors text-sm">Close</button>
-                  <button onClick={() => { triggerSingleScan(pointToFileModal.lead_id); setPointToFileModal(null); setSelectedFile(null); }} className="px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg transition-colors flex items-center gap-2 text-sm"><RefreshCw size={14} />Rescan with Changes</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* =================== COMPANY POPUP =================== */}
-        {companyPopup && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setCompanyPopup(null)}>
-            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-between items-start mb-6">
-                <h3 className="text-2xl font-bold text-white flex items-center gap-2"><Building2 className="text-orange-500" size={24} />Company Details</h3>
-                <button onClick={() => setCompanyPopup(null)} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
-              </div>
-              <div className="space-y-4">
-                <div className="bg-slate-800/50 rounded-lg p-4">
-                  <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Company</div>
-                  <div className="text-lg font-semibold text-white">{companyPopup.company !== "N/A" ? companyPopup.company : <span className="text-slate-600 italic">No Company</span>}</div>
-                  {companyPopup.gc && companyPopup.gc !== "N/A" && <div className="text-sm text-slate-400 mt-1">GC: {companyPopup.gc}</div>}
-                </div>
-                <div className="bg-slate-800/50 rounded-lg p-4">
-                  <div className="text-xs text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1"><User size={12} />Contact Name</div>
-                  <div className="text-lg font-medium text-white">{companyPopup.contact_name !== "N/A" ? companyPopup.contact_name : <span className="text-slate-600 italic">No Contact</span>}</div>
-                </div>
-                {companyPopup.contact_email && (
-                  <div className="bg-slate-800/50 rounded-lg p-4">
-                    <div className="text-xs text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1"><Mail size={12} />Email</div>
-                    <a href={`mailto:${companyPopup.contact_email}`} className="text-lg text-orange-400 hover:text-orange-300 transition-colors break-all">{companyPopup.contact_email}</a>
-                  </div>
-                )}
-                <div className="bg-slate-800/50 rounded-lg p-4">
-                  <div className="text-xs text-slate-500 uppercase tracking-wide mb-2">Project Info</div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2 text-slate-300"><MapPin size={14} className="text-slate-500" />{companyPopup.location || "N/A"}</div>
-                    <div className="flex items-center gap-2 text-slate-300"><Calendar size={14} className="text-slate-500" />Bid Date: {formatDate(companyPopup.bid_date)}</div>
-                  </div>
-                </div>
-              </div>
-              {companyPopup.also_listed_by && companyPopup.also_listed_by.length > 0 && (
-                <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4 mt-4">
-                  <div className="text-xs text-blue-400 uppercase tracking-wide mb-2 flex items-center gap-1">
-                    <Building2 size={12} />Also Listed By
-                  </div>
-                  <ul className="space-y-1">
-                    {companyPopup.also_listed_by.map((entry, idx) => (
-                      <li key={idx} className="text-sm text-slate-300 flex items-center gap-2">
-                        <Building2 size={12} className="text-slate-500" />
-                        {entry.gc || 'Unknown'} <span className="text-slate-500 text-xs">(via {entry.site})</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <button onClick={() => setCompanyPopup(null)} className="mt-6 w-full bg-[#ed2028] hover:bg-red-600 text-white font-bold py-3 rounded-lg transition-colors">Close</button>
-            </div>
-          </div>
-        )}
-
-        {/* =================== DESCRIPTION POPUP =================== */}
-        {descriptionPopup && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setDescriptionPopup(null)}>
-            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-3 sm:p-4 max-w-3xl w-full mx-2 sm:mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-between items-start mb-4">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2"><Description className="text-orange-500" size={20} />Project Details</h3>
-                <div className="flex gap-2 flex-wrap justify-end">
-                  {descriptionPopup.url && (
-                    <a href={descriptionPopup.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-slate-600 text-blue-300 px-3 py-1 rounded-full transition-colors">
-                      <ExternalLink size={12} /> Open Project
-                    </a>
-                  )}
-                  <button onClick={() => { setActiveTab('takeoff'); setDescriptionPopup(null); }} className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-red-600 text-slate-300 hover:text-white px-3 py-1 rounded-full transition-colors">
-                    <Zap size={12} /> Run Takeoff
-                  </button>
-                  <button onClick={() => setDescriptionPopup(null)} className="text-slate-400 hover:text-white transition-colors"><X size={20} /></button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="bg-slate-800/50 rounded-lg p-3">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Project Name</div>
-                  <div className="text-base font-semibold text-white">{descriptionPopup.name || 'N/A'}</div>
-                </div>
-                <div className="bg-slate-800/50 rounded-lg p-3">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Description / Full Address</div>
-                  {(() => {
-                    const descText = stripHtml(descriptionPopup.description) || descriptionPopup.full_address || 'No description available';
-                    const isLong = descText.length > 200;
-                    return (
-                      <>
-                        <div className={`text-sm text-slate-300 whitespace-pre-wrap ${isLong && !descriptionPopup._descExpanded ? 'max-h-[4.5rem] overflow-hidden' : ''}`}>
-                          {descText}
-                        </div>
-                        {isLong && (
-                          <button
-                            onClick={() => setDescriptionPopup(prev => ({ ...prev, _descExpanded: !prev._descExpanded }))}
-                            className="text-[11px] text-blue-400 hover:text-blue-300 mt-1"
-                          >
-                            {descriptionPopup._descExpanded ? 'Show less' : 'Show more'}
-                          </button>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <div className="bg-slate-800/50 rounded-lg p-3 flex-1">
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1 flex items-center gap-1"><MapPin size={10} />Location</div>
-                    <div className="text-sm text-slate-300">{descriptionPopup.location || 'N/A'}</div>
-                  </div>
-                  <div className="bg-slate-800/50 rounded-lg p-3 flex-1">
-                    <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Source</div>
-                    <div className="text-sm text-slate-300">{descriptionPopup.site || descriptionPopup.source || 'N/A'}</div>
-                    {descriptionPopup.url && (
-                      <a href={descriptionPopup.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-blue-400 hover:text-blue-300 underline underline-offset-2 break-all mt-1 block">
-                        {descriptionPopup.url}
-                      </a>
-                    )}
-                  </div>
-                </div>
-                {descriptionPopup.also_listed_by && descriptionPopup.also_listed_by.length > 0 && (
-                  <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
-                    <div className="text-[10px] text-blue-400 uppercase tracking-wide mb-2 flex items-center gap-1"><Building2 size={10} />Also Bidding</div>
-                    <ul className="space-y-1">
-                      {descriptionPopup.also_listed_by.map((entry, idx) => (
-                        <li key={idx} className="text-sm text-slate-300 flex items-center gap-2">
-                          <Building2 size={12} className="text-slate-500" />
-                          {entry.gc || 'Unknown'} <span className="text-slate-500 text-xs">(via {entry.site})</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {descriptionPopup.planhub_gcs && descriptionPopup.planhub_gcs.length > 0 && (
-                  <div className="bg-slate-800/50 border border-slate-600/40 rounded-lg p-3">
-                    <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1">
-                      <Building2 size={10} />Contractors Bidding ({descriptionPopup.planhub_gcs.length})
-                    </div>
-                    <ul className="space-y-2">
-                      {descriptionPopup.planhub_gcs.map((gc, idx) => (
-                        <li key={idx} className="flex items-start gap-2">
-                          <Building2 size={11} className="text-slate-500 mt-0.5 shrink-0" />
-                          <div>
-                            <span className="text-sm text-slate-200 font-medium">{gc.company_name || 'Unknown'}</span>
-                            {gc.user_name && <span className="text-slate-400 text-xs ml-1.5">· {gc.user_name}</span>}
-                            {(gc.email_address || gc.phone_number) && (
-                              <div className="text-[11px] text-slate-500 mt-0.5">
-                                {gc.email_address && <span>{gc.email_address}</span>}
-                                {gc.email_address && gc.phone_number && <span className="mx-1">·</span>}
-                                {gc.phone_number && <span>{gc.phone_number}</span>}
-                              </div>
-                            )}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                <div className="flex gap-2 flex-wrap">
-                  {descriptionPopup.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/30">Has Budget</span>}
-                  {getSystemTags(descriptionPopup).map((tagId, idx) => {
-                    const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
-                    return pt ? <span key={`st-${idx}`} className={`text-[10px] px-2 py-0.5 rounded-full border cursor-default ${tagColorClass(pt.color)}`} title={pt.hint}>{pt.label}</span> : null;
-                  })}
-                  {descriptionPopup.tags && descriptionPopup.tags.map((tag, idx) => (
-                    <span key={`ut-${idx}`} className={`text-[10px] px-2 py-0.5 rounded-full border cursor-default ${tagColorClass(tag.color)}`}>{tag.label}</span>
-                  ))}
-                </div>
-
-                {/* AI Analysis Section — Rich Takeoff cards when available, fallback to basic */}
-                {descriptionPopup.takeoff_timestamp ? (
-                  <div className="space-y-3 mt-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Brain className="text-purple-400" size={18} />
-                        <span className="text-sm font-semibold text-purple-300">Deep Scan Results</span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          copyRichHtml(buildTakeoffHtml(descriptionPopup));
-                          setDescriptionPopup(prev => ({ ...prev, _copied: true }));
-                          setTimeout(() => setDescriptionPopup(prev => prev ? ({ ...prev, _copied: false }) : prev), 2000);
-                        }}
-                        className="flex items-center gap-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
-                      >
-                        {descriptionPopup._copied ? <><CheckCircle size={13} className="text-green-400" /> Copied!</> : <><ClipboardCopy size={13} /> Copy for Notion</>}
-                      </button>
-                    </div>
-                    {/* Project Snapshot */}
-                    {descriptionPopup.takeoff_snapshot && (
-                      <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4">
-                        <div className="text-sm font-semibold text-purple-300 mb-2 flex items-center gap-1.5"><Brain size={16} className="text-purple-400" /> Project Snapshot</div>
-                        {descriptionPopup.takeoff_snapshot.scope_summary && (
-                          <div className="text-sm text-slate-300 mb-3 leading-relaxed">{descriptionPopup.takeoff_snapshot.scope_summary}</div>
-                        )}
-                        {(() => {
-                          const pd = descriptionPopup.takeoff_snapshot.project_details || {};
-                          const fields = [
-                            ['Project', pd.project_name],
-                            ['Address', pd.project_address || pd.project_location],
-                            ['Type', pd.project_type],
-                            ['Building', pd.building_type || pd.occupancy_type],
-                            ['Codes', Array.isArray(pd.applicable_codes) ? pd.applicable_codes.join(', ') : pd.applicable_codes],
-                            ['Occupancy', pd.occupancy_classification],
-                          ].filter(([, v]) => v);
-                          return fields.length > 0 ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                              {fields.map(([label, val]) => (
-                                <div key={label}><span className="text-slate-500">{label}:</span> <span className="text-white">{val}</span></div>
-                              ))}
-                            </div>
-                          ) : null;
-                        })()}
-                      </div>
-                    )}
-
-                    {/* FA Briefing */}
-                    {descriptionPopup.takeoff_fa_briefing && (
-                      <div className="bg-red-900/15 border border-red-500/25 rounded-lg p-4">
-                        <div className="text-sm font-semibold text-red-300 mb-2 flex items-center gap-1.5"><Shield size={16} className="text-red-400" /> Fire Alarm Briefing</div>
-                        {(() => {
-                          const fa = descriptionPopup.takeoff_fa_briefing.fire_alarm_details || {};
-                          const items = [
-                            ['Panel Status', fa.panel_status || fa.existing_system],
-                            ['Sprinkler', fa.sprinkler_status],
-                            ['Voice Evac', fa.voice_evac || fa.voice_required],
-                            ['CO Detection', fa.co_detection],
-                          ].filter(([, v]) => v);
-                          return items.length > 0 ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
-                              {items.map(([label, val]) => (
-                                <div key={label}><span className="text-slate-500">{label}:</span> <span className="text-white">{String(val)}</span></div>
-                              ))}
-                            </div>
-                          ) : null;
-                        })()}
-                        {(() => {
-                          const sp = descriptionPopup.takeoff_fa_briefing.specifications || {};
-                          const specItems = [
-                            ['Control Panel', sp.CONTROL_PANEL],
-                            ['System Type', sp.SYSTEM_TYPE],
-                            ['Wiring', sp.WIRING_CLASS],
-                            ['Monitoring', sp.MONITORING],
-                            ['Audio', sp.AUDIO_SYSTEM],
-                            ['Approved Mfrs', Array.isArray(sp.APPROVED_MANUFACTURERS) ? sp.APPROVED_MANUFACTURERS.join(', ') : sp.APPROVED_MANUFACTURERS],
-                          ].filter(([, v]) => v && v !== 'unknown' && String(v).toLowerCase() !== 'addressable');
-                          return specItems.length > 0 ? (
-                            <div className="mt-2 pt-2 border-t border-red-500/15">
-                              <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Key Specs</div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                                {specItems.map(([label, val]) => (
-                                  <div key={label}><span className="text-slate-500">{label}:</span> <span className="text-amber-200">{String(val)}</span></div>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null;
-                        })()}
-                      </div>
-                    )}
-
-                    {/* Mechanical Coordination */}
-                    {descriptionPopup.takeoff_mechanical && Object.keys(descriptionPopup.takeoff_mechanical).length > 0 && (
-                      <div className="bg-cyan-900/15 border border-cyan-500/25 rounded-lg p-4">
-                        <div className="text-sm font-semibold text-cyan-300 mb-2 flex items-center gap-1.5"><Zap size={16} className="text-cyan-400" /> Mechanical Coordination</div>
-                        {(() => {
-                          const mech = descriptionPopup.takeoff_mechanical;
-                          const items = [
-                            ['Duct Detectors/RTU', mech.duct_detectors_per_rtu || mech.duct_detectors],
-                            ['Dampers', mech.dampers || mech.fire_smoke_dampers],
-                            ['Access Doors', mech.access_control_doors || mech.access_doors],
-                          ].filter(([, v]) => v);
-                          return (
-                            <>
-                              {items.length > 0 && (
-                                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-2">
-                                  {items.map(([label, val]) => (
-                                    <div key={label}><span className="text-slate-500">{label}:</span> <span className="text-white">{String(val)}</span></div>
-                                  ))}
-                                </div>
-                              )}
-                              {Array.isArray(mech.equipment) && mech.equipment.length > 0 && (
-                                <div className="space-y-1">
-                                  {mech.equipment.map((eq, idx) => (
-                                    <div key={idx} className="text-xs bg-slate-800/40 rounded p-2">
-                                      <span className="text-cyan-200">{eq.name || eq.type || `Unit ${idx + 1}`}</span>
-                                      {eq.cfm && <span className="text-slate-400 ml-1">({eq.cfm} CFM)</span>}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
-
-                    {/* Fire Alarm Notes */}
-                    {descriptionPopup.takeoff_fa_notes && descriptionPopup.takeoff_fa_notes.length > 0 && (
-                      <div className="bg-amber-900/15 border border-amber-500/25 rounded-lg p-4">
-                        <div className="text-sm font-semibold text-amber-300 mb-2 flex items-center gap-1.5"><FileText size={16} className="text-amber-400" /> Fire Alarm Notes</div>
-                        <div className="space-y-1.5">
-                          {descriptionPopup.takeoff_fa_notes.map((note, idx) => (
-                            <div key={idx} className="text-xs text-slate-300 leading-relaxed">
-                              {note.page && <span className="text-amber-400/70 mr-1 font-medium">[p{note.page}]</span>}
-                              {note.content || (typeof note === 'string' ? note : JSON.stringify(note))}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Pitfalls + Estimating Notes */}
-                    {((descriptionPopup.takeoff_pitfalls && descriptionPopup.takeoff_pitfalls.length > 0) ||
-                      (descriptionPopup.takeoff_estimating_notes && descriptionPopup.takeoff_estimating_notes.length > 0)) && (
-                      <div className="bg-red-900/10 border border-red-500/20 rounded-lg p-4">
-                        <div className="text-sm font-semibold text-red-300 mb-2 flex items-center gap-1.5"><AlertTriangle size={16} className="text-red-400" /> Conflicts, Pitfalls & Advice</div>
-                        {descriptionPopup.takeoff_pitfalls && descriptionPopup.takeoff_pitfalls.length > 0 && (
-                          <ul className="space-y-1.5 mb-2">
-                            {descriptionPopup.takeoff_pitfalls.map((p, idx) => (
-                              <li key={`p-${idx}`} className="text-xs text-red-200 flex items-start gap-1.5 leading-relaxed">
-                                <span className="text-red-400 mt-0.5 shrink-0">•</span>
-                                <span>{typeof p === 'string' ? p : p.content || JSON.stringify(p)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        {descriptionPopup.takeoff_estimating_notes && descriptionPopup.takeoff_estimating_notes.length > 0 && (
-                          <ul className="space-y-1.5">
-                            {descriptionPopup.takeoff_estimating_notes.map((n, idx) => (
-                              <li key={`e-${idx}`} className="text-xs text-orange-200 flex items-start gap-1.5 leading-relaxed">
-                                <span className="text-orange-400 mt-0.5 shrink-0">•</span>
-                                <span>{typeof n === 'string' ? n : n.content || JSON.stringify(n)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Competitive Advantages */}
-                    {descriptionPopup.takeoff_competitive_advantages && descriptionPopup.takeoff_competitive_advantages.length > 0 && (
-                      <div className="bg-green-900/15 border border-green-500/25 rounded-lg p-4">
-                        <div className="text-sm font-semibold text-green-300 mb-2 flex items-center gap-1.5"><CheckCircle2 size={16} className="text-green-400" /> Competitive Advantages</div>
-                        <ul className="space-y-1.5">
-                          {descriptionPopup.takeoff_competitive_advantages.map((a, idx) => (
-                            <li key={idx} className="text-xs text-green-200 flex items-start gap-1.5 leading-relaxed">
-                              <span className="text-green-400 mt-0.5 shrink-0">•</span>
-                              <span>{typeof a === 'string' ? a : a.content || JSON.stringify(a)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* Project Tags */}
-                    {descriptionPopup.takeoff_project_tags && descriptionPopup.takeoff_project_tags.length > 0 && (
-                      <div className="flex gap-2 flex-wrap">
-                        {descriptionPopup.takeoff_project_tags.map((tag, idx) => (
-                          <span key={idx} className={`relative group/tag text-xs px-2.5 py-1 rounded-full border ${tag.color || 'bg-slate-500/20 text-slate-300 border-slate-500/30'} cursor-default`}>
-                            {tag.label}
-                            {tag.hover && (
-                              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-xs text-slate-200 whitespace-nowrap opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50">
-                                {tag.hover}
-                              </span>
-                            )}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="text-xs text-slate-600 mt-1 flex justify-between">
-                      <span>Deep Scan: {new Date(descriptionPopup.takeoff_timestamp).toLocaleDateString()}</span>
-                      {descriptionPopup.knowledge_file_count && <span>Files: {descriptionPopup.knowledge_file_count}</span>}
-                    </div>
-                  </div>
-                ) : descriptionPopup.knowledge_last_scanned ? (
-                  <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4 mt-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Brain className="text-purple-400" size={18} />
-                      <span className="text-sm font-semibold text-purple-300">AI Fire Alarm Analysis</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mb-3">
-                      <div className="bg-slate-800/50 rounded p-2">
-                        <span className="text-slate-500">System Type:</span>
-                        <span className="ml-1 text-white capitalize">{descriptionPopup.knowledge_system_type || 'Unknown'}</span>
-                      </div>
-
-                    </div>
-
-                    {descriptionPopup.knowledge_required_vendors && descriptionPopup.knowledge_required_vendors.length > 0 && (
-                      <div className="text-xs mb-2">
-                        <span className="text-slate-500">Required Vendors:</span>
-                        <span className="ml-1 text-orange-300">{descriptionPopup.knowledge_required_vendors.join(', ')}</span>
-                      </div>
-                    )}
-
-                    {descriptionPopup.knowledge_required_manufacturers && descriptionPopup.knowledge_required_manufacturers.length > 0 && (
-                      <div className="text-xs mb-2">
-                        <span className="text-slate-500">Required Manufacturers:</span>
-                        <span className="ml-1 text-amber-300">{descriptionPopup.knowledge_required_manufacturers.join(', ')}</span>
-                      </div>
-                    )}
-
-                    {descriptionPopup.knowledge_required_codes && descriptionPopup.knowledge_required_codes.length > 0 && (
-                      <div className="text-xs mb-2">
-                        <span className="text-slate-500">Code Requirements:</span>
-                        <span className="ml-1 text-cyan-300">{descriptionPopup.knowledge_required_codes.join(', ')}</span>
-                      </div>
-                    )}
-
-                    {descriptionPopup.knowledge_deal_breakers && descriptionPopup.knowledge_deal_breakers.length > 0 && (
-                      <div className="text-xs mb-2">
-                        <span className="text-red-400">Deal Breakers:</span>
-                        <span className="ml-1 text-red-300">{descriptionPopup.knowledge_deal_breakers.join(', ')}</span>
-                      </div>
-                    )}
-
-                    {descriptionPopup.knowledge_evidence && (
-                      <div className="mt-3 pt-3 border-t border-purple-500/20">
-                        <div className="text-xs text-slate-500 mb-2">Evidence (page + snippet)</div>
-                        <div className="space-y-1 text-[11px]">
-                          {Object.entries(descriptionPopup.knowledge_evidence).map(([category, entries]) => {
-                            if (!Array.isArray(entries) || entries.length === 0) return null;
-                            return (
-                              <div key={category} className="bg-slate-800/40 rounded p-2">
-                                <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">{category.replaceAll('_', ' ')}</div>
-                                <ul className="space-y-1">
-                                  {entries.map((entry, idx) => (
-                                    <li key={`${category}-${idx}`} className="text-slate-300">
-                                      <span className="text-purple-300 font-medium">{entry.claim || 'Claim'}</span>
-                                      <span className="text-slate-400"> — Pg {entry.page}: </span>
-                                      <span>{entry.quote || 'No quote provided'}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {descriptionPopup.knowledge_validation_warnings && descriptionPopup.knowledge_validation_warnings.length > 0 && (
-                      <div className="mt-2 text-[11px] bg-yellow-900/20 border border-yellow-500/30 rounded p-2 text-yellow-200">
-                        <div className="font-semibold mb-1">Evidence validation warnings</div>
-                        <ul className="list-disc list-inside space-y-0.5">
-                          {descriptionPopup.knowledge_validation_warnings.map((warning, idx) => (
-                            <li key={idx}>{warning}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {descriptionPopup.knowledge_notes && (
-                      <div className="mt-3 pt-3 border-t border-purple-500/20">
-                        <div className="text-xs text-slate-500 mb-1">Analysis Notes:</div>
-                        <div className="text-xs text-slate-300 whitespace-pre-wrap bg-slate-800/50 rounded p-2">
-                          {descriptionPopup.knowledge_notes}
-                        </div>
-                      </div>
-                    )}
-
-                    {descriptionPopup.knowledge_addendums && descriptionPopup.knowledge_addendums.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-orange-500/20">
-                        <div className="text-xs text-orange-400 font-semibold mb-2 flex items-center gap-1">
-                          <AlertTriangle size={12} />
-                          Addendums / Revisions ({descriptionPopup.knowledge_addendums.length})
-                        </div>
-                        <div className="space-y-1">
-                          {descriptionPopup.knowledge_addendums.map((add, idx) => (
-                            <div key={idx} className="text-xs bg-orange-900/20 rounded p-2 flex justify-between items-center">
-                              <span className="text-orange-200 truncate max-w-[250px]">{add.filename}</span>
-                              {add.modified && (
-                                <span className="text-[10px] text-orange-400/60">{new Date(add.modified).toLocaleDateString()}</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="text-[10px] text-slate-600 mt-2 flex justify-between">
-                      <span>Scanned: {new Date(descriptionPopup.knowledge_last_scanned).toLocaleDateString()}</span>
-                      {descriptionPopup.knowledge_file_count && (
-                        <span>Files: {descriptionPopup.knowledge_file_count}</span>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-
-                {!descriptionPopup.knowledge_last_scanned && (
-                  <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4 mt-4 text-center">
-                    <Brain className="text-slate-600 mx-auto mb-2" size={20} />
-                    <div className="text-xs text-slate-500">Not scanned by Knowledge Scanner yet</div>
-                    <div className="text-[10px] text-slate-600 mt-1">Run Knowledge Scan to see AI analysis</div>
-                  </div>
-                )}
-              </div>
-              <button onClick={() => setDescriptionPopup(null)} className="mt-6 w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors">Close</button>
-            </div>
-          </div>
-        )}
-
-        {/* Settings Modal */}
-        {showSettings && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 animate-fade-in">
-            <div className="bg-gray-800 rounded-xl shadow-2xl max-w-md w-full border border-gray-700 overflow-hidden">
-              <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900/50">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Settings size={20} className="text-blue-400" />
-                  Scraper Settings
-                </h2>
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className="text-gray-400 hover:text-white transition-colors"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-6">
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Enabled Planrooms</h3>
-                  <div className="space-y-3">
-                    {[
-                      { key: 'planhub', label: 'PlanHub' },
-                      { key: 'bidplanroom', label: 'BidPlanroom' },
-                      { key: 'loydbuildsbetter', label: 'Loyd Builds Better' },
-                      { key: 'buildingconnected', label: 'BuildingConnected' }
-                    ].map(({ key, label }) => (
-                      <div key={key} className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors">
-                        <span className="text-gray-200 font-medium">{label}</span>
-                        <button
-                          onClick={() => toggleSetting(key)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${scraperSettings[key] ? 'bg-blue-600' : 'bg-gray-600'
-                            }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${scraperSettings[key] ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                          />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-gray-700">
-                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Integrations</h3>
-                  <div className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors">
-                    <span className="text-gray-200 font-medium">Upload to Google Drive</span>
-                    <button
-                      onClick={() => toggleSetting('use_gdrive')}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${scraperSettings['use_gdrive'] ? 'bg-green-600' : 'bg-gray-600'
-                        }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${scraperSettings['use_gdrive'] ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-gray-700">
-                  <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">AI Scanning</h3>
-                  <div className="flex items-center justify-between p-3 bg-gray-700/50 rounded-lg">
-                    <div>
-                      <span className="text-gray-200 font-medium block">Gemini Model</span>
-                      <span className="text-gray-500 text-xs">Used for AI/deep scans</span>
-                    </div>
-                    <select
-                      value={scraperSettings.gemini_model || 'gemini-3.1-pro-preview'}
-                      onChange={(e) => {
-                        const newSettings = { ...scraperSettings, gemini_model: e.target.value };
-                        saveSettings(newSettings);
-                      }}
-                      className="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview</option>
-                      <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
-                      <option value="gemini-pro-latest">Gemini Pro Latest</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 border-t border-gray-700 bg-gray-900/30 flex justify-end">
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors font-medium"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* =================== CONSOLE PANEL =================== */}
-        {showConsole && (
-          <div className={`fixed bottom-0 left-0 right-0 bg-slate-900 border-t-2 border-slate-700 shadow-2xl z-40 transition-all ${consoleMinimized ? 'h-12' : 'h-80'}`}>
-            <div className="flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-slate-700">
-              <div className="flex items-center gap-3">
-                <Terminal size={16} className="text-green-400" />
-                <span className="text-sm font-semibold text-white">Scraper Console</span>
-                {scraperStatus?.running && <span className="flex items-center gap-2 text-xs text-green-400"><span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>{scraperStatus.current_step || 'Running...'}</span>}
-                {scraperStatus && !scraperStatus.running && scraperStatus.last_status && <span className="text-xs text-slate-400">Last: {scraperStatus.last_status}</span>}
-              </div>
-              <div className="flex items-center gap-2">
-                {scraperStatus?.leads_found && <span className="text-xs text-slate-400">BC: {scraperStatus.leads_found.buildingconnected} | PH: {scraperStatus.leads_found.planhub} | iSqFt: {scraperStatus.leads_found.isqft ?? 0}</span>}
-                <button onClick={clearConsoleLogs} className="px-2 py-1 text-xs bg-slate-700 text-slate-300 rounded hover:bg-slate-600 transition">Clear</button>
-                <button onClick={() => setConsoleMinimized(!consoleMinimized)} className="p-1 text-slate-400 hover:text-white transition">{consoleMinimized ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
-                <button onClick={() => setShowConsole(false)} className="p-1 text-slate-400 hover:text-white transition"><X size={14} /></button>
-              </div>
-            </div>
-            {!consoleMinimized && (
-              <div className="h-[calc(100%-40px)] overflow-y-auto p-3 font-mono text-xs">
-                {consoleLogs.length === 0 ? (
-                  <div className="text-slate-500 italic">No logs yet. Click "Scan" to start scraping...</div>
-                ) : consoleLogs.map((log, i) => {
-                  const tagColors = { '[BC]': 'text-cyan-400', '[PH]': 'text-violet-400', '[LBB]': 'text-amber-400', '[BPR]': 'text-emerald-400' };
-                  const tagMatch = log.match(/^\[(?:BC|PH|LBB|BPR)\]/);
-                  const lineColor = log.includes('ERROR') ? 'text-red-400' : log.includes('TIMEOUT') ? 'text-yellow-400' : log.includes('OK') || log.includes('Complete') ? 'text-green-400' : log.includes('LOGIN') ? 'text-orange-400 font-bold' : log.includes('Found') ? 'text-blue-400' : 'text-slate-300';
-                  return (
-                    <div key={i} className={`py-0.5 ${lineColor}`}>
-                      {tagMatch ? <><span className={`${tagColors[tagMatch[0]]} font-bold`}>{tagMatch[0]}</span>{log.slice(tagMatch[0].length)}</> : log}
-                    </div>
-                  );
-                })}
-                <div ref={consoleEndRef} />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* =================== ADD/EDIT MODAL =================== */}
-        {(addModal || editModal) && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }}>
-            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-4 sm:p-6 max-w-2xl w-full mx-2 sm:mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-between items-start mb-4 sm:mb-6">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                  {editModal ? (<><Pencil className="text-blue-500" size={20} />Edit Lead</>) : (<><Plus className="text-green-500" size={20} />Add New Lead</>)}
-                </h3>
-                <button onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="sm:col-span-2"><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Project Name *</label><input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="Enter project name" /></div>
-                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Company</label><input type="text" value={formData.company} onChange={(e) => setFormData({ ...formData, company: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="Company name" /></div>
-                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">General Contractor</label><input type="text" value={formData.gc} onChange={(e) => setFormData({ ...formData, gc: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="GC name" /></div>
-                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Contact Name</label><input type="text" value={formData.contact_name} onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="Contact person" /></div>
-                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Contact Email</label><input type="email" value={formData.contact_email} onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="email@example.com" /></div>
-                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Contact Phone</label><input type="tel" value={formData.contact_phone} onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="(555) 123-4567" /></div>
-                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Bid Date</label><input type="text" value={formData.bid_date} onChange={(e) => setFormData({ ...formData, bid_date: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="MM/DD/YYYY or TBD" /></div>
-                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Location</label><input type="text" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="City, State" /></div>
-                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Full Address</label><input type="text" value={formData.full_address} onChange={(e) => setFormData({ ...formData, full_address: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="123 Main St, City, State ZIP" /></div>
-                <div className="sm:col-span-2"><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Description</label><textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none h-20 resize-none" placeholder="Project description..." /></div>
-                <div>
-                  <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Files Link</label>
-                  <div className="flex gap-2">
-                    <input type="text" value={formData.files_link} onChange={(e) => setFormData({ ...formData, files_link: e.target.value })} className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="https://... or C:\..." />
-                    <button onClick={triggerFolderPicker} className="bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white px-3 rounded-lg transition-colors" title="Native Folder Picker">
-                      <FolderOpen size={18} />
-                    </button>
-                    <button onClick={openFolderBrowser} className="bg-blue-700 hover:bg-blue-600 text-slate-300 hover:text-white px-3 rounded-lg transition-colors" title="Browse Server Folders">
-                      <Search size={18} />
-                    </button>
-                  </div>
-                </div>
-                <div><label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Download Link</label><input type="url" value={formData.download_link} onChange={(e) => setFormData({ ...formData, download_link: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-orange-500 focus:outline-none" placeholder="https://..." /></div>
-                <div className="sm:col-span-2 flex gap-6">
-                  <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.sprinklered} onChange={(e) => setFormData({ ...formData, sprinklered: e.target.checked })} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500" /><span className="text-sm text-slate-300">Sprinklered</span></label>
-                  <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.has_budget} onChange={(e) => setFormData({ ...formData, has_budget: e.target.checked })} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500" /><span className="text-sm text-slate-300">Has Budget</span></label>
-                </div>
-              </div>
-              <div className="flex gap-3 mt-6">
-                <button onClick={() => { setAddModal(false); setEditModal(null); setFormData(emptyForm); }} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg transition-colors">Cancel</button>
-                <button onClick={editModal ? updateLead : addLead} disabled={!formData.name} className="flex-1 bg-[#ed2028] hover:bg-red-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors">{editModal ? 'Update Lead' : 'Add Lead'}</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* =================== FOLDER BROWSER MODAL =================== */}
-        {folderBrowserModal && (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setFolderBrowserModal(false)}>
-            <div className="bg-slate-900 border-2 border-slate-700 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                  <FolderOpen className="text-blue-500" size={20} />Browse Folders
-                </h3>
-                <button onClick={() => setFolderBrowserModal(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
-              </div>
-              <div className="bg-slate-800 rounded-lg p-2 mb-4 flex items-center gap-2">
-                <button onClick={goUpDirectory} disabled={!folderBrowserPath} className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-white px-3 py-1 rounded transition-colors">
-                  <ChevronUp size={18} />
-                </button>
-                <span className="text-slate-300 text-sm truncate flex-1">{folderBrowserPath || '(Root)'}</span>
-              </div>
-              <div className="bg-slate-800 rounded-lg max-h-64 overflow-y-auto">
-                {folderBrowserLoading ? (
-                  <div className="text-center py-8 text-slate-400">Loading...</div>
-                ) : folderBrowserItems.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500">No folders found</div>
-                ) : (
-                  folderBrowserItems.map((item, i) => (
-                    <button key={i} onClick={() => browseTo(item.path)} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-700 text-left text-white transition-colors border-b border-slate-700 last:border-0">
-                      <FolderOpen size={16} className="text-yellow-500" />
-                      <span className="truncate">{item.name}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-              <div className="flex gap-3 mt-4">
-                <button onClick={() => setFolderBrowserModal(false)} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 rounded-lg transition-colors">Cancel</button>
-                <button onClick={selectFolder} disabled={!folderBrowserPath} className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-2 rounded-lg transition-colors">Select This Folder</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-      </div>
     </div>
   );
 }
-
-// LeadTable moved outside to persist state (expandedLeadId, currentPage) across parent re-renders/refreshes
-const LeadTable = ({
-  title, data, showSiteFilter, uniqueSites, siteFilter, setSiteFilter,
-  triggerKnowledgeScan, knowledgeScanning, triggerSingleScan, scanningIds,
-  toggleLeadStyle, openEditModal, deleteLead, setCompanyPopup,
-  setDescriptionPopup, API_BASE, sortConfig, setSortConfig,
-  searchQuery, setSearchQuery, showHidden, setShowHidden, openPointToFile,
-  openFolderBrowserForLead, notionStatus, sendToNotion
-}) => {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [expandedLeadId, setExpandedLeadId] = useState(null);
-  const [expandedThumbnail, setExpandedThumbnail] = useState(null);
-  const [qaQuestion, setQaQuestion] = useState('');
-  const [qaLoading, setQaLoading] = useState(false);
-  const [tagPicker, setTagPicker] = useState(null); // { leadId, top, left }
-  const [activeTagFilters, setActiveTagFilters] = useState([]);
-  const itemsPerPage = 50;
-
-  const visibleData = useMemo(() => {
-    if (activeTagFilters.length === 0) return data;
-    return data.filter(lead => {
-      const systemTags = getSystemTags(lead);
-      return activeTagFilters.some(tagId =>
-        lead.tags?.some(t => t.label === tagId) || systemTags.includes(tagId)
-      );
-    });
-  }, [data, activeTagFilters]);
-
-  const totalPages = Math.ceil(visibleData.length / itemsPerPage);
-
-  useEffect(() => {
-    if (!expandedLeadId) { setExpandedThumbnail(null); return; }
-    const lead = data.find(l => l.id === expandedLeadId);
-    if (!lead || (!lead.local_file_path && !lead.files_link && !lead.gdrive_link)) {
-      setExpandedThumbnail(null);
-      return;
-    }
-    fetch(`${API_BASE}/knowledge/thumbnail/${expandedLeadId}`)
-      .then(r => r.json())
-      .then(d => setExpandedThumbnail(d.thumbnail))
-      .catch(() => setExpandedThumbnail(null));
-  }, [expandedLeadId]);
-
-  const askProjectQuestion = async (leadId) => {
-    const q = qaQuestion.trim();
-    if (!q) return;
-    setQaLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/leads/${leadId}/ask`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q }),
-      });
-      const resData = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        alert(resData.detail || 'Failed to get answer');
-        return;
-      }
-      setQaQuestion('');
-      // Update lead with new qa_history via PUT to trigger parent refresh
-      toggleLeadStyle({ id: leadId }, 'qa_history', resData.qa_history);
-    } catch (e) {
-      console.error('Q&A failed:', e);
-      alert('Failed to ask question. Please try again.');
-    } finally {
-      setQaLoading(false);
-    }
-  };
-
-  const toggleLeadTag = async (lead, tagId) => {
-    const predefined = PREDEFINED_TAGS.find(t => t.id === tagId);
-    if (!predefined) return;
-    const currentTags = lead.tags || [];
-    const hasTag = currentTags.some(t => t.label === tagId);
-    const newTags = hasTag
-      ? currentTags.filter(t => t.label !== tagId)
-      : [...currentTags, { label: predefined.label, color: predefined.color, hover: predefined.hint }];
-    await toggleLeadStyle(lead, 'tags', newTags);
-  };
-
-  // Close tag picker when clicking outside
-  useEffect(() => {
-    if (!tagPicker) return;
-    const close = () => setTagPicker(null);
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [tagPicker]);
-
-  const handleSort = (key) => {
-    let direction = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
-
-  const SortHeader = ({ label, sortKey, className }) => (
-    <th className={`px-4 py-3 cursor-pointer hover:text-slate-300 transition-colors select-none ${className}`} onClick={() => handleSort(sortKey)}>
-      <div className={`flex items-center gap-1 ${className?.includes('text-center') ? 'justify-center' : ''}`}>
-        {label}
-        {sortConfig.key === sortKey && (
-          <ArrowUpDown size={12} className={sortConfig.direction === 'asc' ? 'text-orange-400 rotate-180' : 'text-orange-400'} />
-        )}
-      </div>
-    </th>
-  );
-
-  useEffect(() => {
-    if (currentPage > totalPages && totalPages > 0) setCurrentPage(totalPages);
-  }, [visibleData.length, totalPages, currentPage]);
-
-  const paginatedData = visibleData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  const handlePageChange = (p) => { if (p >= 1 && p <= totalPages) setCurrentPage(p); };
-
-  return (<>
-    <div className="mb-8 bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col">
-      <div className="p-3 md:p-4 border-b border-slate-800 flex flex-col gap-2 md:gap-3 bg-slate-900/50 backdrop-blur">
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-          <h2 className="text-lg font-bold text-white flex items-center gap-3">
-            {title}
-            <span className="bg-slate-800 text-slate-400 text-xs px-2 py-1 rounded-full">{data.length}</span>
-          </h2>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 sm:flex-none">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500" size={14} />
-              <input
-                type="text"
-                placeholder="Search leads..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-slate-800 text-slate-200 pl-9 pr-4 py-1.5 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-slate-600 w-full sm:w-52"
-              />
-            </div>
-            <button onClick={() => setShowHidden(!showHidden)} className={`p-1.5 rounded-lg transition ${showHidden ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}`} title={showHidden ? 'Hide Hidden' : 'Show Hidden'}>
-              {showHidden ? <Eye size={16} /> : <EyeOff size={16} />}
-            </button>
-            <button onClick={triggerKnowledgeScan} disabled={knowledgeScanning} className="flex items-center gap-1.5 px-3 py-1 bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-600/30 rounded-lg text-xs font-semibold transition">
-              {knowledgeScanning ? <RefreshCw size={12} className="animate-spin" /> : <Zap size={12} />}
-              {knowledgeScanning ? 'Scanning...' : 'AI Scan All'}
-            </button>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <span>Page {currentPage} of {totalPages}</span>
-                <div className="flex gap-1">
-                  <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronLeft size={16} /></button>
-                  <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="p-1 rounded hover:bg-slate-800 disabled:opacity-30"><ChevronRight size={16} /></button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-        {showSiteFilter && uniqueSites.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-slate-500 uppercase tracking-wide">Planroom:</span>
-            <button onClick={() => setSiteFilter('all')} className={`px-3 py-1 rounded text-xs font-semibold transition ${siteFilter === 'all' ? 'bg-[#ed2028] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>All</button>
-            {uniqueSites.map(site => (
-              <button key={site} onClick={() => setSiteFilter(site)} className={`px-3 py-1 rounded text-xs font-semibold transition ${siteFilter === site ? 'bg-[#ed2028] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{site}</button>
-            ))}
-          </div>
-        )}
-        {/* Tag filter bar */}
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0 font-semibold mr-0.5">Filter:</span>
-          {['scope','flags','construction','projtype','location','workflow'].map((grp, gi) => {
-            const tags = PREDEFINED_TAGS.filter(t => t.group === grp);
-            return (
-              <React.Fragment key={grp}>
-                {gi > 0 && <span className="text-[10px] text-slate-700 px-0.5">|</span>}
-                {tags.map(tag => (
-                  <button
-                    key={tag.id}
-                    onClick={() => setActiveTagFilters(prev => prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id])}
-                    title={tag.hint}
-                    className={`text-[10px] px-2 py-0.5 rounded border transition-all ${activeTagFilters.includes(tag.id) ? tagColorClass(tag.color) : 'bg-transparent text-slate-600 border-slate-700/50 hover:border-slate-500 hover:text-slate-400'}`}
-                  >{tag.label}</button>
-                ))}
-              </React.Fragment>
-            );
-          })}
-          {activeTagFilters.length > 0 && (
-            <button onClick={() => setActiveTagFilters([])} className="text-[10px] px-1.5 py-0.5 text-slate-500 hover:text-red-400 transition-colors ml-1">× clear</button>
-          )}
-          {activeTagFilters.length > 0 && (
-            <span className="text-[10px] text-slate-500 ml-1">— showing {visibleData.length} of {data.length}</span>
-          )}
-        </div>
-      </div>
-      <div className="hidden md:block overflow-x-auto flex-grow">
-        <table className="w-full table-fixed text-left text-xs text-slate-400">
-          <colgroup>
-            <col className="w-[70px]" />
-            <col className="w-[22%]" />
-            <col className="w-[280px]" />
-            <col className="w-[11%]" />
-            <col className="w-[10%]" />
-            <col className="w-[9%]" />
-            <col className="w-[75px]" />
-            <col className="w-[44px]" />
-            <col className="w-[90px]" />
-          </colgroup>
-          <thead className="bg-slate-950/50 text-xs uppercase font-semibold text-slate-500 sticky top-0">
-            <tr>
-              <th className="px-2 py-3 whitespace-nowrap"></th>
-              <SortHeader label="Project" sortKey="name" />
-              <th className="px-2 py-3 whitespace-nowrap">Tags</th>
-              <SortHeader label="Company / GC" sortKey="company" />
-              <SortHeader label="Contact" sortKey="contact_name" />
-              <SortHeader label="Location" sortKey="location" />
-              <SortHeader label="Bid Date" sortKey="bid_date" className="whitespace-nowrap" />
-              <th className="px-4 py-3 text-center whitespace-nowrap">Files</th>
-              <th className="px-4 py-3 text-center whitespace-nowrap">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {paginatedData.map((lead, i) => {
-              const expired = isExpired(lead.bid_date);
-              const highlightClass = getHighlightBg(lead.highlight);
-              const strikeClass = lead.strikethrough ? 'opacity-50' : '';
-              const hiddenClass = lead.hidden ? 'opacity-30 grayscale' : '';
-              return (
-                <React.Fragment key={lead.id || i}>
-                  <tr
-                    className={`hover:bg-slate-800/30 transition group cursor-pointer ${expired ? 'opacity-40' : ''} ${hiddenClass} ${highlightClass} ${strikeClass}`}
-                    onClick={(e) => {
-                      if (e.target.closest('button, input, a, select, textarea')) return;
-                      setExpandedLeadId(expandedLeadId === lead.id ? null : lead.id);
-                    }}
-                  >
-                    <td className="px-2 py-2">
-                      <div className="flex gap-0.5">
-                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700 hover:bg-green-600'}`} title="Green"><Circle size={8} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
-                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'yellow' ? null : 'yellow')} className={`p-1 rounded ${lead.highlight === 'yellow' ? 'bg-yellow-600' : 'bg-slate-700 hover:bg-yellow-600'}`} title="Yellow"><Circle size={8} className="text-yellow-400" fill={lead.highlight === 'yellow' ? 'currentColor' : 'none'} /></button>
-                        <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'red' ? null : 'red')} className={`p-1 rounded ${lead.highlight === 'red' ? 'bg-red-600' : 'bg-slate-700 hover:bg-red-600'}`} title="Red"><Circle size={8} className="text-red-400" fill={lead.highlight === 'red' ? 'currentColor' : 'none'} /></button>
-                        <button onClick={() => toggleLeadStyle(lead, 'strikethrough', !lead.strikethrough)} className={`p-1 rounded ${lead.strikethrough ? 'bg-slate-500' : 'bg-slate-700 hover:bg-slate-500'}`} title="Mark reviewed"><Minus size={8} className="text-slate-300" /></button>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors">
-                      <button onClick={() => setExpandedLeadId(expandedLeadId === lead.id ? null : lead.id)} className="text-left hover:text-orange-400 transition-colors flex items-center gap-2" title="Click to expand">
-                        {expandedLeadId === lead.id ? <ChevronUp size={14} className="text-orange-400" /> : <ChevronDown size={14} className="text-slate-500" />}
-                        <div className="truncate text-sm">{lead.name}</div>
-                      </button>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
-                        <span className="text-[10px] text-slate-600">{lead.site}</span>
-                        {lead.takeoff_timestamp
-                          ? <span title={`Deep scan: ${new Date(lead.takeoff_timestamp).toLocaleDateString()}`} className="flex items-center gap-0.5 text-[9px] text-violet-400 bg-violet-500/10 border border-violet-500/20 px-1 py-0.5 rounded leading-none"><Brain size={8} />deep</span>
-                          : lead.knowledge_last_scanned
-                            ? <span title={`AI scan: ${new Date(lead.knowledge_last_scanned).toLocaleDateString()}`} className="flex items-center gap-0.5 text-[9px] text-slate-500 bg-slate-700/40 border border-slate-600/30 px-1 py-0.5 rounded leading-none"><Brain size={8} />scanned</span>
-                            : null
-                        }
-                      </div>
-                      {/* Short In-line Comment */}
-                      <div className="mt-1">
-                        <input
-                          type="text"
-                          defaultValue={lead.short_comment || ''}
-                          onBlur={(e) => toggleLeadStyle(lead, 'short_comment', e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
-                          placeholder="Add comment..."
-                          className={`bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] ${getCommentColor(lead.highlight)} placeholder-slate-700 w-full focus:outline-none transition-colors`}
-                        />
-                      </div>
-                      {/* Quick-action row: AI Scan, Browse Files, Folder Select, Edit */}
-                      <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); triggerSingleScan(lead.id); }}
-                          disabled={scanningIds.has(lead.id)}
-                          className={`p-1 rounded transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${lead.takeoff_timestamp ? 'bg-violet-600/30 text-violet-300 hover:bg-violet-600 hover:text-white' : lead.knowledge_last_scanned ? 'bg-violet-900/40 text-violet-500 hover:bg-violet-600 hover:text-white' : 'bg-slate-700/70 text-slate-500 hover:bg-violet-600 hover:text-white'}`}
-                          title={lead.takeoff_timestamp ? 'Re-run deep scan' : lead.knowledge_last_scanned ? 'Re-run AI scan' : 'Run AI scan'}
-                        >
-                          {scanningIds.has(lead.id) ? <svg className="animate-spin h-2.5 w-2.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> : <Brain size={10} />}
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); openPointToFile(lead.id); }} className="p-1 bg-slate-700/70 hover:bg-orange-600 text-slate-500 hover:text-white rounded transition-colors" title="Browse project files"><FolderOpen size={10} /></button>
-                        <button onClick={(e) => { e.stopPropagation(); openFolderBrowserForLead(lead.id); }} className="p-1 bg-slate-700/70 hover:bg-blue-500 text-slate-500 hover:text-white rounded transition-colors" title="Set folder path for this project"><Search size={10} /></button>
-                        <button onClick={(e) => { e.stopPropagation(); openEditModal(lead); }} className="p-1 bg-slate-700/70 hover:bg-blue-600 text-slate-500 hover:text-white rounded transition-colors" title="Edit project"><Pencil size={10} /></button>
-                      </div>
-                    </td>
-                    {/* Tags column */}
-                    <td className="px-2 py-2">
-                      <div className="flex flex-wrap gap-1 items-start">
-                        {lead.has_budget && (
-                          <span className="relative group/tag text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30 cursor-default">
-                            BUDGET
-                            <span className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 max-w-[200px] opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50 whitespace-normal">Project has budget / cost estimate info</span>
-                          </span>
-                        )}
-                        {/* User-assigned tags — CSS hover tooltip */}
-                        {lead.tags && lead.tags.map((tag, idx) => {
-                          const hoverText = getTagHoverText(tag.label, lead);
-                          return (
-                            <span key={idx} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-opacity hover:opacity-70 ${tagColorClass(tag.color)}`}
-                              onClick={(e) => { e.stopPropagation(); toggleLeadTag(lead, tag.label); }}>
-                              {tag.label}
-                              <span className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 max-w-[220px] opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50 whitespace-normal leading-relaxed">{hoverText}<br/><span className="text-slate-500 text-[9px]">click to remove</span></span>
-                            </span>
-                          );
-                        })}
-                        {/* AI system tags — CSS hover tooltip with live data */}
-                        {getSystemTags(lead).map((tagId, idx) => {
-                          const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
-                          if (!pt) return null;
-                          const hoverText = getTagHoverText(tagId, lead);
-                          return (
-                            <span key={`st-${idx}`} className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tagColorClass(pt.color)}`}>
-                              {pt.label}
-                              <span className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 max-w-[220px] opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50 whitespace-normal leading-relaxed">{hoverText}</span>
-                            </span>
-                          );
-                        })}
-                        {/* Tag picker toggle */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setTagPicker(tagPicker?.leadId === lead.id ? null : { leadId: lead.id, top: rect.bottom + 6, left: rect.left });
-                          }}
-                          className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-slate-700 text-slate-600 hover:border-slate-500 hover:text-slate-400 transition-all"
-                          title="Add / remove tags"
-                        >+</button>
-                      </div>
-                    </td>
-                    <td className="px-2 py-2">
-                      <button onClick={() => setCompanyPopup(lead)} className="flex flex-col text-left hover:bg-slate-800/50 p-1 rounded transition-colors w-full" title="Click for details">
-                        <span className="text-slate-300 truncate max-w-[180px] hover:text-orange-400 transition-colors">{lead.company !== "N/A" ? lead.company : <span className="text-slate-600 italic">No Company</span>}</span>
-                        <span className="text-[10px] text-slate-500 truncate max-w-[180px]">{lead.gc !== "N/A" ? `GC: ${lead.gc}` : ""}</span>
-                      </button>
-                    </td>
-                    <td className="px-2 py-2">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-slate-300 truncate max-w-[160px]">{lead.contact_name !== "N/A" ? lead.contact_name : <span className="text-slate-600 italic">-</span>}</span>
-                        {lead.contact_email && (
-                          <a href={`mailto:${lead.contact_email}`} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-orange-400 transition-colors">
-                            <Mail size={10} /><span className="truncate max-w-[160px]">{lead.contact_email}</span>
-                          </a>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-2 py-2 text-slate-400 truncate max-w-[160px]" title={lead.location}>{lead.location || "N/A"}</td>
-                    <td className={`px-2 py-2 font-mono whitespace-nowrap ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{formatDate(lead.bid_date)}</td>
-                    <td className="px-4 py-2 text-center">
-                      <div className="flex justify-center gap-1">
-                        {lead.gdrive_link ? (
-                          <a href={lead.gdrive_link} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-blue-500 hover:bg-blue-400 text-white rounded transition-colors flex items-center gap-1" title="View on Google Drive"><Cloud size={12} /></a>
-                        ) : lead.files_link ? (
-                          <button onClick={() => fetch(`${API_BASE}/open-folder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: lead.files_link }) })} className="p-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors" title={`Open Local Folder: ${lead.files_link}`}><ExternalLink size={12} /></button>
-                        ) : lead.local_file_path ? (
-                          <a href={`${API_BASE}${lead.local_file_path}`} download className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors" title="Download Local File"><Download size={12} /></a>
-                        ) : (
-                          <span className="text-slate-600 text-[10px]">-</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-2 py-2 text-center">
-                      <div className="flex justify-center gap-1">
-                        <button onClick={() => toggleLeadStyle(lead, 'hidden', !lead.hidden)} className={`p-1.5 rounded transition-colors ${lead.hidden ? 'bg-slate-600 text-slate-300 hover:bg-slate-500' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title={lead.hidden ? "Unhide" : "Hide"}>
-                          {lead.hidden ? <Eye size={12} /> : <EyeOff size={12} />}
-                        </button>
-                        <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
-                        {/* Notion button */}
-                        {(() => {
-                          const ns = notionStatus[lead.id];
-                          return (
-                            <button
-                              onClick={() => sendToNotion(lead)}
-                              disabled={ns === 'loading'}
-                              title="Add to Notion (Open Quotes)"
-                              className={`flex items-center gap-0.5 px-1.5 py-1.5 rounded transition-colors text-[10px] font-medium disabled:opacity-70 ${ns === 'success' ? 'bg-green-700 text-green-200' : ns === 'error' ? 'bg-red-800 text-red-200' : 'bg-slate-700 hover:bg-slate-500 text-slate-300 hover:text-white'}`}
-                            >
-                              {ns === 'loading' ? (
-                                <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                              ) : ns === 'success' ? (
-                                <CheckCircle size={10} className="text-green-400" />
-                              ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4zm0 2h16v12H4V6zm2 2v2h2V8H6zm4 0v2h2V8h-2zm4 0v2h2V8h-2zm-8 4v2h2v-2H6zm4 0v2h2v-2h-2zm4 0v2h2v-2h-2z"/></svg>
-                              )}
-                              {ns === 'success' ? 'Sent' : ns === 'error' ? 'Err' : 'N'}
-                            </button>
-                          );
-                        })()}
-                      </div>
-                    </td>
-                  </tr>
-                  {expandedLeadId === lead.id && (
-                    <tr key={`expanded-${lead.id}`} className="bg-slate-800/40 border-l-4 border-orange-500 animate-in slide-in-from-left-2 duration-200">
-                      <td colSpan="9" className="px-6 py-4">
-                        <div className="flex flex-col gap-4">
-                          <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-3">
-                            {expandedThumbnail && (
-                              <div className="w-32 h-40 bg-slate-950 rounded-lg overflow-hidden flex-shrink-0 mr-4 border border-slate-700">
-                                <img src={`data:image/png;base64,${expandedThumbnail}`} alt="Title page" className="w-full h-full object-contain" />
-                              </div>
-                            )}
-                            <div className="flex-1">
-                              <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                                {lead.name}
-                                <span className="text-xs font-normal text-slate-500">Project Summary</span>
-                              </h4>
-                              <p className="text-xs text-slate-300 max-w-3xl leading-relaxed whitespace-pre-wrap">
-                                {lead.knowledge_notes ? (
-                                  lead.knowledge_notes
-                                ) : lead.description ? (
-                                  stripHtml(lead.description)
-                                ) : <span className="text-slate-500 italic">No summary available. Run AI scan for details.</span>}
-                              </p>
-                              {/* Manufacturers & Vendors — always visible when present */}
-                              {((lead.knowledge_required_manufacturers?.length > 0) || (lead.knowledge_required_vendors?.length > 0)) && (
-                                <div className="mt-2 flex flex-col gap-1">
-                                  {lead.knowledge_required_manufacturers?.length > 0 && (
-                                    <div className="flex items-start gap-1.5 text-xs">
-                                      <span className="text-slate-500 shrink-0">Manufacturer(s):</span>
-                                      <span className="text-amber-300 font-medium">{lead.knowledge_required_manufacturers.join(', ')}</span>
-                                    </div>
-                                  )}
-                                  {lead.knowledge_required_vendors?.length > 0 && (
-                                    <div className="flex items-start gap-1.5 text-xs">
-                                      <span className="text-slate-500 shrink-0">Required Vendor(s):</span>
-                                      <span className="text-orange-300 font-medium">{lead.knowledge_required_vendors.join(', ')}</span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                              <div className="flex gap-2 mt-3 flex-wrap">
-                                {getSystemTags(lead).map((tagId, idx) => {
-                                  const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
-                                  return pt ? <span key={`st-${idx}`} className={`text-[10px] px-2 py-0.5 rounded-full border cursor-default ${tagColorClass(pt.color)}`} title={pt.hint}>{pt.label}</span> : null;
-                                })}
-                                {lead.tags && lead.tags.map((tag, idx) => (
-                                  <span key={`ut-${idx}`} className={`text-[10px] px-2 py-0.5 rounded-full border cursor-default ${tagColorClass(tag.color)}`}>{tag.label}</span>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="flex flex-row flex-wrap gap-2">
-                              <button onClick={() => setDescriptionPopup(lead)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
-                                <Eye size={14} /> View Full Details
-                              </button>
-                              <button onClick={() => openPointToFile(lead.id)} className="px-4 py-2 bg-slate-700 hover:bg-orange-600 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2">
-                                <FolderOpen size={14} /> Browse Files
-                              </button>
-                              <button
-                                onClick={() => triggerSingleScan(lead.id, true)}
-                                disabled={scanningIds.has(lead.id)}
-                                className="px-4 py-2 bg-purple-700 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="Deep analysis with extended thinking"
-                              >
-                                {scanningIds.has(lead.id) ? (
-                                  <><svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Scanning...</>
-                                ) : (
-                                  <><Brain size={14} /> Deep Scan</>
-                                )}
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Also Bidding — shown when duplicates from different companies were merged */}
-                          {lead.also_listed_by && lead.also_listed_by.length > 0 && (
-                            <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg px-4 py-3">
-                              <h4 className="text-xs font-semibold text-blue-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                                <Building2 size={12} /> Also Bidding
-                              </h4>
-                              <div className="flex flex-wrap gap-2">
-                                {/* Primary company on this record */}
-                                {lead.company && lead.company !== 'N/A' && (
-                                  <span className="text-[11px] bg-blue-500/10 border border-blue-500/20 text-blue-300 px-2.5 py-1 rounded-full flex items-center gap-1">
-                                    <Building2 size={10} className="text-blue-400" />
-                                    {lead.company}
-                                    <span className="text-blue-500/60 text-[10px]">via {lead.site}</span>
-                                  </span>
-                                )}
-                                {/* Merged duplicates */}
-                                {lead.also_listed_by.map((entry, idx) => (
-                                  <span key={idx} className="text-[11px] bg-slate-700/50 border border-slate-600/50 text-slate-300 px-2.5 py-1 rounded-full flex items-center gap-1">
-                                    <Building2 size={10} className="text-slate-500" />
-                                    {entry.gc || 'Unknown'}
-                                    <span className="text-slate-500 text-[10px]">via {entry.site}</span>
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Internal Comments */}
-                          <div className="mt-2">
-                            <h4 className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-1">Internal Comments</h4>
-                            <textarea
-                              defaultValue={lead.comments || ''}
-                              onBlur={(e) => toggleLeadStyle(lead, 'comments', e.target.value)}
-                              placeholder="Add internal notes about this project (autosaves on blur)..."
-                              className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 text-xs text-slate-300 placeholder-slate-600 focus:ring-1 focus:ring-blue-500 focus:outline-none resize-y min-h-[60px]"
-                            />
-                          </div>
-
-                          {/* Ask AI About This Project */}
-                          <div className="mt-3">
-                            <h4 className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-2">Ask AI About This Project</h4>
-                            <div className="flex gap-2 mb-3">
-                              <input
-                                type="text"
-                                value={qaQuestion}
-                                onChange={(e) => setQaQuestion(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter' && !qaLoading) askProjectQuestion(lead.id); }}
-                                placeholder="What is the specified fire alarm panel?"
-                                disabled={qaLoading}
-                                className="flex-1 bg-slate-900/50 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:ring-1 focus:ring-cyan-500 focus:outline-none disabled:opacity-50"
-                              />
-                              <button
-                                onClick={() => askProjectQuestion(lead.id)}
-                                disabled={qaLoading || !qaQuestion.trim()}
-                                className="px-4 py-2 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                              >
-                                {qaLoading ? (
-                                  <><svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Thinking...</>
-                                ) : 'Ask'}
-                              </button>
-                            </div>
-                            {lead.qa_history && lead.qa_history.length > 0 && (
-                              <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                                {lead.qa_history.map((qa, idx) => (
-                                  <div key={idx} className="bg-slate-900/60 border border-slate-700/40 rounded-lg p-3">
-                                    <div className="text-xs font-semibold text-cyan-400 mb-1">Q: {qa.question}</div>
-                                    <div className="text-xs text-slate-300 whitespace-pre-wrap">A: {qa.answer}</div>
-                                    {qa.timestamp && (
-                                      <div className="text-[10px] text-slate-600 mt-1.5">
-                                        {new Date(qa.timestamp).toLocaleString()}
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                  }
-                </React.Fragment>
-              );
-            })}
-            {data.length === 0 && (
-              <tr><td colSpan="9" className="px-6 py-12 text-center text-slate-600 italic">No active leads found in this category.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Mobile card list — visible only below md breakpoint */}
-      <div className="md:hidden divide-y divide-slate-800/50">
-        {paginatedData.map((lead, i) => {
-          const expired = isExpired(lead.bid_date);
-          const highlightClass = getHighlightBg(lead.highlight);
-          const strikeClass = lead.strikethrough ? 'opacity-50' : '';
-          const hiddenClass = lead.hidden ? 'opacity-30 grayscale' : '';
-          const isCardExpanded = expandedLeadId === lead.id;
-          return (
-            <div key={lead.id || i} className={`p-3 transition ${expired ? 'opacity-40' : ''} ${hiddenClass} ${highlightClass} ${strikeClass}`}>
-              {/* Header row: status dots + project name */}
-              <div className="flex items-start gap-2">
-                <div className="flex gap-0.5 pt-1 flex-shrink-0">
-                  <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')} className={`p-1 rounded ${lead.highlight === 'green' ? 'bg-green-600' : 'bg-slate-700'}`} title="Green"><Circle size={8} className="text-green-400" fill={lead.highlight === 'green' ? 'currentColor' : 'none'} /></button>
-                  <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'yellow' ? null : 'yellow')} className={`p-1 rounded ${lead.highlight === 'yellow' ? 'bg-yellow-600' : 'bg-slate-700'}`} title="Yellow"><Circle size={8} className="text-yellow-400" fill={lead.highlight === 'yellow' ? 'currentColor' : 'none'} /></button>
-                  <button onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'red' ? null : 'red')} className={`p-1 rounded ${lead.highlight === 'red' ? 'bg-red-600' : 'bg-slate-700'}`} title="Red"><Circle size={8} className="text-red-400" fill={lead.highlight === 'red' ? 'currentColor' : 'none'} /></button>
-                  <button onClick={() => toggleLeadStyle(lead, 'strikethrough', !lead.strikethrough)} className={`p-1 rounded ${lead.strikethrough ? 'bg-slate-500' : 'bg-slate-700'}`} title="Mark reviewed"><Minus size={8} className="text-slate-300" /></button>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <button onClick={() => setExpandedLeadId(isCardExpanded ? null : lead.id)} className="flex items-start gap-1.5 text-left w-full">
-                    {isCardExpanded ? <ChevronUp size={14} className="text-orange-400 mt-0.5 flex-shrink-0" /> : <ChevronDown size={14} className="text-slate-500 mt-0.5 flex-shrink-0" />}
-                    <div className="min-w-0">
-                      <div className={`text-sm font-medium leading-tight ${isCardExpanded ? 'text-orange-400' : 'text-slate-200'}`}>{lead.name}</div>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        {expired && <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>}
-                        <span className="text-[10px] text-slate-600">{lead.site}</span>
-                      </div>
-                    </div>
-                  </button>
-                  <input type="text" defaultValue={lead.short_comment || ''} onBlur={(e) => toggleLeadStyle(lead, 'short_comment', e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }} placeholder="Add comment..." className={`bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] ${getCommentColor(lead.highlight)} placeholder-slate-700 w-full focus:outline-none transition-colors mt-1`} />
-                </div>
-              </div>
-              {/* Tags */}
-              {(lead.has_budget || (lead.tags && lead.tags.length > 0) || getSystemTags(lead).length > 0) && (
-                <div className="flex flex-wrap gap-1 mt-2 pl-9">
-                  {lead.has_budget && <span className="text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">BUDGET</span>}
-                  {lead.tags && lead.tags.map((tag, idx) => <span key={idx} className={`text-[10px] px-1.5 py-0.5 rounded border ${tagColorClass(tag.color)}`}>{tag.label}</span>)}
-                  {getSystemTags(lead).map((tagId, idx) => {
-                    const pt = PREDEFINED_TAGS.find(t => t.id === tagId);
-                    return pt ? <span key={`st-${idx}`} className={`text-[10px] px-1.5 py-0.5 rounded border ${tagColorClass(pt.color)}`} title={pt.hint}>{pt.label}</span> : null;
-                  })}
-                </div>
-              )}
-              {/* Key info */}
-              <div className="mt-2 pl-9 text-xs space-y-0.5">
-                {lead.company && lead.company !== 'N/A' && <div><span className="text-slate-500">Co: </span><button onClick={() => setCompanyPopup(lead)} className="text-slate-300 hover:text-orange-400 transition-colors">{lead.company}</button></div>}
-                {lead.contact_name && lead.contact_name !== 'N/A' && <div><span className="text-slate-500">Contact: </span><span className="text-slate-300">{lead.contact_name}</span></div>}
-                <div className="flex gap-4 flex-wrap">
-                  <div><span className="text-slate-500">Bid: </span><span className={`font-mono ${expired ? 'text-red-400 line-through' : 'text-slate-300'}`}>{formatDate(lead.bid_date)}</span></div>
-                  {lead.location && lead.location !== 'N/A' && <div><span className="text-slate-500">Loc: </span><span className="text-slate-300">{lead.location}</span></div>}
-                </div>
-              </div>
-              {/* Action buttons */}
-              <div className="flex gap-1 mt-2 pl-9 flex-wrap items-center">
-                {lead.gdrive_link ? <a href={lead.gdrive_link} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-blue-500 hover:bg-blue-400 text-white rounded transition-colors" title="Google Drive"><Cloud size={12} /></a> : lead.files_link ? <button onClick={() => fetch(`${API_BASE}/open-folder`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: lead.files_link }) })} className="p-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded transition-colors" title="Open Folder"><ExternalLink size={12} /></button> : lead.local_file_path ? <a href={`${API_BASE}${lead.local_file_path}`} download className="p-1.5 bg-green-600 hover:bg-green-500 text-white rounded transition-colors" title="Download"><Download size={12} /></a> : null}
-                <button onClick={() => triggerSingleScan(lead.id)} disabled={scanningIds.has(lead.id)} className="p-1.5 bg-slate-700 hover:bg-violet-600 text-slate-400 hover:text-white rounded transition-colors disabled:opacity-70" title="AI Scan">{scanningIds.has(lead.id) ? <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <Brain size={12} />}</button>
-                <button onClick={() => openPointToFile(lead.id)} className="p-1.5 bg-slate-700 hover:bg-orange-600 text-slate-400 hover:text-white rounded transition-colors" title="Browse Files"><FolderOpen size={12} /></button>
-                <button onClick={() => openEditModal(lead)} className="p-1.5 bg-slate-700 hover:bg-blue-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit"><Pencil size={12} /></button>
-                <button onClick={() => toggleLeadStyle(lead, 'hidden', !lead.hidden)} className={`p-1.5 rounded transition-colors ${lead.hidden ? 'bg-slate-600 text-slate-300' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-white'}`} title={lead.hidden ? 'Unhide' : 'Hide'}>{lead.hidden ? <Eye size={12} /> : <EyeOff size={12} />}</button>
-                <button onClick={() => deleteLead(lead)} className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors" title="Delete"><Trash2 size={12} /></button>
-                <button onClick={() => setDescriptionPopup(lead)} className="flex items-center gap-1 px-2 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors text-[10px] font-medium"><Eye size={10} /> Details</button>
-                {(() => {
-                  const ns = notionStatus[lead.id];
-                  return (
-                    <button
-                      onClick={() => sendToNotion(lead)}
-                      disabled={ns === 'loading'}
-                      title="Add to Notion (Open Quotes)"
-                      className={`flex items-center gap-1 px-2 py-1.5 rounded transition-colors text-[10px] font-medium disabled:opacity-70 ${ns === 'success' ? 'bg-green-700 text-green-200' : ns === 'error' ? 'bg-red-800 text-red-200' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
-                    >
-                      {ns === 'loading' ? (
-                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                      ) : ns === 'success' ? (
-                        <CheckCircle size={10} className="text-green-400" />
-                      ) : (
-                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4zm0 2h16v12H4V6zm2 2v2h2V8H6zm4 0v2h2V8h-2zm4 0v2h2V8h-2zm-8 4v2h2v-2H6zm4 0v2h2v-2h-2zm4 0v2h2v-2h-2z"/></svg>
-                      )}
-                      {ns === 'success' ? 'Sent!' : ns === 'error' ? 'Failed' : 'Notion'}
-                    </button>
-                  );
-                })()}
-              </div>
-              {/* Expanded content */}
-              {isCardExpanded && (
-                <div className="mt-3 pl-9 border-t border-slate-700/50 pt-3 space-y-3">
-                  <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{lead.knowledge_notes ? lead.knowledge_notes : lead.description ? stripHtml(lead.description) : <span className="text-slate-500 italic">No summary available. Run AI scan for details.</span>}</p>
-                  <div>
-                    <h4 className="text-xs font-semibold text-purple-400 uppercase tracking-widest mb-1">Internal Comments</h4>
-                    <textarea defaultValue={lead.comments || ''} onBlur={(e) => toggleLeadStyle(lead, 'comments', e.target.value)} placeholder="Add internal notes about this project (autosaves on blur)..." className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg p-3 text-xs text-slate-300 placeholder-slate-600 focus:ring-1 focus:ring-blue-500 focus:outline-none resize-y min-h-[60px]" />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => setDescriptionPopup(lead)} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2"><Eye size={14} /> View Full Details</button>
-                    <button onClick={() => openPointToFile(lead.id)} className="px-3 py-2 bg-slate-700 hover:bg-orange-600 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2"><FolderOpen size={14} /> Browse Files</button>
-                    <button onClick={() => triggerSingleScan(lead.id, true)} disabled={scanningIds.has(lead.id)} className="px-3 py-2 bg-purple-700 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{scanningIds.has(lead.id) ? <><svg className="animate-spin h-3.5 w-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Scanning...</> : <><Brain size={14} /> Deep Scan</>}</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {data.length === 0 && (
-          <div className="px-6 py-12 text-center text-slate-600 italic">No active leads found in this category.</div>
-        )}
-      </div>
-
-      {
-        totalPages > 1 && (
-          <div className="p-3 border-t border-slate-800 bg-slate-900/50 flex justify-between items-center text-xs text-slate-400">
-            <span>Showing {paginatedData.length} of {visibleData.length} leads{activeTagFilters.length > 0 ? ` (filtered from ${data.length})` : ''}</span>
-            <div className="flex gap-2">
-              <button onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 1} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Previous</button>
-              <span className="flex items-center px-2">Page {currentPage} of {totalPages}</span>
-              <button onClick={() => handlePageChange(currentPage + 1)} disabled={currentPage === totalPages} className="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next</button>
-            </div>
-          </div>
-        )
-      }
-    </div >
-
-    {/* Fixed-position tag picker — rendered outside the overflow container */}
-    {tagPicker && (() => {
-      const pickerLead = visibleData.find(l => l.id === tagPicker.leadId) || data.find(l => l.id === tagPicker.leadId);
-      if (!pickerLead) return null;
-      const TagGroup = ({ label, group }) => {
-        const tags = PREDEFINED_TAGS.filter(t => t.group === group);
-        if (!tags.length) return null;
-        return (
-          <div className="mb-2.5">
-            <div className="text-[9px] text-slate-500 uppercase tracking-widest font-bold mb-1">{label}</div>
-            <div className="flex flex-wrap gap-1">
-              {tags.map(tag => {
-                const active = pickerLead.tags?.some(t => t.label === tag.id);
-                return (
-                  <button
-                    key={tag.id}
-                    onClick={async () => { await toggleLeadTag(pickerLead, tag.id); }}
-                    title={tag.hint}
-                    className={`text-[10px] px-2 py-0.5 rounded border transition-all ${active ? tagColorClass(tag.color) + ' font-semibold' : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500 hover:text-slate-200'}`}
-                  >{active ? '✓ ' : ''}{tag.label}</button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      };
-      return (
-        <div
-          style={{ position: 'fixed', top: tagPicker.top, left: tagPicker.left, zIndex: 9999 }}
-          className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 w-80 max-h-[80vh] overflow-y-auto"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <div className="flex justify-between items-center mb-3">
-            <span className="text-[11px] text-slate-300 font-semibold">Assign Tags</span>
-            <button onClick={() => setTagPicker(null)} className="text-slate-600 hover:text-slate-300 transition-colors"><X size={12} /></button>
-          </div>
-          <TagGroup label="Scope" group="scope" />
-          <TagGroup label="Flags / Requirements" group="flags" />
-          <TagGroup label="Construction Type" group="construction" />
-          <TagGroup label="Project Type" group="projtype" />
-          <TagGroup label="Building Type" group="location" />
-          <TagGroup label="Workflow" group="workflow" />
-        </div>
-      );
-    })()}
-  </>);
-};

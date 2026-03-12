@@ -197,3 +197,12 @@ scraper_console.log
 .dev.vars*
 !.dev.vars.example
 !.env.example
+
+# Git worktrees
+.worktrees/
+
+# Git worktrees
+.worktrees/
+
+# Git worktrees
+.worktrees/
