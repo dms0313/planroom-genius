@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { X, FolderOpen, ChevronLeft } from 'lucide-react';
 
 import { useLeads } from './hooks/useLeads';
@@ -25,6 +25,12 @@ export default function LeadDashboard() {
   const [descriptionPopup, setDescriptionPopup] = useState(null);
   const [addModal, setAddModal] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+
+  // ── LeadTable filter / sort / search state ────────────────────────────────
+  const [siteFilter, setSiteFilter] = useState('all');
+  const [sortConfig, setSortConfig] = useState({ key: 'bid_date', direction: 'asc' });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showHidden, setShowHidden] = useState(false);
 
   // File browser modal (local knowledge files)
   const [pointToFileModal, setPointToFileModal] = useState(null);
@@ -72,15 +78,49 @@ export default function LeadDashboard() {
 
   const { activeLeads, verifiedManufacturer, dueToday, dueIn3Days } = useStats(leads);
 
+  // ── Derived filter data ───────────────────────────────────────────────────
+  const uniqueSites = useMemo(
+    () => [...new Set(leads.map((l) => l.site).filter(Boolean))].sort(),
+    [leads]
+  );
+
+  // ── Filter + sort leads before passing to LeadTable ───────────────────────
+  const filteredLeads = useMemo(() => {
+    let data = leads;
+    if (!showHidden) data = data.filter((l) => !l.hidden);
+    if (siteFilter !== 'all') data = data.filter((l) => l.site === siteFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      data = data.filter(
+        (l) =>
+          l.name?.toLowerCase().includes(q) ||
+          l.company?.toLowerCase().includes(q) ||
+          l.location?.toLowerCase().includes(q) ||
+          l.description?.toLowerCase().includes(q)
+      );
+    }
+    if (sortConfig?.key) {
+      const { key, direction } = sortConfig;
+      data = [...data].sort((a, b) => {
+        const av = a[key] ?? '';
+        const bv = b[key] ?? '';
+        const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true });
+        return direction === 'asc' ? cmp : -cmp;
+      });
+    }
+    return data;
+  }, [leads, showHidden, siteFilter, searchQuery, sortConfig]);
+
   // ── File browser (knowledge files) ───────────────────────────────────────
-  const handleFilesClick = useCallback(async (lead) => {
+  // LeadRow calls openPointToFile(lead.id) — receives the ID string directly.
+  const handleFilesClick = useCallback(async (leadId) => {
     try {
-      const res = await fetch(`${API_BASE}/knowledge/files/${lead.id}`);
+      const res = await fetch(`${API_BASE}/knowledge/files/${leadId}`);
       const data = await res.json();
-      setPointToFileModal({ lead_id: lead.id, files: data.files });
+      setPointToFileModal({ lead_id: leadId, files: data.files });
     } catch (e) {
       console.error('Failed to fetch files', e);
-      setPointToFileModal({ lead_id: lead.id, files: [], error: 'Failed to load files' });
+      setPointToFileModal({ lead_id: leadId, files: [], error: 'Failed to load files' });
     }
   }, []);
 
@@ -99,8 +139,9 @@ export default function LeadDashboard() {
     setFolderBrowserLoading(false);
   }, [showToast]);
 
-  const handleFolderBrowserOpen = useCallback(async (lead) => {
-    setFolderBrowserTarget(lead.id);
+  // LeadRow calls openFolderBrowserForLead(lead.id) — receives the ID string directly.
+  const handleFolderBrowserOpen = useCallback(async (leadId) => {
+    setFolderBrowserTarget(leadId);
     setFolderBrowserPath('');
     setFolderBrowserModal(true);
     await browseTo('');
@@ -159,23 +200,30 @@ export default function LeadDashboard() {
         />
 
         <LeadTable
-          leads={leads}
-          loading={loading}
-          onCompanyClick={setCompanyPopup}
-          onDescriptionClick={setDescriptionPopup}
-          onFilesClick={handleFilesClick}
-          onFolderBrowserOpen={handleFolderBrowserOpen}
+          leads={filteredLeads}
+          uniqueSites={uniqueSites}
+          siteFilter={siteFilter}
+          setSiteFilter={setSiteFilter}
+          sortConfig={sortConfig}
+          setSortConfig={setSortConfig}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          showHidden={showHidden}
+          setShowHidden={setShowHidden}
+          knowledgeScanning={knowledgeScanning}
+          triggerKnowledgeScan={triggerKnowledgeScan}
+          scanningIds={scanningIds}
+          toggleLeadStyle={toggleLeadStyle}
+          deleteLead={deleteLead}
+          setContactPopup={setCompanyPopup}
+          setDescriptionPopup={setDescriptionPopup}
+          openPointToFile={handleFilesClick}
+          openFolderBrowserForLead={handleFolderBrowserOpen}
+          notionStatus={notionStatus}
+          sendToNotion={sendToNotion}
           triggerDeepScan={triggerDeepScan}
           triggerQuickScan={triggerQuickScan}
-          scanningIds={scanningIds}
-          updateLead={updateLead}
-          deleteLead={deleteLead}
-          toggleLeadStyle={toggleLeadStyle}
-          sendToNotion={sendToNotion}
-          notionStatus={notionStatus}
-          knowledgeStatus={knowledgeStatus}
-          triggerKnowledgeScan={triggerKnowledgeScan}
-          showToast={showToast}
+          API_BASE={API_BASE}
         />
       </div>
 
