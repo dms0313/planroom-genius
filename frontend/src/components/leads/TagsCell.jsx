@@ -27,10 +27,7 @@ const TagsCell = ({ lead, onToggleTag, onOpenTagPicker, tagPicker }) => {
   const hiddenCount = allTags.length - visibleTags.length;
 
   return (
-    <div
-      className="flex flex-nowrap gap-1 items-center overflow-hidden"
-      style={{ maxWidth: '240px' }}
-    >
+    <div className="flex flex-nowrap gap-1 items-center overflow-hidden w-full">
       {visibleTags.map((tag, idx) => {
         if (tag.isBudget) {
           return (
@@ -87,7 +84,7 @@ const TagsCell = ({ lead, onToggleTag, onOpenTagPicker, tagPicker }) => {
 
       {hiddenCount > 0 && (
         <span
-          className="text-[10px] px-1.5 py-0.5 rounded border border-slate-700/50 bg-slate-800/60 text-slate-500 cursor-default"
+          className="text-[10px] px-1.5 py-0.5 rounded border border-slate-700/50 bg-slate-800/60 text-slate-500 cursor-default whitespace-nowrap flex-shrink-0"
           title={`${hiddenCount} more tag${hiddenCount > 1 ? 's' : ''}`}
         >
           +{hiddenCount} more
