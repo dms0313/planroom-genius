@@ -13,13 +13,17 @@ export default function TopNav({ onAddLead, onSettings }) {
         WebkitBackdropFilter: 'blur(12px)',
         background: 'var(--bg-surface)',
         borderBottom: '1px solid var(--border-subtle)',
-        display: 'flex',
-        alignItems: 'center',
-        paddingLeft: '16px',
-        paddingRight: '16px',
-        gap: '16px',
       }}
     >
+      <div style={{
+        maxWidth: '1536px',
+        margin: '0 auto',
+        padding: '0 16px',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+      }}>
       {/* Logo area */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
         <img
@@ -117,6 +121,7 @@ export default function TopNav({ onAddLead, onSettings }) {
         >
           <Settings size={16} strokeWidth={2} />
         </button>
+      </div>
       </div>
     </header>
   );
