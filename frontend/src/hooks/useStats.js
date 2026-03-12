@@ -33,7 +33,7 @@ export function useStats(leads) {
       }
 
       // verifiedManufacturer: has COMP MFG in user tags or system tags
-      const userTagIds = (lead.tags || []).map(t => t.id);
+      const userTagIds = (lead.tags || []).map(t => t.label);
       const systemTagIds = getSystemTags(lead);
       if (userTagIds.includes('COMP MFG') || systemTagIds.includes('COMP MFG')) {
         verifiedManufacturer++;
