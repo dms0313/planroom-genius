@@ -27,7 +27,7 @@ const TagsCell = ({ lead, onToggleTag, onOpenTagPicker, tagPicker }) => {
   const hiddenCount = allTags.length - visibleTags.length;
 
   return (
-    <div className="flex flex-nowrap gap-1 items-center overflow-hidden w-full">
+    <div className="flex flex-wrap gap-1 items-start overflow-hidden w-full" style={{ maxHeight: '42px' }}>
       {visibleTags.map((tag, idx) => {
         if (tag.isBudget) {
           return (
