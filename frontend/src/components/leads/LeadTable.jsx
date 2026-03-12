@@ -92,6 +92,7 @@ const LeadTable = ({
   const [expandedThumbnail, setExpandedThumbnail] = useState(null);
   const [tagPicker, setTagPicker] = useState(null); // { leadId, top, left }
   const [activeTagFilters, setActiveTagFilters] = useState([]);
+  const [tagFiltersExpanded, setTagFiltersExpanded] = useState(false);
   const [editingCell, setEditingCell] = useState(null); // { leadId, field }
   const [qaQuestion, setQaQuestion] = useState('');
   const [qaLoading, setQaLoading] = useState(false);
@@ -338,52 +339,64 @@ const LeadTable = ({
           )}
 
           {/* Row 3: Tag filter bar */}
-          <div className="flex items-center gap-1 flex-wrap">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0 font-semibold mr-0.5">
-              Filter:
-            </span>
-            {['scope', 'flags', 'construction', 'projtype', 'location', 'workflow'].map((grp, gi) => {
-              const tags = PREDEFINED_TAGS.filter((t) => t.group === grp);
-              return (
-                <React.Fragment key={grp}>
-                  {gi > 0 && <span className="text-[10px] text-slate-700 px-0.5">|</span>}
-                  {tags.map((tag) => (
-                    <button
-                      key={tag.id}
-                      onClick={() =>
-                        setActiveTagFilters((prev) =>
-                          prev.includes(tag.id)
-                            ? prev.filter((t) => t !== tag.id)
-                            : [...prev, tag.id]
-                        )
-                      }
-                      title={tag.hint}
-                      className={`text-[10px] px-2 py-0.5 rounded border transition-all ${
-                        activeTagFilters.includes(tag.id)
-                          ? tagColorClass(tag.color)
-                          : 'bg-transparent text-slate-600 border-slate-700/50 hover:border-slate-500 hover:text-slate-400'
-                      }`}
-                    >
-                      {tag.label}
-                    </button>
-                  ))}
-                </React.Fragment>
-              );
-            })}
-            {activeTagFilters.length > 0 && (
-              <>
-                <button
-                  onClick={() => setActiveTagFilters([])}
-                  className="text-[10px] px-1.5 py-0.5 text-slate-500 hover:text-red-400 transition-colors ml-1"
-                >
-                  × clear
-                </button>
-                <span className="text-[10px] text-slate-500 ml-1">
-                  — showing {visibleData.length} of {leads.length}
+          {(() => {
+            const allGroups = ['scope', 'flags', 'construction', 'projtype', 'location', 'workflow'];
+            const visibleGroups = tagFiltersExpanded ? allGroups : allGroups.slice(0, 1);
+            return (
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0 font-semibold mr-0.5">
+                  Filter:
                 </span>
-              </>
-            )}
-          </div>
+                {visibleGroups.map((grp, gi) => {
+                  const tags = PREDEFINED_TAGS.filter((t) => t.group === grp);
+                  return (
+                    <React.Fragment key={grp}>
+                      {gi > 0 && <span className="text-[10px] text-slate-700 px-0.5">|</span>}
+                      {tags.map((tag) => (
+                        <button
+                          key={tag.id}
+                          onClick={() =>
+                            setActiveTagFilters((prev) =>
+                              prev.includes(tag.id)
+                                ? prev.filter((t) => t !== tag.id)
+                                : [...prev, tag.id]
+                            )
+                          }
+                          title={tag.hint}
+                          className={`text-[10px] px-2 py-0.5 rounded border transition-all ${
+                            activeTagFilters.includes(tag.id)
+                              ? tagColorClass(tag.color)
+                              : 'bg-transparent text-slate-600 border-slate-700/50 hover:border-slate-500 hover:text-slate-400'
+                          }`}
+                        >
+                          {tag.label}
+                        </button>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
+                <button
+                  onClick={() => setTagFiltersExpanded((v) => !v)}
+                  className="text-[10px] px-2 py-0.5 rounded border border-slate-700/50 text-slate-500 hover:text-slate-300 hover:border-slate-500 transition-all ml-0.5"
+                >
+                  {tagFiltersExpanded ? '▲ Less' : '▼ More'}
+                </button>
+                {activeTagFilters.length > 0 && (
+                  <>
+                    <button
+                      onClick={() => setActiveTagFilters([])}
+                      className="text-[10px] px-1.5 py-0.5 text-slate-500 hover:text-red-400 transition-colors ml-1"
+                    >
+                      × clear
+                    </button>
+                    <span className="text-[10px] text-slate-500 ml-1">
+                      — showing {visibleData.length} of {leads.length}
+                    </span>
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* ── Desktop table ── */}

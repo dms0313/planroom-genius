@@ -28,8 +28,8 @@ const TagsCell = ({ lead, onToggleTag, onOpenTagPicker, tagPicker }) => {
 
   return (
     <div
-      className="flex flex-wrap gap-1 items-start overflow-hidden"
-      style={{ maxWidth: '180px' }}
+      className="flex flex-nowrap gap-1 items-center overflow-hidden"
+      style={{ maxWidth: '240px' }}
     >
       {visibleTags.map((tag, idx) => {
         if (tag.isBudget) {

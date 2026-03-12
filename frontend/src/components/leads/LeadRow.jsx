@@ -195,7 +195,7 @@ const LeadRow = ({
         }}
       >
         {/* ── Col 1: Color / strikethrough dots ── */}
-        <td className="px-2 py-2">
+        <td className="px-2 py-1">
           <div className="flex gap-0.5">
             <button
               onClick={() => toggleLeadStyle(lead, 'highlight', lead.highlight === 'green' ? null : 'green')}
@@ -229,71 +229,50 @@ const LeadRow = ({
         </td>
 
         {/* ── Col 2: Project name, site, scan badges, inline comment ── */}
-        <td className="px-4 py-2 font-medium text-slate-200 group-hover:text-orange-400 transition-colors">
-          <button
-            onClick={() => onToggleExpand()}
-            className="text-left hover:text-orange-400 transition-colors flex items-center gap-2"
-            title="Click to expand"
-          >
-            {expanded
-              ? <ChevronUp size={14} className="text-orange-400" />
-              : <ChevronDown size={14} className="text-slate-500" />
-            }
-            <div className="truncate text-sm">{lead.name}</div>
-          </button>
-          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-            {expired && (
-              <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0.5 rounded">EXPIRED</span>
-            )}
-            <span className="text-[10px] text-slate-600">{lead.site}</span>
-            {lead.takeoff_timestamp ? (
-              <span
-                title={`Deep scan: ${new Date(lead.takeoff_timestamp).toLocaleDateString()}`}
-                className="flex items-center gap-0.5 text-[9px] text-violet-400 bg-violet-500/10 border border-violet-500/20 px-1 py-0.5 rounded leading-none"
-              >
-                <Brain size={8} />deep
-              </span>
-            ) : lead.knowledge_last_scanned ? (
-              <span
-                title={`AI scan: ${new Date(lead.knowledge_last_scanned).toLocaleDateString()}`}
-                className="flex items-center gap-0.5 text-[9px] text-slate-500 bg-slate-700/40 border border-slate-600/30 px-1 py-0.5 rounded leading-none"
-              >
-                <Brain size={8} />scanned
-              </span>
-            ) : null}
+        <td className="px-4 py-1 font-medium text-slate-200 group-hover:text-orange-400 transition-colors">
+          {/* Name row */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onToggleExpand()}
+              className="text-left hover:text-orange-400 transition-colors flex items-center gap-1.5 min-w-0"
+              title="Click to expand"
+            >
+              {expanded
+                ? <ChevronUp size={13} className="text-orange-400 flex-shrink-0" />
+                : <ChevronDown size={13} className="text-slate-500 flex-shrink-0" />
+              }
+              <span className="truncate text-sm">{lead.name}</span>
+            </button>
           </div>
-          {/* Inline short comment */}
-          <div className="mt-1">
+          {/* Sub-row: source badge + scan badge + comment + folder buttons */}
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {expired && (
+              <span className="text-[10px] bg-red-900/30 text-red-400 px-1.5 py-0 rounded leading-4">EXPIRED</span>
+            )}
+            <span className="text-[10px] text-slate-600 flex-shrink-0">{lead.site}</span>
+            {lead.takeoff_timestamp ? (
+              <span title={`Deep scan: ${new Date(lead.takeoff_timestamp).toLocaleDateString()}`} className="flex items-center gap-0.5 text-[9px] text-violet-400 bg-violet-500/10 border border-violet-500/20 px-1 py-0 rounded leading-4 flex-shrink-0"><Brain size={8} />deep</span>
+            ) : lead.knowledge_last_scanned ? (
+              <span title={`AI scan: ${new Date(lead.knowledge_last_scanned).toLocaleDateString()}`} className="flex items-center gap-0.5 text-[9px] text-slate-500 bg-slate-700/40 border border-slate-600/30 px-1 py-0 rounded leading-4 flex-shrink-0"><Brain size={8} />scanned</span>
+            ) : null}
             <input
               type="text"
               defaultValue={lead.short_comment || ''}
               onBlur={(e) => toggleLeadStyle(lead, 'short_comment', e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
               placeholder="Add comment..."
-              className={`bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] ${getCommentColor(lead.highlight)} placeholder-slate-700 w-full focus:outline-none transition-colors`}
+              className={`bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] ${getCommentColor(lead.highlight)} placeholder-slate-700 flex-1 min-w-0 focus:outline-none transition-colors`}
             />
-          </div>
-          {/* Hover quick-action row */}
-          <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => { e.stopPropagation(); openPointToFile(lead.id); }}
-              className="p-1 bg-slate-700/70 hover:bg-orange-600 text-slate-500 hover:text-white rounded transition-colors"
-              title="Browse project files"
-            >
-              <FolderOpen size={10} />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); openFolderBrowserForLead(lead.id); }}
-              className="p-1 bg-slate-700/70 hover:bg-blue-500 text-slate-500 hover:text-white rounded transition-colors"
-              title="Set folder path for this project"
-            >
-              <FolderOpen size={10} className="opacity-60" />
-            </button>
+            {/* Folder quick-actions — inline, always present, fade in on hover */}
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+              <button onClick={(e) => { e.stopPropagation(); openPointToFile(lead.id); }} className="p-0.5 bg-slate-700/70 hover:bg-orange-600 text-slate-500 hover:text-white rounded transition-colors" title="Browse project files"><FolderOpen size={10} /></button>
+              <button onClick={(e) => { e.stopPropagation(); openFolderBrowserForLead(lead.id); }} className="p-0.5 bg-slate-700/70 hover:bg-blue-500 text-slate-500 hover:text-white rounded transition-colors" title="Set GDrive folder"><FolderOpen size={10} className="opacity-60" /></button>
+            </div>
           </div>
         </td>
 
         {/* ── Col 3: Tags ── */}
-        <td className="px-2 py-2">
+        <td className="px-2 py-1">
           <TagsCell
             lead={lead}
             onToggleTag={onToggleTag}
@@ -303,7 +282,7 @@ const LeadRow = ({
         </td>
 
         {/* ── Col 4: Company + Contact (merged) ── */}
-        <td className="px-2 py-2">
+        <td className="px-2 py-1">
           <div className="flex flex-col gap-0.5">
             {/* Company row */}
             <div className="flex items-center gap-1 group/company">
@@ -381,7 +360,7 @@ const LeadRow = ({
         </td>
 
         {/* ── Col 5: Bid Date ── */}
-        <td className="px-2 py-2">
+        <td className="px-2 py-1">
           <div className="flex items-center gap-1 group/biddate">
             {isEditing('bid_date') ? (
               <input
@@ -414,7 +393,7 @@ const LeadRow = ({
         </td>
 
         {/* ── Col 6: Location ── */}
-        <td className="px-2 py-2">
+        <td className="px-2 py-1">
           <div className="flex items-center gap-1 group/location">
             {isEditing('location') ? (
               <input
@@ -446,7 +425,7 @@ const LeadRow = ({
         </td>
 
         {/* ── Col 7: Files ── */}
-        <td className="px-4 py-2 text-center">
+        <td className="px-4 py-1 text-center">
           <div className="flex justify-center gap-1">
             {lead.gdrive_link ? (
               <a
@@ -491,7 +470,7 @@ const LeadRow = ({
         </td>
 
         {/* ── Col 8: Actions ── */}
-        <td className="px-2 py-2 text-center">
+        <td className="px-2 py-1 text-center">
           <div className="flex justify-center gap-1 flex-wrap">
             {/* Brain: deep scan only */}
             <button
