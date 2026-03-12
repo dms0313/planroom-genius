@@ -22,12 +22,10 @@ const TagsCell = ({ lead, onToggleTag, onOpenTagPicker, tagPicker }) => {
     if (pt) allTags.push({ ...pt, isSystem: true });
   });
 
-  const VISIBLE_LIMIT = 3;
-  const visibleTags = allTags.slice(0, VISIBLE_LIMIT);
-  const hiddenCount = allTags.length - visibleTags.length;
+  const visibleTags = allTags;
 
   return (
-    <div className="flex flex-wrap gap-1 items-start overflow-hidden w-full" style={{ maxHeight: '42px' }}>
+    <div className="flex flex-wrap gap-1 items-start w-full">
       {visibleTags.map((tag, idx) => {
         if (tag.isBudget) {
           return (
@@ -82,16 +80,7 @@ const TagsCell = ({ lead, onToggleTag, onOpenTagPicker, tagPicker }) => {
         return null;
       })}
 
-      {hiddenCount > 0 && (
-        <span
-          className="text-[10px] px-1.5 py-0.5 rounded border border-slate-700/50 bg-slate-800/60 text-slate-500 cursor-default whitespace-nowrap flex-shrink-0"
-          title={`${hiddenCount} more tag${hiddenCount > 1 ? 's' : ''}`}
-        >
-          +{hiddenCount} more
-        </span>
-      )}
-
-      {/* Tag picker toggle */}
+{/* Tag picker toggle */}
       <button
         onClick={(e) => {
           e.stopPropagation();
