@@ -167,7 +167,7 @@ const LeadRow = ({
             </div>
           </td>
           {/* Name (strikethrough) */}
-          <td className="px-4 py-0.5" colSpan={6}>
+          <td className="px-4 py-0.5" colSpan={5}>
             <span className="text-xs text-slate-600 line-through">{lead.name}</span>
             {lead.company && <span className="text-xs text-slate-700 ml-2">— {lead.company}</span>}
           </td>
