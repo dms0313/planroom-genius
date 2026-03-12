@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Brain, Trash2, FileText, Cloud, ExternalLink, Download,
   ChevronDown, ChevronUp, Circle, Minus, FolderOpen, Eye,
-  EyeOff, CheckCircle, Building2,
+  EyeOff, CheckCircle, Building2, Pencil,
 } from 'lucide-react';
 import { PREDEFINED_TAGS, tagColorClass, getSystemTags } from '../../lib/tags';
 import TagsCell from './TagsCell';
@@ -123,6 +123,7 @@ const LeadRow = ({
   setQaQuestion,
   qaLoading,
   onAskQuestion,
+  onEditLead,
 }) => {
   const expired = isExpired(lead.bid_date);
   const highlightClass = getHighlightBg(lead.highlight);
@@ -263,10 +264,23 @@ const LeadRow = ({
               placeholder="Add comment..."
               className={`bg-transparent border-0 border-b border-transparent hover:border-slate-700 focus:border-orange-500 text-[10px] ${getCommentColor(lead.highlight)} placeholder-slate-700 flex-1 min-w-0 focus:outline-none transition-colors`}
             />
-            {/* Folder quick-actions — inline, always present, fade in on hover */}
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-              <button onClick={(e) => { e.stopPropagation(); openPointToFile(lead.id); }} className="p-0.5 bg-slate-700/70 hover:bg-orange-600 text-slate-500 hover:text-white rounded transition-colors" title="Browse project files"><FolderOpen size={10} /></button>
-              <button onClick={(e) => { e.stopPropagation(); openFolderBrowserForLead(lead.id); }} className="p-0.5 bg-slate-700/70 hover:bg-blue-500 text-slate-500 hover:text-white rounded transition-colors" title="Set GDrive folder"><FolderOpen size={10} className="opacity-60" /></button>
+            {/* Quick-actions — fade in on hover */}
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+              {/* Edit lead details */}
+              <button onClick={(e) => { e.stopPropagation(); onEditLead && onEditLead(lead); }} className="p-1 bg-slate-700/70 hover:bg-orange-600 text-slate-400 hover:text-white rounded transition-colors" title="Edit lead details"><Pencil size={13} /></button>
+              {/* Set local drawings folder */}
+              <button onClick={(e) => { e.stopPropagation(); openPointToFile(lead.id); }} className="p-1 bg-slate-700/70 hover:bg-amber-600 text-slate-400 hover:text-white rounded transition-colors" title="Set drawings folder (local)"><FolderOpen size={13} /></button>
+              {/* Set Google Drive folder */}
+              <button onClick={(e) => { e.stopPropagation(); openFolderBrowserForLead(lead.id); }} className="p-1 bg-slate-700/70 hover:bg-blue-500 text-slate-400 hover:text-white rounded transition-colors" title="Set Google Drive folder">
+                <svg width="13" height="13" viewBox="0 0 87.3 78" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L27.5 53H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/>
+                  <path d="M43.65 25L29.9 1.2c-1.35.8-2.5 1.9-3.3 3.3L1.2 48.5A9 9 0 000 53h27.5z" fill="#00AC47"/>
+                  <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75L86.1 57.5c.8-1.4 1.2-2.95 1.2-4.5H59.8L73.55 76.8z" fill="#EA4335"/>
+                  <path d="M43.65 25L57.4 1.2A9.3 9.3 0 0043.65 1.2a9.3 9.3 0 00-13.75 0L43.65 25z" fill="#00832D"/>
+                  <path d="M59.8 53H87.3l-27.5-47.5c-1.35-.8-2.85-1.2-4.4-1.2a9.2 9.2 0 00-4.4 1.2L43.65 25z" fill="#2684FC"/>
+                  <path d="M13.75 76.8c1.35.8 2.85 1.2 4.4 1.2h50.9c1.55 0 3.05-.4 4.4-1.2L59.8 53H27.5z" fill="#FFBA00"/>
+                </svg>
+              </button>
             </div>
           </div>
         </td>

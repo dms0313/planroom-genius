@@ -85,6 +85,7 @@ const LeadTable = ({
   sendToNotion,
   triggerDeepScan,
   triggerQuickScan,
+  onEditLead,
   API_BASE,
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
@@ -455,6 +456,7 @@ const LeadTable = ({
                   setQaQuestion={setQaQuestion}
                   qaLoading={qaLoading}
                   onAskQuestion={askProjectQuestion}
+                  onEditLead={onEditLead}
                 />
               ))}
               {leads.length === 0 && (

@@ -36,11 +36,23 @@ export default function AddLeadModal({
   open,
   onClose,
   onAdd,
+  onEdit,
+  initialData,
   externalFilesLink,
   onBrowseFolderPicker,
   onBrowseFolderServer,
 }) {
+  const isEditing = !!initialData;
   const [formData, setFormData] = useState(EMPTY_FORM);
+
+  // When opening in edit mode, pre-fill form with lead data
+  useEffect(() => {
+    if (open && initialData) {
+      setFormData({ ...EMPTY_FORM, ...initialData });
+    } else if (open && !initialData) {
+      setFormData(EMPTY_FORM);
+    }
+  }, [open, initialData]);
 
   // Sync external files link selection into the form
   useEffect(() => {
@@ -55,7 +67,7 @@ export default function AddLeadModal({
   };
 
   const handleSubmit = async () => {
-    const success = await onAdd(formData);
+    const success = isEditing ? await onEdit(formData) : await onAdd(formData);
     if (success) {
       setFormData(EMPTY_FORM);
     }
@@ -81,8 +93,8 @@ export default function AddLeadModal({
         {/* Header */}
         <div className="flex justify-between items-start mb-4 sm:mb-6">
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
-            <Plus className="text-green-500" size={20} />
-            Add New Lead
+            <Plus className={isEditing ? 'text-orange-400' : 'text-green-500'} size={20} />
+            {isEditing ? 'Edit Lead' : 'Add New Lead'}
           </h3>
           <button
             onClick={handleCancel}
@@ -313,7 +325,7 @@ export default function AddLeadModal({
             disabled={!formData.name}
             className="flex-1 bg-[#ed2028] hover:bg-red-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors"
           >
-            Add Lead
+            {isEditing ? 'Save Changes' : 'Add Lead'}
           </button>
         </div>
       </div>

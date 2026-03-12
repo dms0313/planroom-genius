@@ -24,6 +24,7 @@ export default function LeadDashboard() {
   const [companyPopup, setCompanyPopup] = useState(null);
   const [descriptionPopup, setDescriptionPopup] = useState(null);
   const [addModal, setAddModal] = useState(false);
+  const [editModal, setEditModal] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
 
   // ── LeadTable filter / sort / search state ────────────────────────────────
@@ -235,6 +236,7 @@ export default function LeadDashboard() {
           sendToNotion={sendToNotion}
           triggerDeepScan={triggerDeepScan}
           triggerQuickScan={triggerQuickScan}
+          onEditLead={(lead) => setEditModal(lead)}
           API_BASE={API_BASE}
         />
       </div>
@@ -275,6 +277,19 @@ export default function LeadDashboard() {
           setFolderBrowserPath('');
           setFolderBrowserModal(true);
           browseTo('');
+        }}
+      />
+
+      {/* Edit lead modal */}
+      <AddLeadModal
+        open={!!editModal}
+        onClose={() => setEditModal(null)}
+        initialData={editModal}
+        onAdd={null}
+        onEdit={async (formData) => {
+          const ok = await updateLead(editModal.id, formData);
+          if (ok) setEditModal(null);
+          return ok;
         }}
       />
 
