@@ -31,6 +31,7 @@ export default function LeadDashboard() {
   const [sortConfig, setSortConfig] = useState({ key: 'bid_date', direction: 'asc' });
   const [searchQuery, setSearchQuery] = useState('');
   const [showHidden, setShowHidden] = useState(false);
+  const [showExpired, setShowExpired] = useState(false);
 
   // File browser modal (local knowledge files)
   const [pointToFileModal, setPointToFileModal] = useState(null);
@@ -86,8 +87,14 @@ export default function LeadDashboard() {
 
   // ── Filter + sort leads before passing to LeadTable ───────────────────────
   const filteredLeads = useMemo(() => {
+    const isExpired = (bidDate) => {
+      if (!bidDate || bidDate === 'N/A' || bidDate === 'TBD') return false;
+      try { const d = new Date(bidDate); const t = new Date(); t.setHours(0,0,0,0); return d < t; } catch { return false; }
+    };
+
     let data = leads;
     if (!showHidden) data = data.filter((l) => !l.hidden);
+    if (!showExpired) data = data.filter((l) => !isExpired(l.bid_date));
     if (siteFilter !== 'all') data = data.filter((l) => l.site === siteFilter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -108,8 +115,11 @@ export default function LeadDashboard() {
         return direction === 'asc' ? cmp : -cmp;
       });
     }
-    return data;
-  }, [leads, showHidden, siteFilter, searchQuery, sortConfig]);
+    // Red-highlighted rows always sink to the bottom
+    const normal = data.filter((l) => l.highlight !== 'red');
+    const red = data.filter((l) => l.highlight === 'red');
+    return [...normal, ...red];
+  }, [leads, showHidden, showExpired, siteFilter, searchQuery, sortConfig]);
 
   // ── File browser (knowledge files) ───────────────────────────────────────
   // LeadRow calls openPointToFile(lead.id) — receives the ID string directly.
@@ -210,6 +220,8 @@ export default function LeadDashboard() {
           setSearchQuery={setSearchQuery}
           showHidden={showHidden}
           setShowHidden={setShowHidden}
+          showExpired={showExpired}
+          setShowExpired={setShowExpired}
           knowledgeScanning={knowledgeScanning}
           triggerKnowledgeScan={triggerKnowledgeScan}
           scanningIds={scanningIds}
