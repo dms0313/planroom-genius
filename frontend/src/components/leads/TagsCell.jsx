@@ -36,7 +36,7 @@ const TagsCell = ({ lead, onToggleTag, onOpenTagPicker, tagPicker }) => {
           return (
             <span
               key="budget"
-              className="relative group/tag text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30 cursor-default"
+              className="relative group/tag text-[10px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30 cursor-default whitespace-nowrap flex-shrink-0"
             >
               BUDGET
               <span className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 max-w-[200px] opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50 whitespace-normal">
@@ -51,7 +51,7 @@ const TagsCell = ({ lead, onToggleTag, onOpenTagPicker, tagPicker }) => {
           return (
             <span
               key={`u-${idx}`}
-              className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-opacity hover:opacity-70 ${tagColorClass(tag.color)}`}
+              className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-opacity hover:opacity-70 whitespace-nowrap flex-shrink-0 ${tagColorClass(tag.color)}`}
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleTag && onToggleTag(lead, tag.label);
@@ -72,7 +72,7 @@ const TagsCell = ({ lead, onToggleTag, onOpenTagPicker, tagPicker }) => {
           return (
             <span
               key={`s-${idx}`}
-              className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default ${tagColorClass(tag.color)}`}
+              className={`relative group/tag text-[10px] px-1.5 py-0.5 rounded border cursor-default whitespace-nowrap flex-shrink-0 ${tagColorClass(tag.color)}`}
             >
               {tag.label}
               <span className="absolute bottom-full left-0 mb-1 px-2 py-1 bg-slate-800 border border-slate-600 rounded text-[10px] text-slate-200 max-w-[220px] opacity-0 group-hover/tag:opacity-100 pointer-events-none transition-opacity z-50 whitespace-normal leading-relaxed">
