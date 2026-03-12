@@ -471,42 +471,42 @@ const LeadRow = ({
 
         {/* ── Col 8: Actions ── */}
         <td className="px-2 py-1 text-center">
-          <div className="flex justify-center gap-1 flex-wrap">
-            {/* Brain: deep scan only */}
-            <button
-              onClick={(e) => { e.stopPropagation(); triggerDeepScan(lead.id); }}
-              disabled={scanningIds.has(lead.id)}
-              className={`p-1.5 rounded transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${
-                lead.takeoff_timestamp
-                  ? 'bg-violet-600/30 text-violet-300 hover:bg-violet-600 hover:text-white'
-                  : 'bg-slate-700 text-slate-400 hover:bg-violet-600 hover:text-white'
-              }`}
-              title="Deep scan"
-            >
-              {scanningIds.has(lead.id) ? <SpinnerSvg size={12} /> : <Brain size={12} />}
-            </button>
-            {/* Notes / View Details */}
-            <button
-              onClick={(e) => { e.stopPropagation(); setDescriptionPopup(lead); }}
-              className="p-1.5 bg-slate-700 hover:bg-slate-600 text-slate-400 hover:text-white rounded transition-colors"
-              title="View project details"
-            >
-              <FileText size={12} />
-            </button>
-            {/* Delete */}
-            <button
-              onClick={(e) => { e.stopPropagation(); deleteLead(lead); }}
-              className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors"
-              title="Delete lead"
-            >
-              <Trash2 size={12} />
-            </button>
-            {/* Notion */}
+          <div className="flex flex-col gap-1">
+            {/* Row 1: Brain · Notes · Delete */}
+            <div className="flex justify-center gap-1">
+              <button
+                onClick={(e) => { e.stopPropagation(); triggerDeepScan(lead.id); }}
+                disabled={scanningIds.has(lead.id)}
+                className={`p-1.5 rounded transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${
+                  lead.takeoff_timestamp
+                    ? 'bg-violet-600/30 text-violet-300 hover:bg-violet-600 hover:text-white'
+                    : 'bg-slate-700 text-slate-400 hover:bg-violet-600 hover:text-white'
+                }`}
+                title="Deep scan"
+              >
+                {scanningIds.has(lead.id) ? <SpinnerSvg size={12} /> : <Brain size={12} />}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setDescriptionPopup(lead); }}
+                className="p-1.5 bg-slate-700 hover:bg-slate-600 text-slate-400 hover:text-white rounded transition-colors"
+                title="View project details"
+              >
+                <FileText size={12} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); deleteLead(lead); }}
+                className="p-1.5 bg-slate-700 hover:bg-red-600 text-slate-400 hover:text-white rounded transition-colors"
+                title="Delete lead"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
+            {/* Row 2: Notion — full width */}
             <button
               onClick={(e) => { e.stopPropagation(); sendToNotion(lead); }}
               disabled={ns === 'loading'}
               title="Add to Notion (Open Quotes)"
-              className={`flex items-center gap-0.5 px-1.5 py-1.5 rounded transition-colors text-[10px] font-medium disabled:opacity-70 ${
+              className={`w-full flex items-center justify-center gap-1 px-2 py-1 rounded transition-colors text-[10px] font-medium disabled:opacity-70 ${
                 ns === 'success'
                   ? 'bg-green-700 text-green-200'
                   : ns === 'error'
@@ -521,7 +521,7 @@ const LeadRow = ({
               ) : (
                 <NotionIcon />
               )}
-              {ns === 'success' ? 'Sent' : ns === 'error' ? 'Err' : 'N'}
+              {ns === 'success' ? 'Sent to Notion' : ns === 'error' ? 'Error' : 'Add to Notion'}
             </button>
           </div>
         </td>
